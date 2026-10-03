@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 
 from routers.auth import get_current_user, require_login
 from services.sheets_service import sheets_service
-from config import SHEET_NHAP_HANG, SHEET_XUAT_HANG
+from config import SHEET_NHAP_HANG, SHEET_XUAT_HANG, SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -34,6 +34,12 @@ async def get_lich_su(
     try:
         combined = []
 
+        ncc_records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
+        kh_records = sheets_service.get_all_records(SHEET_KHACH_HANG)
+
+        ncc_map = {str(n.get("id", "")).strip(): str(n.get("ten_ncc", "")).strip() for n in ncc_records}
+        kh_map = {str(k.get("id", "")).strip(): str(k.get("ten_kh", "")).strip() for k in kh_records}
+
         if loai in ("all", "nhap"):
             nhap_records = sheets_service.get_all_records(SHEET_NHAP_HANG)
             for rec in nhap_records:
@@ -46,6 +52,7 @@ async def get_lich_su(
                 ten = str(rec.get("ten_hang", ""))
                 if search and search.lower() not in ma.lower() and search.lower() not in ten.lower():
                     continue
+                raw_ncc = str(rec.get("nha_cung_cap_id", "")).strip()
                 combined.append({
                     "loai": "Nhập",
                     "so_phieu": str(rec.get("so_phieu", "")),
@@ -55,7 +62,7 @@ async def get_lich_su(
                     "so_luong": int(rec.get("so_luong", 0) or 0),
                     "don_gia": float(rec.get("gia_nhap", 0) or 0),
                     "thanh_tien": float(rec.get("thanh_tien", 0) or 0),
-                    "doi_tac": str(rec.get("nha_cung_cap_id", "")),
+                    "doi_tac": ncc_map.get(raw_ncc, raw_ncc),
                     "ghi_chu": str(rec.get("ghi_chu", "")),
                 })
 
@@ -71,6 +78,7 @@ async def get_lich_su(
                 ten = str(rec.get("ten_hang", ""))
                 if search and search.lower() not in ma.lower() and search.lower() not in ten.lower():
                     continue
+                raw_kh = str(rec.get("khach_hang_id", "")).strip()
                 combined.append({
                     "loai": "Xuất",
                     "so_phieu": str(rec.get("so_phieu", "")),
@@ -80,7 +88,7 @@ async def get_lich_su(
                     "so_luong": int(rec.get("so_luong", 0) or 0),
                     "don_gia": float(rec.get("gia_ban", 0) or 0),
                     "thanh_tien": float(rec.get("thanh_tien", 0) or 0),
-                    "doi_tac": str(rec.get("khach_hang_id", "")),
+                    "doi_tac": kh_map.get(raw_kh, raw_kh),
                     "ghi_chu": str(rec.get("ghi_chu", "")),
                 })
 

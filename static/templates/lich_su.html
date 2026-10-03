@@ -51,10 +51,10 @@
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table table-hover table-sm">
+            <table class="table table-hover table-sm align-middle">
                 <thead>
                     <tr>
-                        <th>Loại</th>
+                        <th class="text-center" style="width: 85px;">Loại</th>
                         <th>Số Phiếu</th>
                         <th>Ngày</th>
                         <th>Mã Hàng</th>
@@ -63,10 +63,11 @@
                         <th class="text-end">Đơn Giá</th>
                         <th class="text-end">Thành Tiền</th>
                         <th>Đối Tác</th>
+                        <th class="text-center" style="width: 90px;">Thao Tác</th>
                     </tr>
                 </thead>
                 <tbody id="history-tbody">
-                    <tr><td colspan="9" class="text-center text-muted py-4">Đang tải...</td></tr>
+                    <tr><td colspan="10" class="text-center text-muted py-4">Đang tải...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -75,6 +76,27 @@
         <div class="d-flex justify-content-between align-items-center mt-3">
             <span class="text-muted small" id="page-info"></span>
             <div id="pagination-container"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chi Tiết Phiếu Giao Dịch -->
+<div class="modal fade" id="history-detail-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="history-modal-title">Chi Tiết Phiếu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="history-modal-body"></div>
+            <div class="modal-footer d-flex justify-content-between">
+                <div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="printReceiptModal('history-modal-body', 'Phiếu Giao Dịch')">
+                        <i class="bi bi-printer me-1"></i>In Phiếu
+                    </button>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+            </div>
         </div>
     </div>
 </div>
