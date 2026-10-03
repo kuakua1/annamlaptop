@@ -6,9 +6,11 @@ from PyInstaller.utils.hooks import collect_all
 datas = [
     ('static', 'static'),
     ('.env', '.'),
+    ('version.json', '.'),
 ]
 binaries = []
 hiddenimports = [
+    'updater',
     'bcrypt',
     'itsdangerous',
     'google.auth',

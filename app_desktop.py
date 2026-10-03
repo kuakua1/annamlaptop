@@ -121,6 +121,14 @@ def main_desktop():
     if not os.path.exists(icon_path):
         icon_path = None
         
+    # Start auto-updater in background
+    try:
+        from updater import start_update_check
+        start_update_check()
+        debug_log("Auto-updater thread started")
+    except Exception as e:
+        debug_log(f"Failed to start updater: {e}")
+
     debug_log(f"Starting webview GUI loop with icon: {icon_path}...")
     webview.start(icon=icon_path)
     debug_log("Webview GUI loop ended by user")
