@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}Hàng Hóa - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Quản Lý Hàng Hóa{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-box-seam text-primary fs-5"></i>
+            <span>Danh Sách Hàng Hóa &nbsp;<span class="badge bg-primary" id="total-count">0</span></span>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-success btn-sm" onclick="exportProductsExcel()">
+                <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="openAdd()">
+                <i class="bi bi-plus-circle me-1"></i>Thêm Hàng Hóa
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <!-- Filters -->
+        <div class="row g-2 mb-3">
+            <div class="col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" class="form-control" id="search-input" placeholder="Tìm kiếm mã hàng, tên hàng...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" id="filter-danh-muc">
+                    <option value="">Tất cả danh mục</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-sm btn-outline-secondary w-100" onclick="loadProducts()">
+                    <i class="bi bi-arrow-clockwise"></i> Làm mới
+                </button>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th style="width:40px">STT</th>
+                        <th>Mã Hàng</th>
+                        <th>Tên Hàng</th>
+                        <th>Danh Mục</th>
+                        <th>ĐVT</th>
+                        <th class="text-end">Giá Nhập</th>
+                        <th class="text-end">Giá Bán</th>
+                        <th class="text-center">Tồn Kho</th>
+                        <th style="width:100px">Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody id="products-tbody">
+                    <tr><td colspan="9" class="text-center text-muted py-4">Đang tải...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Product Modal -->
+<div class="modal fade" id="product-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-title">Thêm Hàng Hóa</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="product-form">
+                    <div class="mb-3">
+                        <label class="form-label">Tên Hàng <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="f-ten-hang" required>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Danh Mục</label>
+                            <select class="form-select" id="f-danh-muc">
+                                <option value="">-- Chọn danh mục --</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Đơn Vị Tính</label>
+                            <input type="text" class="form-control" id="f-dvt" placeholder="Cái, Hộp, Kg..." value="Cái">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Giá Nhập (đ)</label>
+                            <input type="number" class="form-control" id="f-gia-nhap" min="0" value="0">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Giá Bán (đ)</label>
+                            <input type="number" class="form-control" id="f-gia-ban" min="0" value="0">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tồn Kho Ban Đầu</label>
+                        <input type="number" class="form-control" id="f-ton-kho" min="0" value="0">
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Ghi Chú</label>
+                        <textarea class="form-control" id="f-ghi-chu" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="saveProduct()">
+                    <i class="bi bi-save me-1"></i>Lưu
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/hang_hoa.js?v=20261003_v5"></script>
+{% endblock %}

@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Top Filter Bar -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-body py-2 px-3 d-flex flex-wrap justify-content-between align-items-center gap-2 bg-white rounded">
+        <div class="d-flex align-items-center gap-2">
+            <span class="text-muted fw-bold small text-uppercase">
+                <i class="bi bi-calendar3 text-primary me-1"></i>Xem báo cáo theo tháng:
+            </span>
+            <input type="month" id="dash-month" class="form-control form-control-sm fw-bold border-primary" style="width: 175px;" onchange="onMonthChange()">
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadCurrentMonth()" title="Trở về tháng hiện tại">
+                <i class="bi bi-arrow-clockwise"></i> Tháng này
+            </button>
+        </div>
+        <div>
+            <span class="badge bg-primary fs-6 px-3 py-2 shadow-sm" id="badge-month-display">
+                <i class="bi bi-bar-chart-fill me-1"></i>Tháng 10/2026
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Action Shortcuts Bar -->
+<div class="row g-2 mb-4">
+    <div class="col-6 col-md-3">
+        <a href="/xuat-hang" class="btn btn-outline-danger w-100 py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm rounded-3 fw-bold bg-white">
+            <i class="bi bi-upload fs-5 text-danger"></i>
+            <span>Tạo Phiếu Xuất Hàng</span>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="/nhap-hang" class="btn btn-outline-primary w-100 py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm rounded-3 fw-bold bg-white">
+            <i class="bi bi-download fs-5 text-primary"></i>
+            <span>Tạo Phiếu Nhập Hàng</span>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="/ton-kho" class="btn btn-outline-success w-100 py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm rounded-3 fw-bold bg-white">
+            <i class="bi bi-boxes fs-5 text-success"></i>
+            <span>Kiểm Tra Tồn Kho</span>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="/ton-kho?status=low_stock" class="btn btn-outline-warning w-100 py-2 d-flex align-items-center justify-content-center gap-2 shadow-sm rounded-3 fw-bold bg-white position-relative">
+            <i class="bi bi-exclamation-triangle-fill fs-5 text-warning"></i>
+            <span>Cảnh Báo Hết/Sắp Hết</span>
+            <span class="badge bg-danger rounded-pill ms-1" id="dash-low-stock-badge">0</span>
+        </a>
+    </div>
+</div>
+
+<!-- Stat Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-2">
+        <div class="stat-card bg-blue h-100">
+            <div class="stat-icon"><i class="bi bi-boxes"></i></div>
+            <div class="stat-value" id="stat-sp">-</div>
+            <div class="stat-label">Tổng sản phẩm</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="stat-card bg-green h-100">
+            <div class="stat-icon"><i class="bi bi-currency-dollar"></i></div>
+            <div class="stat-value" id="stat-ton" style="font-size:1.05rem">-</div>
+            <div class="stat-label">Giá trị tồn kho</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="stat-card bg-cyan h-100">
+            <div class="stat-icon"><i class="bi bi-download"></i></div>
+            <div class="stat-value" id="stat-nhap" style="font-size:1.05rem">-</div>
+            <div class="stat-label">Nhập hàng trong tháng</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="stat-card bg-orange h-100">
+            <div class="stat-icon"><i class="bi bi-upload"></i></div>
+            <div class="stat-value" id="stat-xuat" style="font-size:1.05rem">-</div>
+            <div class="stat-label">Xuất hàng trong tháng</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="stat-card bg-purple h-100">
+            <div class="stat-icon"><i class="bi bi-graph-up-arrow"></i></div>
+            <div class="stat-value" id="stat-dt" style="font-size:1.05rem">-</div>
+            <div class="stat-label">Doanh thu trong tháng</div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-2">
+        <div class="stat-card bg-teal h-100">
+            <div class="stat-icon"><i class="bi bi-piggy-bank"></i></div>
+            <div class="stat-value" id="stat-ln" style="font-size:1.05rem">-</div>
+            <div class="stat-label">Lợi nhuận trong tháng</div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart + Recent transactions -->
+<div class="row g-3">
+    <div class="col-lg-7">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <span class="fw-bold"><i class="bi bi-graph-up me-2 text-primary"></i>Biểu Đồ Doanh Thu & Lợi Nhuận <span id="chart-month-label" class="text-primary"></span></span>
+            </div>
+            <div class="card-body">
+                <canvas id="revenue-chart" height="130"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card h-100 shadow-sm border-0">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <span class="fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Giao Dịch Gần Nhất</span>
+                <span class="badge bg-light text-muted border small">Mới nhất trên đầu</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 table-sm align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3" style="width: 25%;">Ngày</th>
+                                <th style="width: 18%;">Loại</th>
+                                <th>Hàng hóa</th>
+                                <th class="text-end pe-3" style="width: 28%;">Giá trị</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-tbody">
+                            <tr><td colspan="4" class="text-center text-muted py-4">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let dashChart = null;
+
+function getCurrentMonthStr() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+}
+
+function updateMonthBadge(monthStr) {
+    if (!monthStr) return;
+    const [y, m] = monthStr.split('-');
+    const label = `Tháng ${m}/${y}`;
+    const badge = document.getElementById('badge-month-display');
+    const chartLabel = document.getElementById('chart-month-label');
+    if (badge) badge.innerHTML = `<i class="bi bi-calendar-check me-1"></i>${label}`;
+    if (chartLabel) chartLabel.textContent = `(${label})`;
+}
+
+async function loadDashboard() {
+    try {
+        const month = document.getElementById('dash-month').value || getCurrentMonthStr();
+        updateMonthBadge(month);
+
+        const res = await apiRequest(`/api/dashboard/stats?month=${encodeURIComponent(month)}`);
+        const d = res.data;
+        document.getElementById('stat-sp').textContent = formatNumber(d.tong_san_pham);
+        document.getElementById('stat-ton').textContent = formatVND(d.gia_tri_ton_kho);
+        document.getElementById('stat-nhap').textContent = formatVND(d.nhap_hang_thang);
+        document.getElementById('stat-xuat').textContent = formatVND(d.xuat_hang_thang);
+        document.getElementById('stat-dt').textContent = formatVND(d.doanh_thu_thang);
+        document.getElementById('stat-ln').textContent = formatVND(d.loi_nhuan_thang);
+
+        const lowStockCount = (d.low_stock_count || 0) + (d.out_of_stock_count || 0);
+        const lowStockEl = document.getElementById('dash-low-stock-badge');
+        if (lowStockEl) {
+            lowStockEl.textContent = lowStockCount;
+            lowStockEl.className = lowStockCount > 0 ? 'badge bg-danger rounded-pill ms-1' : 'badge bg-success rounded-pill ms-1';
+        }
+
+        const tbody = document.getElementById('recent-tbody');
+        if (!d.giao_dich_gan_nhat || !d.giao_dich_gan_nhat.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">Chưa có giao dịch</td></tr>';
+        } else {
+            tbody.innerHTML = d.giao_dich_gan_nhat.map(t => `
+                <tr>
+                    <td class="ps-3">
+                        <span class="small fw-semibold text-dark">${formatDate(t.ngay)}</span>
+                    </td>
+                    <td>
+                        <span class="badge rounded-pill ${t.loai === 'Nhập' ? 'badge-nhap' : 'badge-xuat'} px-2">
+                            ${t.loai === 'Nhập' ? '↓' : '↑'} ${t.loai}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="text-truncate fw-semibold small" style="max-width: 170px;" title="${t.ten_hang}">
+                            ${t.ten_hang}
+                        </div>
+                        <div class="text-muted" style="font-size:0.75rem;">${t.ma_hang} &times; ${t.so_luong}</div>
+                    </td>
+                    <td class="text-end pe-3">
+                        <span class="fw-bold small ${t.loai === 'Nhập' ? 'text-primary' : 'text-danger'}">${formatVND(t.thanh_tien)}</span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function loadChart() {
+    try {
+        const month = document.getElementById('dash-month').value || getCurrentMonthStr();
+        const res = await apiRequest(`/api/bao-cao/doanh-thu?month=${encodeURIComponent(month)}`);
+        const d = res.data;
+        const ctx = document.getElementById('revenue-chart').getContext('2d');
+        if (dashChart) dashChart.destroy();
+        dashChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: d.dates,
+                datasets: [
+                    { label: 'Doanh thu', data: d.revenue, borderColor: '#4f8ef7', backgroundColor: 'rgba(79,142,247,0.12)', fill: true, tension: 0.35, borderWidth: 2 },
+                    { label: 'Lợi nhuận', data: d.profit, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)', fill: true, tension: 0.35, borderWidth: 2 },
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatVND(ctx.parsed.y)}` } }
+                },
+                scales: {
+                    y: { ticks: { callback: v => formatVND(v) }, grid: { color: 'rgba(0,0,0,0.04)' } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    } catch (e) {}
+}
+
+function onMonthChange() {
+    loadDashboard();
+    loadChart();
+}
+
+function loadCurrentMonth() {
+    document.getElementById('dash-month').value = getCurrentMonthStr();
+    onMonthChange();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('dash-month').value = getCurrentMonthStr();
+    loadDashboard();
+    loadChart();
+});
+</script>
+{% endblock %}

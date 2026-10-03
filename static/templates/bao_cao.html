@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Báo Cáo - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Báo Cáo & Thống Kê{% endblock %}
+
+{% block content %}
+<!-- Period Selector -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="text-muted small me-1">Kỳ báo cáo:</span>
+            <button class="btn btn-sm period-btn active" data-period="today" onclick="selectPeriod('today')">Hôm nay</button>
+            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="week" onclick="selectPeriod('week')">Tuần này</button>
+            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="month" onclick="selectPeriod('month')">Tháng này</button>
+            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="year" onclick="selectPeriod('year')">Năm nay</button>
+            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="custom" onclick="selectPeriod('custom')">Tùy chọn</button>
+            <div id="custom-range" class="d-none gap-2 align-items-center" style="display:none!important">
+                <input type="date" class="form-control form-control-sm" id="custom-from" style="width:150px">
+                <span>-</span>
+                <input type="date" class="form-control form-control-sm" id="custom-to" style="width:150px">
+                <button class="btn btn-sm btn-primary" onclick="applyCustomRange()">Xem</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Row -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-graph-up-arrow text-primary me-1"></i>Doanh Thu</div>
+                <div class="fs-4 fw-bold text-primary" id="stat-doanh-thu">-</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-coin text-danger me-1"></i>Giá Vốn</div>
+                <div class="fs-4 fw-bold text-danger" id="stat-gia-von">-</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-piggy-bank text-success me-1"></i>Lợi Nhuận</div>
+                <div class="fs-4 fw-bold text-success" id="stat-loi-nhuan">-</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-percent text-warning me-1"></i>Biên Lợi Nhuận</div>
+                <div class="fs-4 fw-bold text-warning" id="stat-bien">-</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Revenue Chart -->
+<div class="card mb-4">
+    <div class="card-header">
+        <i class="bi bi-graph-up me-2 text-primary"></i>Doanh Thu 30 Ngày Gần Nhất
+    </div>
+    <div class="card-body">
+        <canvas id="revenue-chart" height="80"></canvas>
+    </div>
+</div>
+
+<!-- Top Products -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-trophy me-2 text-warning"></i>Top 10 Bán Chạy (Theo Số Lượng)
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Số Lượng</th></tr></thead>
+                    <tbody id="top-qty-body">
+                        <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-currency-dollar me-2 text-success"></i>Top 10 Doanh Thu Cao Nhất
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Doanh Thu</th></tr></thead>
+                    <tbody id="top-rev-body">
+                        <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Inventory Value -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-boxes me-2 text-primary"></i>Bảng Giá Trị Tồn Kho</span>
+        <span class="badge bg-success fs-6" id="total-ton-kho-value">-</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-3">#</th>
+                        <th>Mã Hàng</th>
+                        <th>Tên Hàng</th>
+                        <th>Danh Mục</th>
+                        <th class="text-center">Tồn Kho</th>
+                        <th class="text-end">Giá Nhập</th>
+                        <th class="text-end pe-3">Giá Trị</th>
+                    </tr>
+                </thead>
+                <tbody id="ton-kho-body">
+                    <tr><td colspan="7" class="text-center text-muted py-4">Đang tải...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/bao_cao.js?v=20261003_v3"></script>
+{% endblock %}

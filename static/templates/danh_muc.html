@@ -1,0 +1,416 @@
+{% extends "base.html" %}
+{% block title %}Danh Mục - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Nhà Cung Cấp & Khách Hàng{% endblock %}
+
+{% block content %}
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-3" id="danh-muc-tabs">
+    <li class="nav-item">
+        <a class="nav-link active fw-semibold" id="ncc-tab" data-bs-toggle="tab" href="#ncc-panel">
+            <i class="bi bi-truck me-1"></i>Nhà Cung Cấp
+            <span class="badge bg-secondary rounded-pill ms-1" id="ncc-badge-count">0</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link fw-semibold" id="kh-tab" data-bs-toggle="tab" href="#kh-panel">
+            <i class="bi bi-person-badge me-1"></i>Khách Hàng
+            <span class="badge bg-secondary rounded-pill ms-1" id="kh-badge-count">0</span>
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- NCC Panel -->
+    <div class="tab-pane fade show active" id="ncc-panel">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-truck text-primary fs-5"></i>
+                    <span class="fw-bold fs-6">Danh Sách Nhà Cung Cấp</span>
+                    <span class="badge bg-primary rounded-pill" id="ncc-filter-summary">0 NCC</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-success btn-sm" onclick="exportSuppliersExcel()">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel NCC
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="openAddNCC()">
+                        <i class="bi bi-plus-circle me-1"></i>Thêm NCC Mới
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-3">
+                <!-- Toolbar: Tìm kiếm & Lọc NCC -->
+                <div class="row g-2 mb-3 align-items-center bg-light p-2 rounded border">
+                    <div class="col-md-5">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                            <input type="text" class="form-control border-start-0" id="ncc-search-input"
+                                placeholder="Tìm kiếm tên NCC, số điện thoại, địa chỉ, email..." oninput="filterNCC()">
+                            <button class="btn btn-outline-secondary" type="button" onclick="clearNCCSearch()" title="Xóa tìm kiếm">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select form-select-sm" id="ncc-filter-status" onchange="filterNCC()">
+                            <option value="all">Tất cả nhà cung cấp</option>
+                            <option value="has_orders">Đã có giao dịch nhập hàng</option>
+                            <option value="no_orders">Chưa có giao dịch nhập</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select form-select-sm" id="ncc-sort-by" onchange="filterNCC()">
+                            <option value="default">Sắp xếp: Mặc định</option>
+                            <option value="name_asc">Tên NCC: A &rarr; Z</option>
+                            <option value="spent_desc">Tổng tiền nhập cao nhất</option>
+                            <option value="orders_desc">Số đơn nhập nhiều nhất</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1 text-end">
+                        <button class="btn btn-sm btn-outline-secondary w-100" onclick="loadNCC()" title="Làm mới dữ liệu">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive border rounded">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                            <tr style="background-color: #1e293b !important;">
+                                <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
+                                <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Nhà Cung Cấp</th>
+                                <th style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Điện Thoại</th>
+                                <th style="background-color: #1e293b !important; color: #ffffff !important;">Địa Chỉ</th>
+                                <th style="width: 160px; background-color: #1e293b !important; color: #ffffff !important;">Email</th>
+                                <th class="text-end" style="width: 170px; background-color: #1e293b !important; color: #ffffff !important;">Giao Dịch Nhập</th>
+                                <th class="text-center" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ncc-tbody">
+                            <tr><td colspan="7" class="text-center text-muted py-4">Đang tải danh sách...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- KH Panel -->
+    <div class="tab-pane fade" id="kh-panel">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-person-badge text-primary fs-5"></i>
+                    <span class="fw-bold fs-6">Danh Sách Khách Hàng</span>
+                    <span class="badge bg-primary rounded-pill" id="kh-filter-summary">0 Khách Hàng</span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-success btn-sm" onclick="exportCustomersExcel()">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel KH
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="openAddKH()">
+                        <i class="bi bi-plus-circle me-1"></i>Thêm KH Mới
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-3">
+                <!-- Toolbar: Tìm kiếm & Lọc KH -->
+                <div class="row g-2 mb-3 align-items-center bg-light p-2 rounded border">
+                    <div class="col-md-5">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
+                            <input type="text" class="form-control border-start-0" id="kh-search-input"
+                                placeholder="Tìm kiếm tên khách hàng, số điện thoại, địa chỉ, email..." oninput="filterKH()">
+                            <button class="btn btn-outline-secondary" type="button" onclick="clearKHSearch()" title="Xóa tìm kiếm">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select form-select-sm" id="kh-filter-status" onchange="filterKH()">
+                            <option value="all">Tất cả khách hàng</option>
+                            <option value="has_orders">Đã có giao dịch mua hàng</option>
+                            <option value="no_orders">Chưa có giao dịch mua</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select form-select-sm" id="kh-sort-by" onchange="filterKH()">
+                            <option value="default">Sắp xếp: Mặc định</option>
+                            <option value="name_asc">Tên KH: A &rarr; Z</option>
+                            <option value="spent_desc">Tổng tiền mua cao nhất</option>
+                            <option value="orders_desc">Số đơn mua nhiều nhất</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1 text-end">
+                        <button class="btn btn-sm btn-outline-secondary w-100" onclick="loadKH()" title="Làm mới dữ liệu">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-responsive border rounded">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                            <tr style="background-color: #1e293b !important;">
+                                <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
+                                <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Khách Hàng</th>
+                                <th style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Điện Thoại</th>
+                                <th style="background-color: #1e293b !important; color: #ffffff !important;">Địa Chỉ</th>
+                                <th style="width: 160px; background-color: #1e293b !important; color: #ffffff !important;">Email</th>
+                                <th class="text-end" style="width: 170px; background-color: #1e293b !important; color: #ffffff !important;">Giao Dịch Mua</th>
+                                <th class="text-center" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kh-tbody">
+                            <tr><td colspan="7" class="text-center text-muted py-4">Đang tải danh sách...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Lịch Sử Giao Dịch Modal (Được dùng chung cho cả Khách Hàng & NCC) -->
+<div class="modal fade" id="history-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-clock-history fs-4 text-primary" id="history-modal-icon"></i>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-0" id="history-modal-title">Lịch Sử Giao Dịch</h5>
+                        <small class="text-muted" id="history-modal-subtitle">Chi tiết các đơn hàng và mặt hàng đã giao dịch</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3" id="history-modal-body">
+                <!-- Thông tin đối tác & Stat Cards -->
+                <div class="card bg-light border-0 mb-3">
+                    <div class="card-body p-3">
+                        <div class="row align-items-center">
+                            <div class="col-md-7 border-end-md">
+                                <h5 class="fw-bold text-dark mb-1" id="hist-partner-name">-</h5>
+                                <div class="text-secondary small d-flex flex-wrap gap-3 mt-2">
+                                    <span><i class="bi bi-telephone me-1 text-primary"></i><span id="hist-partner-phone">-</span></span>
+                                    <span><i class="bi bi-geo-alt me-1 text-danger"></i><span id="hist-partner-address">-</span></span>
+                                    <span><i class="bi bi-envelope me-1 text-info"></i><span id="hist-partner-email">-</span></span>
+                                </div>
+                                <div class="mt-2 text-muted small" id="hist-partner-note-wrap" style="display:none;">
+                                    <i class="bi bi-chat-left-text me-1"></i><span id="hist-partner-note"></span>
+                                </div>
+                            </div>
+                            <div class="col-md-5 mt-3 mt-md-0">
+                                <div class="row g-2 text-center">
+                                    <div class="col-4">
+                                        <div class="p-2 bg-white rounded border">
+                                            <div class="text-muted small fw-semibold">Số Đơn</div>
+                                            <div class="fs-5 fw-bold text-primary font-monospace" id="hist-stat-orders">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 bg-white rounded border">
+                                            <div class="text-muted small fw-semibold">Tổng SP</div>
+                                            <div class="fs-5 fw-bold text-warning font-monospace" id="hist-stat-qty">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 bg-white rounded border">
+                                            <div class="text-muted small fw-semibold">Tổng Tiền</div>
+                                            <div class="fs-6 fw-bold text-success font-monospace mt-1" id="hist-stat-amount" style="white-space: nowrap;">0 đ</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nav Tabs chế độ xem -->
+                <ul class="nav nav-pills mb-3" id="history-views" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active btn-sm" id="hist-tab-receipts" data-bs-toggle="pill" data-bs-target="#hist-pane-receipts" type="button">
+                            <i class="bi bi-receipt me-1"></i>Theo Từng Phiếu (<span id="hist-receipt-count">0</span>)
+                        </button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link btn-sm" id="hist-tab-items" data-bs-toggle="pill" data-bs-target="#hist-pane-items" type="button">
+                            <i class="bi bi-box-seam me-1"></i>Chi Tiết Mặt Hàng (<span id="hist-item-count">0</span>)
+                        </button>
+                    </li>
+                </ul>
+
+                <div class="tab-content" id="history-tabContent">
+                    <!-- Tab Theo Từng Phiếu -->
+                    <div class="tab-pane fade show active" id="hist-pane-receipts">
+                        <div class="table-responsive border rounded">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                                    <tr>
+                                        <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
+                                        <th style="width: 110px; background-color: #1e293b !important; color: #ffffff !important;">Ngày</th>
+                                        <th style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Số Phiếu</th>
+                                        <th class="text-center" style="width: 90px; background-color: #1e293b !important; color: #ffffff !important;">Số Loại SP</th>
+                                        <th class="text-center" style="width: 90px; background-color: #1e293b !important; color: #ffffff !important;">Tổng SL</th>
+                                        <th class="text-end" style="width: 150px; background-color: #1e293b !important; color: #ffffff !important;">Tổng Tiền</th>
+                                        <th style="background-color: #1e293b !important; color: #ffffff !important;">Ghi Chú</th>
+                                        <th class="text-center" style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Chi Tiết</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hist-tbody-receipts">
+                                    <tr><td colspan="8" class="text-center text-muted py-4">Chưa có giao dịch</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tab Chi Tiết Mặt Hàng -->
+                    <div class="tab-pane fade" id="hist-pane-items">
+                        <div class="table-responsive border rounded">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                                    <tr>
+                                        <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
+                                        <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Ngày</th>
+                                        <th style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Số Phiếu</th>
+                                        <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Mã Hàng</th>
+                                        <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Mặt Hàng</th>
+                                        <th class="text-center" style="width: 65px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
+                                        <th class="text-center" style="width: 75px; background-color: #1e293b !important; color: #ffffff !important;">Số Lượng</th>
+                                        <th class="text-end" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Đơn Giá</th>
+                                        <th class="text-end" style="width: 145px; background-color: #1e293b !important; color: #ffffff !important;">Thành Tiền</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="hist-tbody-items">
+                                    <tr><td colspan="9" class="text-center text-muted py-4">Chưa có mặt hàng</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" onclick="printPartnerHistory()">
+                    <i class="bi bi-printer me-1"></i>In Lịch Sử Giao Dịch
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Receipt Detail Modal (Xem chi tiết phiếu đơn lẻ) -->
+<div class="modal fade" id="receipt-detail-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title fw-bold" id="receipt-modal-title">Chi Tiết Phiếu</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3" id="receipt-modal-body">
+                <!-- Nội dung phiếu xuất / nhập -->
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-secondary" onclick="printReceiptModal('receipt-modal-body', 'Phiếu Giao Dịch')">
+                    <i class="bi bi-printer me-1"></i>In Phiếu
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- NCC Modal (Thêm / Sửa NCC) -->
+<div class="modal fade" id="ncc-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="ncc-modal-title">Thêm Nhà Cung Cấp</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="ncc-form">
+                    <div class="mb-3">
+                        <label class="form-label">Tên Nhà Cung Cấp <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="ncc-ten" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Địa Chỉ</label>
+                        <input type="text" class="form-control" id="ncc-dia-chi">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Điện Thoại</label>
+                            <input type="text" class="form-control" id="ncc-dt">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="ncc-email">
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Ghi Chú</label>
+                        <textarea class="form-control" id="ncc-ghi-chu" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="saveNCC()">
+                    <i class="bi bi-save me-1"></i>Lưu
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- KH Modal (Thêm / Sửa KH) -->
+<div class="modal fade" id="kh-modal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="kh-modal-title">Thêm Khách Hàng</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="kh-form">
+                    <div class="mb-3">
+                        <label class="form-label">Tên Khách Hàng <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="kh-ten" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Địa Chỉ</label>
+                        <input type="text" class="form-control" id="kh-dia-chi">
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Điện Thoại</label>
+                            <input type="text" class="form-control" id="kh-dt">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" id="kh-email">
+                        </div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">Ghi Chú</label>
+                        <textarea class="form-control" id="kh-ghi-chu" rows="2"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="saveKH()">
+                    <i class="bi bi-save me-1"></i>Lưu
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/danh_muc.js?v={{ v }}"></script>
+{% endblock %}
+

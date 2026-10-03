@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Xuất Hàng - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Xuất Hàng{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <!-- Left: Form -->
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-upload text-danger me-2"></i>Tạo Phiếu Xuất Hàng
+            </div>
+            <div class="card-body">
+                <!-- Ngày xuất -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Ngày Xuất <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" id="f-ngay">
+                    </div>
+                </div>
+
+                <!-- Khách Hàng -->
+                <div class="card border-danger mb-3">
+                    <div class="card-header bg-danger bg-opacity-10 py-2">
+                        <i class="bi bi-person-circle me-1 text-danger"></i>
+                        <strong class="text-danger">Thông Tin Khách Hàng</strong>
+                        <small class="text-muted ms-2">(gõ tên để tìm trong danh sách)</small>
+                    </div>
+                    <div class="card-body py-2">
+                        <div class="row g-2">
+                            <div class="col-md-12 position-relative">
+                                <label class="form-label mb-1">Tên Khách Hàng</label>
+                                <input type="text" class="form-control" id="f-kh-ten"
+                                    placeholder="Nhập tên khách hàng..."
+                                    autocomplete="off"
+                                    oninput="onKhInput(this)">
+                                <input type="hidden" id="f-kh-id">
+                                <!-- Dropdown gợi ý -->
+                                <div id="kh-suggestions" class="autocomplete-dropdown d-none"></div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label mb-1">Địa Chỉ</label>
+                                <input type="text" class="form-control" id="f-kh-dia-chi"
+                                    placeholder="Địa chỉ khách hàng...">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label mb-1">Số Điện Thoại</label>
+                                <input type="text" class="form-control" id="f-kh-sdt"
+                                    placeholder="Số điện thoại...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Line Items -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label mb-0 fw-bold">Chi Tiết Hàng Hóa</label>
+                    <button class="btn btn-sm btn-outline-danger" onclick="addItem()">
+                        <i class="bi bi-plus"></i> Thêm dòng
+                    </button>
+                </div>
+                <div class="table-responsive mb-3">
+                    <table class="table items-table table-bordered table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:35%">Hàng hóa</th>
+                                <th style="width:12%">SL</th>
+                                <th style="width:18%">Giá bán</th>
+                                <th style="width:18%">Thành tiền</th>
+                                <th style="width:8%"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="items-tbody"></tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded">
+                    <strong>Tổng cộng:</strong>
+                    <strong class="text-danger fs-5" id="total-amount">0 đ</strong>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Ghi Chú</label>
+                    <textarea class="form-control" id="f-ghi-chu" rows="2" placeholder="Ghi chú phiếu xuất..."></textarea>
+                </div>
+
+                <div class="d-grid">
+                    <button class="btn btn-danger" onclick="saveReceipt()">
+                        <i class="bi bi-save me-2"></i>Lưu Phiếu Xuất
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Recent receipts -->
+    <div class="col-lg-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <span class="fw-bold"><i class="bi bi-list-ul text-danger me-2"></i>Phiếu Xuất Gần Đây</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadReceipts()" title="Làm mới">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+            <div class="card-body p-2" style="min-height: 420px;">
+                <div id="receipts-list">
+                    <p class="text-muted small text-center py-3">Đang tải...</p>
+                </div>
+            </div>
+            <div class="card-footer bg-white border-top py-2 d-flex justify-content-between align-items-center" id="receipts-pagination-wrap">
+                <small class="text-muted fw-semibold" id="receipts-page-summary"></small>
+                <div id="receipts-pagination"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal fade" id="detail-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Chi Tiết Phiếu Xuất</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detail-modal-body"></div>
+            <div class="modal-footer d-flex justify-content-between">
+                <div>
+                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="printReceiptModal('detail-modal-body', 'Phiếu Xuất Kho')">
+                        <i class="bi bi-printer me-1"></i>In Phiếu
+                    </button>
+                    <button type="button" class="btn btn-outline-warning btn-sm ms-2" onclick="cloneCurrentReceiptToForm()">
+                        <i class="bi bi-copy me-1"></i>Sao chép vào phiếu mới
+                    </button>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/xuat_hang.js?v=20261003_v3"></script>
+{% endblock %}

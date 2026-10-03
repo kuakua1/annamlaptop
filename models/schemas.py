@@ -1,0 +1,167 @@
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import date
+
+
+# ─── Auth ─────────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# ─── HangHoa (Products) ───────────────────────────────────────────────────────
+
+class HangHoaCreate(BaseModel):
+    ten_hang: str
+    danh_muc: Optional[str] = ""
+    don_vi_tinh: Optional[str] = "Cái"
+    gia_nhap: float = 0
+    gia_ban: float = 0
+    ton_kho: int = 0
+    ghi_chu: Optional[str] = ""
+
+
+class HangHoaUpdate(BaseModel):
+    ten_hang: Optional[str] = None
+    danh_muc: Optional[str] = None
+    don_vi_tinh: Optional[str] = None
+    gia_nhap: Optional[float] = None
+    gia_ban: Optional[float] = None
+    ton_kho: Optional[int] = None
+    ghi_chu: Optional[str] = None
+
+
+class HangHoa(BaseModel):
+    id: str
+    ma_hang: str
+    ten_hang: str
+    danh_muc: str
+    don_vi_tinh: str
+    gia_nhap: float
+    gia_ban: float
+    ton_kho: int
+    ghi_chu: str
+    row_num: Optional[int] = None
+
+
+# ─── NhaCungCap (Suppliers) ───────────────────────────────────────────────────
+
+class NhaCungCapCreate(BaseModel):
+    ten_ncc: str
+    dia_chi: Optional[str] = ""
+    dien_thoai: Optional[str] = ""
+    email: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+
+
+class NhaCungCapUpdate(BaseModel):
+    ten_ncc: Optional[str] = None
+    dia_chi: Optional[str] = None
+    dien_thoai: Optional[str] = None
+    email: Optional[str] = None
+    ghi_chu: Optional[str] = None
+
+
+class NhaCungCap(BaseModel):
+    id: str
+    ten_ncc: str
+    dia_chi: str
+    dien_thoai: str
+    email: str
+    ghi_chu: str
+    row_num: Optional[int] = None
+
+
+# ─── KhachHang (Customers) ────────────────────────────────────────────────────
+
+class KhachHangCreate(BaseModel):
+    ten_kh: str
+    dia_chi: Optional[str] = ""
+    dien_thoai: Optional[str] = ""
+    email: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+
+
+class KhachHangUpdate(BaseModel):
+    ten_kh: Optional[str] = None
+    dia_chi: Optional[str] = None
+    dien_thoai: Optional[str] = None
+    email: Optional[str] = None
+    ghi_chu: Optional[str] = None
+
+
+class KhachHang(BaseModel):
+    id: str
+    ten_kh: str
+    dia_chi: str
+    dien_thoai: str
+    email: str
+    ghi_chu: str
+    row_num: Optional[int] = None
+
+
+# ─── NhapHang (Import Goods) ─────────────────────────────────────────────────
+
+class NhapHangItem(BaseModel):
+    ma_hang: str
+    ten_hang: str
+    so_luong: int
+    gia_nhap: float
+
+
+class NhapHangCreate(BaseModel):
+    ngay_nhap: str  # YYYY-MM-DD
+    nha_cung_cap_id: Optional[str] = ""
+    nha_cung_cap_ten: Optional[str] = ""
+    nha_cung_cap_dia_chi: Optional[str] = ""
+    nha_cung_cap_sdt: Optional[str] = ""
+    items: List[NhapHangItem]
+    ghi_chu: Optional[str] = ""
+
+
+class NhapHang(BaseModel):
+    id: str
+    so_phieu: str
+    ngay_nhap: str
+    ma_hang: str
+    ten_hang: str
+    so_luong: int
+    gia_nhap: float
+    thanh_tien: float
+    nha_cung_cap_id: str
+    ghi_chu: str
+    row_num: Optional[int] = None
+
+
+# ─── XuatHang (Export Goods) ─────────────────────────────────────────────────
+
+class XuatHangItem(BaseModel):
+    ma_hang: str
+    ten_hang: str
+    so_luong: int
+    gia_ban: float
+
+
+class XuatHangCreate(BaseModel):
+    ngay_xuat: str  # YYYY-MM-DD
+    khach_hang_id: Optional[str] = ""
+    khach_hang_ten: Optional[str] = ""
+    khach_hang_dia_chi: Optional[str] = ""
+    khach_hang_sdt: Optional[str] = ""
+    items: List[XuatHangItem]
+    ghi_chu: Optional[str] = ""
+
+
+class XuatHang(BaseModel):
+    id: str
+    so_phieu: str
+    ngay_xuat: str
+    ma_hang: str
+    ten_hang: str
+    so_luong: int
+    gia_ban: float
+    thanh_tien: float
+    khach_hang_id: str
+    ghi_chu: str
+    row_num: Optional[int] = None

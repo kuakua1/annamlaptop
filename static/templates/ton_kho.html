@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Hàng Hóa Tồn Kho - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Báo Cáo Hàng Hóa Tồn Kho{% endblock %}
+
+{% block content %}
+<!-- Stat Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--primary) !important;">
+            <div class="card-body d-flex align-items-center justify-content-between p-3">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Mặt Hàng Còn Tồn</div>
+                    <div class="fs-3 fw-bold text-dark font-monospace mt-1" id="stat-items">0</div>
+                    <small class="text-secondary" id="stat-items-sub">đang có hàng sẵn</small>
+                </div>
+                <div class="bg-primary bg-opacity-10 p-3 rounded-circle text-primary fs-3">
+                    <i class="bi bi-boxes"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--success) !important;">
+            <div class="card-body d-flex align-items-center justify-content-between p-3">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Tổng Số Lượng Tồn</div>
+                    <div class="fs-3 fw-bold text-success font-monospace mt-1" id="stat-qty">0</div>
+                    <small class="text-secondary">tổng sản phẩm lưu kho</small>
+                </div>
+                <div class="bg-success bg-opacity-10 p-3 rounded-circle text-success fs-3">
+                    <i class="bi bi-box-seam"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--purple) !important;">
+            <div class="card-body d-flex align-items-center justify-content-between p-3">
+                <div>
+                    <div class="text-muted small fw-semibold text-uppercase">Tổng Giá Trị Tồn Kho</div>
+                    <div class="fs-3 fw-bold text-primary font-monospace mt-1" id="stat-val">0 đ</div>
+                    <small class="text-secondary">tính theo giá vốn nhập</small>
+                </div>
+                <div class="bg-info bg-opacity-10 p-3 rounded-circle text-primary fs-3">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-boxes text-primary fs-5"></i>
+            <span class="fw-bold fs-6">Danh Sách Hàng Hóa Tồn Kho</span>
+            <span class="badge bg-primary rounded-pill ms-1" id="total-count">0</span>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-success btn-sm" onclick="exportStockExcel()">
+                <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="printStockReport()">
+                <i class="bi bi-printer me-1"></i>In Báo Cáo Tồn
+            </button>
+            <a href="/nhap-hang" class="btn btn-primary btn-sm">
+                <i class="bi bi-download me-1"></i>Nhập Thêm Hàng
+            </a>
+        </div>
+    </div>
+    <div class="card-body p-3">
+        <!-- Filters -->
+        <div class="row g-2 mb-3 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" class="form-control border-start-0" id="search-input" placeholder="Tìm theo mã hàng, tên hàng hóa...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" id="filter-danh-muc">
+                    <option value="">Tất cả danh mục</option>
+                    <option value="Laptop">Laptop</option>
+                    <option value="Linh Kiện Laptop">Linh Kiện Laptop</option>
+                    <option value="Linh Kiện PC">Linh Kiện PC</option>
+                    <option value="Phụ Kiện">Phụ Kiện</option>
+                    <option value="Khác">Khác</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select form-select-sm" id="filter-stock-status">
+                    <option value="all">Tất cả tình trạng tồn kho</option>
+                    <option value="in_stock" selected>Chỉ hàng còn tồn (> 0)</option>
+                    <option value="low_stock">⚠️ Sắp hết hàng (1 - 2 cái)</option>
+                    <option value="out_of_stock">❌ Đã hết hàng (= 0)</option>
+                </select>
+            </div>
+            <div class="col-md-2 text-end">
+                <button class="btn btn-sm btn-outline-secondary w-100" onclick="loadStockData()">
+                    <i class="bi bi-arrow-clockwise"></i> Làm mới
+                </button>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive border rounded" id="printable-stock-area">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-dark small" style="background-color: #1e293b !important; color: #fff;">
+                    <tr style="background-color: #1e293b !important;">
+                        <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #fff;">STT</th>
+                        <th style="width: 100px; background-color: #1e293b !important; color: #fff;">Mã Hàng</th>
+                        <th style="background-color: #1e293b !important; color: #fff;">Tên Hàng Hóa</th>
+                        <th style="width: 120px; background-color: #1e293b !important; color: #fff;">Danh Mục</th>
+                        <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #fff;">ĐVT</th>
+                        <th class="text-end" style="width: 130px; background-color: #1e293b !important; color: #fff;">Giá Vốn Nhập</th>
+                        <th class="text-end" style="width: 130px; background-color: #1e293b !important; color: #fff;">Giá Bán Gợi Ý</th>
+                        <th class="text-center" style="width: 160px; background-color: #1e293b !important; color: #fff;">SL Tồn Kho</th>
+                        <th class="text-end text-nowrap" style="min-width: 165px; width: 175px; background-color: #1e293b !important; color: #fff;">Giá Trị Tồn</th>
+                        <th class="text-center no-print" style="width: 100px; background-color: #1e293b !important; color: #fff;">Thao Tác</th>
+                    </tr>
+                </thead>
+                <tbody id="stock-tbody">
+                    <tr><td colspan="10" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu tồn kho...</td></tr>
+                </tbody>
+                <tfoot class="table-light fw-bold border-top border-2" id="stock-tfoot" style="display: none;">
+                    <tr>
+                        <td colspan="7" class="text-end text-uppercase small text-secondary">Tổng cộng tồn kho:</td>
+                        <td class="text-center text-success fs-6 font-monospace" id="tf-qty">0</td>
+                        <td class="text-end text-primary fs-5 font-monospace text-nowrap" id="tf-val">0 đ</td>
+                        <td class="no-print"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/ton_kho.js?v=20261003_v8"></script>
+{% endblock %}

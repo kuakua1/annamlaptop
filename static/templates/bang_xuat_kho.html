@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Bảng Xuất Kho - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Bảng Chi Tiết Xuất Kho{% endblock %}
+
+{% block content %}
+<!-- Stat Cards -->
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--danger) !important;">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-semibold text-uppercase">Số Lần / Dòng Xuất</div>
+                <div class="fs-3 fw-bold text-dark font-monospace mt-1" id="stat-count">0</div>
+                <small class="text-secondary" id="stat-month-label">trong tháng được chọn</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--warning) !important;">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-semibold text-uppercase">Tổng Số Lượng Xuất</div>
+                <div class="fs-3 fw-bold text-dark font-monospace mt-1" id="stat-qty">0</div>
+                <small class="text-secondary">tổng sản phẩm đã xuất</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--primary) !important;">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-semibold text-uppercase">Tổng Doanh Thu Xuất</div>
+                <div class="fs-3 fw-bold text-danger font-monospace mt-1" id="stat-revenue">0 đ</div>
+                <small class="text-secondary">tổng tiền bán hàng</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--success) !important;">
+            <div class="card-body p-3">
+                <div class="text-muted small fw-semibold text-uppercase">Lợi Nhuận Gộp</div>
+                <div class="fs-3 fw-bold text-success font-monospace mt-1" id="stat-profit">0 đ</div>
+                <small class="text-secondary">doanh thu trừ giá vốn</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-journal-arrow-up text-danger fs-5"></i>
+            <span class="fw-bold fs-6">Sổ Nhật Ký Xuất Kho</span>
+            <span class="badge bg-danger rounded-pill ms-1" id="total-count">0</span>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-success btn-sm" onclick="exportExportToExcel()">
+                <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="printExportReport()">
+                <i class="bi bi-printer me-1"></i>In Bảng Xuất
+            </button>
+            <a href="/xuat-hang" class="btn btn-danger btn-sm">
+                <i class="bi bi-upload me-1"></i>Tạo Phiếu Xuất Mới
+            </a>
+        </div>
+    </div>
+    <div class="card-body p-3">
+        <!-- Bộ lọc tháng & Tìm kiếm đa năng -->
+        <div class="row g-2 mb-3 align-items-center">
+            <div class="col-md-3">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light text-muted"><i class="bi bi-calendar3 me-1"></i>Tháng</span>
+                    <input type="month" class="form-control" id="filter-month">
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearMonthFilter()" title="Xem tất cả">Tất cả</button>
+                </div>
+            </div>
+            <div class="col-md-7">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                    <input type="text" class="form-control border-start-0" id="search-input"
+                        placeholder="Tìm hàng đã xuất, tên khách xuất, số điện thoại, địa chỉ của khách, số phiếu...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()" title="Xóa tìm kiếm">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-2 text-end">
+                <button class="btn btn-sm btn-outline-secondary w-100" onclick="loadExportData()">
+                    <i class="bi bi-arrow-clockwise"></i> Làm mới
+                </button>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-responsive border rounded" id="printable-export-area">
+            <table class="table table-hover align-middle mb-0">
+                <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                    <tr style="background-color: #1e293b !important;">
+                        <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
+                        <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Ngày Xuất</th>
+                        <th style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Số Phiếu</th>
+                        <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Mã Hàng</th>
+                        <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Hàng Hóa</th>
+                        <th class="text-center" style="width: 65px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
+                        <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">SL</th>
+                        <th class="text-end text-nowrap" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Đơn Giá Bán</th>
+                        <th class="text-end text-nowrap" style="min-width: 160px; width: 165px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Thành Tiền</th>
+                        <th style="min-width: 200px; background-color: #1e293b !important; color: #ffffff !important;">Khách Hàng (Tên, SĐT, Địa chỉ)</th>
+                        <th style="width: 150px; background-color: #1e293b !important; color: #ffffff !important;">Ghi Chú</th>
+                        <th class="text-center no-print" style="width: 80px; background-color: #1e293b !important; color: #ffffff !important;">Chi Tiết</th>
+                    </tr>
+                </thead>
+                <tbody id="export-tbody">
+                    <tr><td colspan="12" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-danger me-2"></div>Đang tải dữ liệu xuất kho...</td></tr>
+                </tbody>
+                <tfoot class="table-light fw-bold border-top border-2" id="export-tfoot" style="display: none;">
+                    <tr>
+                        <td colspan="6" class="text-end text-uppercase small text-secondary">Tổng cộng:</td>
+                        <td class="text-center text-danger fs-6 font-monospace" id="tf-qty">0</td>
+                        <td></td>
+                        <td class="text-end text-danger fs-5 font-monospace text-nowrap" id="tf-val">0 đ</td>
+                        <td colspan="3" class="no-print"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chi Tiết Phiếu Xuất -->
+<div class="modal fade" id="detail-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Chi Tiết Phiếu Xuất Kho</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="detail-modal-body"></div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="printReceiptModal('detail-modal-body', 'Phiếu Xuất Kho')">
+                    <i class="bi bi-printer me-1"></i>In Phiếu
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/bang_xuat_kho.js?v=20261003_v5"></script>
+{% endblock %}
