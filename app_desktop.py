@@ -1,9 +1,33 @@
 import sys
 import os
+import io
 import socket
 import threading
 import time
 from pathlib import Path
+
+# Safe stdout/stderr for PyInstaller GUI mode
+class SafeStream(io.StringIO):
+    def write(self, s):
+        pass
+    def flush(self):
+        pass
+
+if sys.stdout is None:
+    sys.stdout = SafeStream()
+else:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+if sys.stderr is None:
+    sys.stderr = SafeStream()
+else:
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 # Setup paths
 if getattr(sys, "frozen", False):
@@ -25,10 +49,18 @@ webview.settings['ALLOW_DOWNLOADS'] = True
 webview.settings['ALLOW_FILE_URLS'] = True
 webview.settings['OPEN_EXTERNAL_LINKS_IN_BROWSER'] = True
 
+LOG_FILE = os.path.join(os.environ.get("TEMP", "C:\\temp"), "kho_hang_app.log")
+
+def debug_log(msg):
+    try:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+    except Exception:
+        pass
+
 def find_available_port(start_port=8000):
     for port in range(start_port, start_port + 50):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(('127.0.0.1', port))
                 return port
@@ -50,7 +82,9 @@ def wait_for_server(port, timeout=15):
     return False
 
 def main_desktop():
+    debug_log("=== main_desktop started ===")
     port = find_available_port(8000)
+    debug_log(f"Selected port: {port}")
     
     server_config = uvicorn.Config(
         app=app,
@@ -63,22 +97,16 @@ def main_desktop():
     
     server_thread = threading.Thread(target=server.run, daemon=True)
     server_thread.start()
+    debug_log("Uvicorn server thread started")
     
     # Wait until server is listening
-    wait_for_server(port)
+    if wait_for_server(port):
+        debug_log(f"Server is listening on 127.0.0.1:{port}")
+    else:
+        debug_log(f"Server wait timeout on 127.0.0.1:{port}")
     
-    # Locate icon
-    icon_path = None
-    candidates = [BASE_DIR / "static" / "favicon.ico"]
-    if getattr(sys, "frozen", False):
-        candidates.append(Path(sys.executable).parent / "static" / "favicon.ico")
-        
-    for candidate in candidates:
-        if candidate and candidate.exists():
-            icon_path = str(candidate)
-            break
-
     # Create native WebView2 desktop window
+    debug_log("Creating webview window...")
     window = webview.create_window(
         title="Kho Hàng An Nam",
         url=f"http://127.0.0.1:{port}",
@@ -89,8 +117,13 @@ def main_desktop():
         confirm_close=False
     )
     
-    # Start webview GUI loop (blocks until window is closed)
+    icon_path = str(BASE_DIR / "static" / "favicon.ico")
+    if not os.path.exists(icon_path):
+        icon_path = None
+        
+    debug_log(f"Starting webview GUI loop with icon: {icon_path}...")
     webview.start(icon=icon_path)
+    debug_log("Webview GUI loop ended by user")
     
     # Clean shutdown
     server.should_exit = True
@@ -99,4 +132,15 @@ def main_desktop():
 if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
-    main_desktop()
+    try:
+        main_desktop()
+    except Exception as e:
+        import traceback
+        err_msg = f"CRASH: {e}\n{traceback.format_exc()}"
+        debug_log(err_msg)
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, f"Lỗi khởi động ứng dụng:\n{e}", "Kho Hàng An Nam - Lỗi", 0x10)
+        except Exception:
+            pass
+        sys.exit(1)

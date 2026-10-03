@@ -1,7 +1,31 @@
 import os
 import sys
+import io
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+# Safe stdout/stderr for PyInstaller GUI mode
+class SafeStream(io.StringIO):
+    def write(self, s):
+        pass
+    def flush(self):
+        pass
+
+if sys.stdout is None:
+    sys.stdout = SafeStream()
+else:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+if sys.stderr is None:
+    sys.stderr = SafeStream()
+else:
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,10 +53,15 @@ async def lifespan(app: FastAPI):
     """Initialize services on startup."""
     try:
         sheets_service.initialize()
-        print("✓ Google Sheets service khởi tạo thành công")
+        try:
+            print("[OK] Google Sheets service khoi tao thanh cong")
+        except Exception:
+            pass
     except Exception as e:
-        print(f"✗ Lỗi khởi tạo Google Sheets: {e}")
-        print("  Ứng dụng vẫn khởi động nhưng các tính năng liên quan đến Sheets sẽ không hoạt động.")
+        try:
+            print(f"[ERROR] Loi khoi tao Google Sheets: {e}")
+        except Exception:
+            pass
     yield
 
 
