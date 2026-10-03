@@ -9,7 +9,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 
 # Đường dẫn tuyệt đối tới thư mục gốc project (không phụ thuộc vào thư mục chạy lệnh)
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)).resolve()
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+
 sys.path.insert(0, str(BASE_DIR))
 
 # Chuyển working directory về project root để các module khác hoạt động đúng

@@ -1,7 +1,18 @@
 import os
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)).resolve()
+    EXE_DIR = Path(sys.executable).parent.resolve()
+    if (EXE_DIR / ".env").exists():
+        load_dotenv(dotenv_path=EXE_DIR / ".env")
+    else:
+        load_dotenv(dotenv_path=BASE_DIR / ".env")
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+    load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # Google Sheets
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
