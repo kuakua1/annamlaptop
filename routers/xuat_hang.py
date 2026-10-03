@@ -152,10 +152,10 @@ async def create_xuat_hang(
         raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Khách Hàng")
 
     for item in data.items:
-        if item.gia_ban is None or item.gia_ban <= 0:
+        if item.gia_ban is None or item.gia_ban < 0:
             raise HTTPException(
                 status_code=400,
-                detail=f"Giá bán của mặt hàng {item.ten_hang or item.ma_hang} không được để trống hoặc bằng 0"
+                detail=f"Giá bán của mặt hàng {item.ten_hang or item.ma_hang} không được để trống hoặc âm"
             )
 
     try:

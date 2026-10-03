@@ -417,8 +417,8 @@ async function saveReceipt() {
             valid = false;
             return;
         }
-        if (!gia_val || isNaN(gia_ban) || gia_ban <= 0) {
-            showToast(`Vui lòng nhập Giá Bán hợp lệ (> 0) cho mặt hàng "${ten_hang}"`, 'error');
+        if (gia_val === '' || isNaN(gia_ban) || gia_ban < 0) {
+            showToast(`Vui lòng nhập Giá Bán hợp lệ (≥ 0) cho mặt hàng "${ten_hang}"`, 'error');
             const el = document.getElementById(`gia-${id}`);
             if (el) {
                 el.focus();
