@@ -135,9 +135,27 @@ async def create_xuat_hang(
     data: XuatHangCreate,
     request: Request,
     user: str = Depends(require_login)
-):
     if not data.items:
         raise HTTPException(status_code=400, detail="Phiếu xuất phải có ít nhất 1 mặt hàng")
+
+    kh_ten = (data.khach_hang_ten or "").strip()
+    kh_dia_chi = (data.khach_hang_dia_chi or "").strip()
+    kh_sdt = (data.khach_hang_sdt or "").strip()
+    kh_id = (data.khach_hang_id or "").strip()
+
+    if not kh_ten:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Khách Hàng")
+    if not kh_dia_chi:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập Địa Chỉ Khách Hàng")
+    if not kh_sdt:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Khách Hàng")
+
+    for item in data.items:
+        if item.gia_ban is None or item.gia_ban <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Giá bán của mặt hàng {item.ten_hang or item.ma_hang} không được để trống hoặc bằng 0"
+            )
 
     try:
         # Check stock availability first
@@ -155,11 +173,6 @@ async def create_xuat_hang(
         so_phieu = sheets_service.generate_so_phieu_xuat(data.ngay_xuat)
 
         # ── Tự động lưu khách hàng vào database nếu chưa có ──────────────
-        kh_ten = (data.khach_hang_ten or "").strip()
-        kh_id = (data.khach_hang_id or "").strip()
-        kh_sdt = (data.khach_hang_sdt or "").strip()
-        kh_dia_chi = (data.khach_hang_dia_chi or "").strip()
-
         if kh_ten or kh_id or kh_sdt:
             kh_list = sheets_service.get_all_records(SHEET_KHACH_HANG)
             matched = None

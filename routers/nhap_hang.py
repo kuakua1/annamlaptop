@@ -128,15 +128,20 @@ async def create_nhap_hang(
     if not data.items:
         raise HTTPException(status_code=400, detail="Phiếu nhập phải có ít nhất 1 mặt hàng")
 
+    ncc_ten = (data.nha_cung_cap_ten or "").strip()
+    ncc_sdt = (data.nha_cung_cap_sdt or "").strip()
+    ncc_id = (data.nha_cung_cap_id or "").strip()
+    ncc_dia_chi = (data.nha_cung_cap_dia_chi or "").strip()
+
+    if not ncc_ten:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Nhà Cung Cấp")
+    if not ncc_sdt:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Nhà Cung Cấp")
+
     try:
         so_phieu = sheets_service.generate_so_phieu_nhap(data.ngay_nhap)
 
         # ── Tự động lưu nhà cung cấp vào database nếu chưa có ──────────────
-        ncc_ten = (data.nha_cung_cap_ten or "").strip()
-        ncc_id = (data.nha_cung_cap_id or "").strip()
-        ncc_sdt = (data.nha_cung_cap_sdt or "").strip()
-        ncc_dia_chi = (data.nha_cung_cap_dia_chi or "").strip()
-
         if ncc_ten or ncc_id or ncc_sdt:
             ncc_list = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
             matched = None

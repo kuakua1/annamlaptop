@@ -380,6 +380,28 @@ async function saveReceipt() {
 
     if (!ngay) { showToast('Vui lòng chọn ngày nhập', 'error'); return; }
 
+    if (!ncc_ten) {
+        showToast('Vui lòng nhập Tên Nhà Cung Cấp', 'error');
+        const el = document.getElementById('f-ncc-ten');
+        if (el) {
+            el.focus();
+            el.classList.add('is-invalid');
+            setTimeout(() => el.classList.remove('is-invalid'), 3000);
+        }
+        return;
+    }
+
+    if (!ncc_sdt) {
+        showToast('Vui lòng nhập Số Điện Thoại Nhà Cung Cấp', 'error');
+        const el = document.getElementById('f-ncc-sdt');
+        if (el) {
+            el.focus();
+            el.classList.add('is-invalid');
+            setTimeout(() => el.classList.remove('is-invalid'), 3000);
+        }
+        return;
+    }
+
     const rows = document.querySelectorAll('#items-tbody tr');
     if (rows.length === 0) { showToast('Vui lòng thêm ít nhất 1 mặt hàng', 'error'); return; }
 

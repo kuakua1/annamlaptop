@@ -354,6 +354,39 @@ async function saveReceipt() {
 
     if (!ngay) { showToast('Vui lòng chọn ngày xuất', 'error'); return; }
 
+    if (!kh_ten) {
+        showToast('Vui lòng nhập Tên Khách Hàng', 'error');
+        const el = document.getElementById('f-kh-ten');
+        if (el) {
+            el.focus();
+            el.classList.add('is-invalid');
+            setTimeout(() => el.classList.remove('is-invalid'), 3000);
+        }
+        return;
+    }
+
+    if (!kh_dia_chi) {
+        showToast('Vui lòng nhập Địa Chỉ Khách Hàng', 'error');
+        const el = document.getElementById('f-kh-dia-chi');
+        if (el) {
+            el.focus();
+            el.classList.add('is-invalid');
+            setTimeout(() => el.classList.remove('is-invalid'), 3000);
+        }
+        return;
+    }
+
+    if (!kh_sdt) {
+        showToast('Vui lòng nhập Số Điện Thoại Khách Hàng', 'error');
+        const el = document.getElementById('f-kh-sdt');
+        if (el) {
+            el.focus();
+            el.classList.add('is-invalid');
+            setTimeout(() => el.classList.remove('is-invalid'), 3000);
+        }
+        return;
+    }
+
     const rows = document.querySelectorAll('#items-tbody tr');
     if (rows.length === 0) { showToast('Vui lòng thêm ít nhất 1 mặt hàng', 'error'); return; }
 
@@ -366,7 +399,8 @@ async function saveReceipt() {
         const ten_hang = prod ? prod.ten_hang : (document.getElementById(`prod-input-${id}`)?.value || '');
         const ton = prod ? prod.ton_kho : 0;
         const so_luong = parseInt(document.getElementById(`sl-${id}`).value) || 0;
-        const gia_ban = parseFloat(document.getElementById(`gia-${id}`).value) || 0;
+        const gia_val = document.getElementById(`gia-${id}`)?.value.trim();
+        const gia_ban = parseFloat(gia_val);
 
         if (!ma_hang) {
             showToast('Vui lòng chọn hàng hóa từ gợi ý cho tất cả các dòng', 'error');
@@ -380,6 +414,17 @@ async function saveReceipt() {
         }
         if (so_luong > ton) {
             showToast(`Hàng "${ten_hang}" không đủ tồn kho (còn ${ton})`, 'error');
+            valid = false;
+            return;
+        }
+        if (!gia_val || isNaN(gia_ban) || gia_ban <= 0) {
+            showToast(`Vui lòng nhập Giá Bán hợp lệ (> 0) cho mặt hàng "${ten_hang}"`, 'error');
+            const el = document.getElementById(`gia-${id}`);
+            if (el) {
+                el.focus();
+                el.classList.add('is-invalid');
+                setTimeout(() => el.classList.remove('is-invalid'), 3000);
+            }
             valid = false;
             return;
         }
