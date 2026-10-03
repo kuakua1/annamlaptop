@@ -135,6 +135,7 @@ async def create_xuat_hang(
     data: XuatHangCreate,
     request: Request,
     user: str = Depends(require_login)
+):
     if not data.items:
         raise HTTPException(status_code=400, detail="Phiếu xuất phải có ít nhất 1 mặt hàng")
 
