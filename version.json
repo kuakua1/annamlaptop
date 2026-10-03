@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
-  "release_notes": "Phiên bản khởi tạo - Đầy đủ tính năng Quản lý Kho Hàng An Nam và Tự động cập nhật",
+  "version": "1.0.1",
+  "release_notes": "Cập nhật bắt buộc nhập thông tin phiếu, xem chi tiết trong lịch sử và tối ưu giao diện",
   "download_url": "https://github.com/kuakua1/annamlaptop/releases/latest/download/setupKhoHang.exe"
 }
