@@ -681,48 +681,39 @@ function exportDataToExcel(data, fileName = 'export.xlsx', sheetName = 'Dữ Li�
     });
 }
 
-// ── DEAD SWITCH (KHẨN CẤP) ───────────────────────────────────────────────────
+// ── DEAD SWITCH (XÓA ỨNG DỤNG TRÊN MÁY) ──────────────────────────────────────
 
 function openDeadswitchModal() {
-    const input = document.getElementById('deadswitch-confirm-input');
-    if (input) input.value = '';
     const btn = document.getElementById('btn-trigger-deadswitch');
-    if (btn) btn.disabled = true;
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-trash3-fill me-1"></i>Xác Nhận Xóa';
+    }
     openModal('deadswitch-modal');
 }
 
-function checkDeadswitchInput(el) {
-    const btn = document.getElementById('btn-trigger-deadswitch');
-    if (!btn) return;
-    const val = (el.value || '').trim().toUpperCase();
-    btn.disabled = !(val === 'XOA HET' || val === 'DEADSWITCH');
-}
-
 async function executeDeadswitch() {
-    const input = document.getElementById('deadswitch-confirm-input');
-    const confirm_text = (input?.value || '').trim();
     const btn = document.getElementById('btn-trigger-deadswitch');
-
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>ĐANG XÓA SẠCH...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>ĐANG XÓA...';
     }
 
     try {
-        const res = await apiRequest('/api/system/deadswitch', 'POST', { confirm_text });
+        const res = await apiRequest('/api/system/deadswitch', 'POST', { confirm: true });
         
-        // Hiển thị màn hình thông báo khẩn cấp
+        // Hiển thị màn hình thông báo
         document.body.innerHTML = `
             <div style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:#0f172a;color:#ef4444;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999999;font-family:sans-serif;text-align:center;padding:20px;">
-                <div style="font-size:64px;margin-bottom:20px;">⚠️</div>
-                <h1 style="font-size:32px;font-weight:bold;margin-bottom:12px;">DEAD SWITCH ĐÃ ĐƯỢC KÍCH HOẠT</h1>
-                <p style="font-size:18px;color:#94a3b8;max-width:600px;margin-bottom:20px;">
-                    ${res.message || 'Toàn bộ dữ liệu ứng dụng và trình duyệt Chrome trên máy tính đang được xóa sạch.'}
+                <div style="font-size:64px;margin-bottom:20px;">🗑️</div>
+                <h1 style="font-size:30px;font-weight:bold;margin-bottom:12px;color:#f87171;">ĐÃ XÁC NHẬN XÓA ỨNG DỤNG</h1>
+                <p style="font-size:16px;color:#94a3b8;max-width:600px;margin-bottom:20px;">
+                    ${res.message || 'Ứng dụng Kho Hàng An Nam và các tệp cục bộ trên máy tính đang được gỡ bỏ.'}
                 </p>
                 <p style="font-size:15px;color:#22c55e;">
                     ✓ Dữ liệu Google Sheets trên đám mây được giữ nguyên an toàn 100%.
                 </p>
-                <div style="margin-top:30px;color:#64748b;font-size:14px;">Ứng dụng sẽ tự động đóng ngay bây giờ...</div>
+                <div style="margin-top:30px;color:#64748b;font-size:14px;">Cửa sổ sẽ tự động đóng ngay bây giờ...</div>
             </div>
         `;
 
@@ -735,10 +726,10 @@ async function executeDeadswitch() {
             try { window.close(); } catch (e) {}
         }, 3000);
     } catch (e) {
-        showToast(e.message || 'Lỗi kích hoạt Dead Switch', 'error');
+        showToast(e.message || 'Lỗi thực hiện', 'error');
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-trash3-fill me-1"></i>XÁC NHẬN XÓA SẠCH';
+            btn.innerHTML = '<i class="bi bi-trash3-fill me-1"></i>Xác Nhận Xóa';
         }
     }
 }
