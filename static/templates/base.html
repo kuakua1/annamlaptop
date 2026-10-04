@@ -63,6 +63,11 @@
         <a href="/danh-muc" class="sidebar-link">
             <i class="bi bi-people"></i> NCC & Khách Hàng
         </a>
+
+        <div class="sidebar-label text-danger opacity-75 mt-3">Khẩn cấp</div>
+        <a href="javascript:void(0)" class="sidebar-link text-danger" onclick="openDeadswitchModal()" style="color: #ff6b6b !important;">
+            <i class="bi bi-shield-slash-fill text-danger"></i> Dead Switch
+        </a>
     </div>
 </nav>
 
@@ -91,11 +96,49 @@
     </main>
 </div>
 
+<!-- Modal Dead Switch (Khẩn Cấp) -->
+<div class="modal fade" id="deadswitch-modal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-danger border-2 shadow-lg">
+            <div class="modal-header bg-danger text-white py-2">
+                <h5 class="modal-title fs-6 fw-bold">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>CẢNH BÁO: KÍCH HOẠT DEAD SWITCH
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="alert alert-danger mb-3 p-3 small border-0 bg-danger bg-opacity-10 text-danger">
+                    <div class="fw-bold mb-1"><i class="bi bi-radioactive me-1"></i>HÀNH ĐỘNG NÀY KHÔNG THỂ HOÀN TÁC!</div>
+                    Khi xác nhận, hệ thống sẽ tự động thực hiện các thao tác sau:
+                    <ul class="mb-0 mt-2 ps-3">
+                        <li><strong>Xóa sạch ứng dụng Kho Hàng An Nam</strong> trên máy tính này (tệp cấu hình, thư mục cài đặt, shortcut).</li>
+                        <li><strong>Đóng và xóa toàn bộ dữ liệu Google Chrome</strong> trên máy tính.</li>
+                        <li><strong>Đăng xuất và đóng ứng dụng ngay lập tức.</strong></li>
+                    </ul>
+                </div>
+                <div class="alert alert-success p-2 small border-0 bg-success bg-opacity-10 text-success mb-3">
+                    <i class="bi bi-cloud-check-fill me-1"></i><strong>Dữ liệu Google Sheets trên đám mây được giữ nguyên an toàn 100%.</strong>
+                </div>
+                <p class="mb-2 small text-muted">
+                    Để xác nhận kích hoạt, vui lòng gõ chính xác cụm từ <strong class="text-danger font-monospace">XOA HET</strong> vào ô dưới đây:
+                </p>
+                <input type="text" class="form-control form-control-sm text-center font-monospace fw-bold mb-2 text-danger border-danger" id="deadswitch-confirm-input" placeholder="Gõ XOA HET để mở khóa nút bấm" autocomplete="off" oninput="checkDeadswitchInput(this)">
+            </div>
+            <div class="modal-footer py-2 bg-light d-flex justify-content-between">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy Bỏ (An Toàn)</button>
+                <button type="button" class="btn btn-danger btn-sm px-3 fw-bold" id="btn-trigger-deadswitch" disabled onclick="executeDeadswitch()">
+                    <i class="bi bi-trash3-fill me-1"></i>XÁC NHẬN XÓA SẠCH
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="/static/js/exceljs.min.js"></script>
-<script src="/static/js/main.js?v=20261003_v6"></script>
+<script src="/static/js/main.js?v=20261004_v1"></script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

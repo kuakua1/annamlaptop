@@ -45,7 +45,7 @@ os.chdir(BASE_DIR)
 
 from config import HOST, PORT, DEBUG
 from services.sheets_service import sheets_service
-from routers import auth, hang_hoa, nhap_hang, xuat_hang, nha_cung_cap, khach_hang, bao_cao, lich_su, danh_muc
+from routers import auth, hang_hoa, nhap_hang, xuat_hang, nha_cung_cap, khach_hang, bao_cao, lich_su, danh_muc, system
 
 
 @asynccontextmanager
@@ -110,6 +110,7 @@ app.include_router(khach_hang.router)
 app.include_router(bao_cao.router)
 app.include_router(lich_su.router)
 app.include_router(danh_muc.router)
+app.include_router(system.router)
 
 
 @app.exception_handler(404)
