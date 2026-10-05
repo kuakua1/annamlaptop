@@ -29,6 +29,24 @@ async def ton_kho_page(request: Request):
     return templates.TemplateResponse("ton_kho.html", {"request": request, "username": user})
 
 
+@router.get("/bang-nhap-xuat-ton", response_class=HTMLResponse)
+async def bang_nhap_xuat_ton_page(request: Request):
+    user = get_current_user(request)
+    if not user:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("bang_nhap_xuat_ton.html", {"request": request, "username": user})
+
+
+@router.get("/nhap-xuat-ton", response_class=HTMLResponse)
+async def nhap_xuat_ton_page_alias(request: Request):
+    user = get_current_user(request)
+    if not user:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("bang_nhap_xuat_ton.html", {"request": request, "username": user})
+
+
 def _safe_num(val, as_int=False):
     if val is None or val == "":
         return 0 if as_int else 0.0

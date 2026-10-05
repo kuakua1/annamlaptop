@@ -166,6 +166,18 @@ const TAB_DEFINITIONS = {
         url: '/bang-xuat-kho?embed=1',
         closable: true
     },
+    'bang-nhap-xuat-ton': {
+        title: 'Bảng Nhập Xuất Tồn',
+        icon: 'bi-table text-primary',
+        url: '/bang-nhap-xuat-ton?embed=1',
+        closable: true
+    },
+    'nhap-xuat-ton': {
+        title: 'Bảng Nhập Xuất Tồn',
+        icon: 'bi-table text-primary',
+        url: '/bang-nhap-xuat-ton?embed=1',
+        closable: true
+    },
     'nhap-hang': {
         title: 'Tạo Phiếu Nhập',
         icon: 'bi-download text-primary',
