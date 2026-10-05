@@ -17,8 +17,10 @@ class HangHoaCreate(BaseModel):
     danh_muc: Optional[str] = ""
     don_vi_tinh: Optional[str] = "Cái"
     gia_nhap: float = 0
-    gia_ban: float = 0
+    gia_ban: Optional[float] = 0
     ton_kho: int = 0
+    chi_tiet_lo: Optional[str] = ""
+    batches: Optional[List[dict]] = None
     ghi_chu: Optional[str] = ""
 
 
@@ -29,6 +31,8 @@ class HangHoaUpdate(BaseModel):
     gia_nhap: Optional[float] = None
     gia_ban: Optional[float] = None
     ton_kho: Optional[int] = None
+    chi_tiet_lo: Optional[str] = None
+    batches: Optional[List[dict]] = None
     ghi_chu: Optional[str] = None
 
 
@@ -39,8 +43,9 @@ class HangHoa(BaseModel):
     danh_muc: str
     don_vi_tinh: str
     gia_nhap: float
-    gia_ban: float
+    gia_ban: Optional[float] = 0
     ton_kho: int
+    chi_tiet_lo: Optional[str] = ""
     ghi_chu: str
     row_num: Optional[int] = None
 

@@ -572,6 +572,10 @@ function escapeHtml(str) {
 }
 
 function printReceiptModal(elementId = 'detail-modal-body', title = 'Phiếu In') {
+    if (window.currentReceiptDetail) {
+        printOfficialReceipt(window.currentReceiptDetail);
+        return;
+    }
     const el = document.getElementById(elementId);
     if (!el) return;
     const printWindow = window.open('', '_blank', 'width=850,height=700');
@@ -639,6 +643,344 @@ function printReceiptModal(elementId = 'detail-modal-body', title = 'Phiếu In'
                     <p class="text-muted small">(Ký, ghi rõ họ tên)</p>
                 </div>
             </div>
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 400);
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+
+// ── Hàm đọc số thành chữ chuẩn kế toán Việt Nam ───────────────────────────────
+
+function docSoThanhChu(so) {
+    if (!so || isNaN(so) || Number(so) === 0) return 'Không đồng y.';
+    so = Math.round(Math.abs(Number(so)));
+    const chuSo = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+    const donVi = ['', 'nghìn', 'triệu', 'tỷ', 'nghìn tỷ', 'triệu tỷ'];
+
+    function docBlock(n, showFull) {
+        let tram = Math.floor(n / 100);
+        let chuc = Math.floor((n % 100) / 10);
+        let dv = n % 10;
+        let res = '';
+        if (showFull || tram > 0) {
+            res += chuSo[tram] + ' trăm ';
+        }
+        if (chuc > 1) {
+            res += chuSo[chuc] + ' mươi ';
+            if (dv === 1) res += 'mốt ';
+            else if (dv === 5) res += 'lăm ';
+            else if (dv > 0) res += chuSo[dv] + ' ';
+        } else if (chuc === 1) {
+            res += 'mười ';
+            if (dv === 5) res += 'lăm ';
+            else if (dv > 0) res += chuSo[dv] + ' ';
+        } else if (showFull && chuc === 0 && dv > 0) {
+            res += 'lẻ ' + chuSo[dv] + ' ';
+        } else if (dv > 0) {
+            res += chuSo[dv] + ' ';
+        }
+        return res.trim();
+    }
+
+    let str = String(so);
+    let blocks = [];
+    while (str.length > 0) {
+        blocks.unshift(parseInt(str.slice(-3)));
+        str = str.slice(0, -3);
+    }
+
+    let words = [];
+    for (let i = 0; i < blocks.length; i++) {
+        let b = blocks[i];
+        if (b > 0) {
+            let bText = docBlock(b, i > 0);
+            let dvText = donVi[blocks.length - 1 - i];
+            words.push(bText + (dvText ? ' ' + dvText : ''));
+        }
+    }
+
+    let ketQua = words.join(', ').trim();
+    return ketQua.charAt(0).toUpperCase() + ketQua.slice(1) + ' đồng y.';
+}
+
+// ── In Phiếu Xuất Kho / Phiếu Nhập Kho Chuẩn Mẫu TT 133/2016/TT-BTC ───────────
+
+function printOfficialReceipt(receiptData = null, receiptType = null) {
+    const data = receiptData || window.currentReceiptDetail;
+    if (!data) {
+        printReceiptModal();
+        return;
+    }
+
+    const type = receiptType || data.type || (data.so_phieu && data.so_phieu.startsWith('XH') ? 'xuat' : 'nhap');
+    const isXuat = type === 'xuat';
+
+    const so_phieu = data.so_phieu || '';
+    const rawDate = data.ngay || data.ngay_xuat || data.ngay_nhap || new Date().toISOString().slice(0, 10);
+    
+    // Parse ngày tháng
+    const parts = String(rawDate).split('-');
+    const year = parts[0] || '2026';
+    const month = parts[1] || '10';
+    const day = parts[2] || '01';
+    const ngayText = `Ngày ${day} tháng ${month} năm ${year}`;
+
+    // Đối tác
+    const doiTac = isXuat ? (data.khach_hang || {}) : (data.nha_cung_cap || {});
+    const tenDoiTac = doiTac.ten_kh || doiTac.ten_ncc || data.nha_cung_cap_id || data.khach_hang_id || (isXuat ? 'Khách lẻ' : 'Nhà cung cấp lẻ');
+    const diaChiDoiTac = doiTac.dia_chi || data.dia_chi || '';
+    const sdtDoiTac = doiTac.dien_thoai || data.dien_thoai || '';
+    const ghiChu = data.ghi_chu || '';
+
+    const items = data.items || [];
+    const total = data.total || 0;
+
+    const formatVNDClean = (v) => {
+        if (!v || isNaN(v)) return '0';
+        return Math.round(Number(v)).toLocaleString('vi-VN');
+    };
+
+    const formatQty = (q) => {
+        if (!q || isNaN(q)) return '0,00';
+        return Number(q).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    const itemRowsHtml = items.map((it, idx) => `
+        <tr>
+            <td style="border: 1px solid #000; padding: 5px 4px; text-align: center;">${idx + 1}</td>
+            <td style="border: 1px solid #000; padding: 5px 6px; text-align: left;">${escapeHtml(it.ten_hang)}</td>
+            <td style="border: 1px solid #000; padding: 5px 4px; text-align: center;">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
+            <td style="border: 1px solid #000; padding: 5px 4px; text-align: center;">${formatQty(it.so_luong)}</td>
+            <td style="border: 1px solid #000; padding: 5px 6px; text-align: right;">${formatVNDClean(isXuat ? (it.gia_ban !== undefined ? it.gia_ban : it.don_gia) : (it.gia_nhap !== undefined ? it.gia_nhap : it.don_gia))}</td>
+            <td style="border: 1px solid #000; padding: 5px 6px; text-align: right;">${formatVNDClean(it.thanh_tien)}</td>
+        </tr>
+    `).join('');
+
+    const printWindow = window.open('', '_blank', 'width=850,height=750');
+    if (!printWindow) {
+        window.print();
+        return;
+    }
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>${isXuat ? 'Phiếu Xuất Kho' : 'Phiếu Nhập Kho'} - ${so_phieu}</title>
+            <style>
+                @page {
+                    size: A4 portrait;
+                    margin: 15mm 15mm 15mm 15mm;
+                }
+                body {
+                    font-family: 'Times New Roman', Times, serif;
+                    font-size: 11pt;
+                    line-height: 1.4;
+                    color: #000;
+                    margin: 0;
+                    padding: 20px;
+                }
+                .no-print-bar {
+                    display: flex;
+                    justify-content: flex-end;
+                    margin-bottom: 15px;
+                }
+                .btn-print {
+                    background: #0284c7;
+                    color: #fff;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 13px;
+                }
+                @media print {
+                    .no-print-bar { display: none !important; }
+                    body { padding: 0; }
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                }
+                th, td {
+                    border: 1px solid #000;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="no-print-bar">
+                <button class="btn-print" onclick="window.print()">🖨️ In Phiếu (A4)</button>
+            </div>
+
+            <!-- Top Header -->
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                <div style="width: 58%; font-size: 11pt; line-height: 1.45;">
+                    <div><strong>Đơn vị:</strong> CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM</div>
+                    <div style="border-bottom: 1px dotted #000; padding-bottom: 2px; margin-top: 2px;">
+                        <strong>Địa chỉ:</strong> 454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam
+                    </div>
+                    <div style="border-bottom: 1px dotted #000; padding-bottom: 2px; margin-top: 2px;">
+                        <strong>ĐT:</strong> 0000000000 - Fax: 0000000000
+                    </div>
+                </div>
+
+                <div style="width: 40%; text-align: center; font-size: 11pt; line-height: 1.35;">
+                    <div style="font-weight: bold;">Mẫu số ${isXuat ? '02-VT' : '01-VT'}</div>
+                    <div style="font-style: italic; font-size: 9pt;">(Ban hành theo TT 133/2016/TT-BTC<br>ngày 26/08/2016 của Bộ Trưởng BTC)</div>
+                    <div style="margin-top: 6px; text-align: left; padding-left: 30px;">
+                        <div style="border-bottom: 1px dotted #000; padding-bottom: 1px;">
+                            <strong>Số :</strong> <span style="font-weight: bold;">${so_phieu}</span>
+                        </div>
+                        <div style="border-bottom: 1px dotted #000; padding-bottom: 1px;">
+                            <strong>Nợ :</strong> ${isXuat ? '131' : '156'}
+                        </div>
+                        <div style="border-bottom: 1px dotted #000; padding-bottom: 1px;">
+                            <strong>Có :</strong> ${isXuat ? '5111' : '331'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Title -->
+            <div style="text-align: center; margin-bottom: 15px;">
+                <h2 style="font-weight: bold; margin: 0; font-size: 18pt; text-transform: uppercase;">
+                    ${isXuat ? 'PHIẾU XUẤT KHO' : 'PHIẾU NHẬP KHO'}
+                </h2>
+                <div style="font-style: italic; font-size: 11pt; margin-top: 4px;">
+                    ${ngayText}
+                </div>
+            </div>
+
+            <!-- Details -->
+            <div style="font-size: 11pt; line-height: 1.8; margin-bottom: 15px;">
+                <div style="border-bottom: 1px dotted #000; display: flex;">
+                    <span style="white-space: nowrap;">${isXuat ? 'Họ, tên người nhận hàng :' : 'Họ, tên người giao hàng :'}</span>
+                    <span style="flex-grow: 1; padding-left: 8px; font-weight: bold;">${escapeHtml(tenDoiTac)}</span>
+                </div>
+                <div style="border-bottom: 1px dotted #000; display: flex;">
+                    <span style="white-space: nowrap;">Địa chỉ :</span>
+                    <span style="flex-grow: 1; padding-left: 8px;">${escapeHtml(diaChiDoiTac)}${sdtDoiTac ? ' ' + escapeHtml(sdtDoiTac) : ''}</span>
+                </div>
+                <div style="border-bottom: 1px dotted #000; display: flex;">
+                    <span style="white-space: nowrap;">Lý do :</span>
+                    <span style="flex-grow: 1; padding-left: 8px;">${escapeHtml(ghiChu || (isXuat ? 'Xuất bán hàng hóa' : 'Nhập hàng vào kho'))}</span>
+                </div>
+                <div style="border-bottom: 1px dotted #000; display: flex; justify-content: space-between;">
+                    <div>
+                        <span>${isXuat ? 'Kho xuất :' : 'Kho nhập :'}</span>
+                        <span style="padding-left: 8px; font-weight: bold;">Kho An Nam</span>
+                    </div>
+                    <div>
+                        <span>Địa điểm:</span>
+                        <span style="padding-left: 8px;">454 Nguyễn Trãi, Hạc Thành, Thanh Hóa</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <table style="width: 100%; border-collapse: collapse; font-size: 11pt; margin-bottom: 10px;">
+                <thead>
+                    <tr style="text-align: center; font-weight: bold;">
+                        <th style="padding: 5px 4px; width: 45px;">STT</th>
+                        <th style="padding: 5px 6px;">Tên hàng hóa, dịch vụ</th>
+                        <th style="padding: 5px 4px; width: 55px;">ĐVT</th>
+                        <th style="padding: 5px 4px; width: 75px;">Số lượng</th>
+                        <th style="padding: 5px 6px; width: 110px;">Đơn giá</th>
+                        <th style="padding: 5px 6px; width: 125px;">Thành tiền</th>
+                    </tr>
+                    <tr style="text-align: center; font-weight: bold; background-color: #fafafa;">
+                        <th style="padding: 2px;">A</th>
+                        <th style="padding: 2px;">B</th>
+                        <th style="padding: 2px;">C</th>
+                        <th style="padding: 2px;">1</th>
+                        <th style="padding: 2px;">2</th>
+                        <th style="padding: 2px;">3</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${itemRowsHtml}
+                    <!-- Dòng Tổng cộng -->
+                    <tr style="font-weight: bold;">
+                        <td colspan="2" style="padding: 5px 8px; text-align: center;">Tổng cộng</td>
+                        <td style="padding: 5px; text-align: center;">-</td>
+                        <td style="padding: 5px; text-align: center;">-</td>
+                        <td style="padding: 5px; text-align: center;">-</td>
+                        <td style="padding: 5px 8px; text-align: right;">${formatVNDClean(total)}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <!-- Dưới bảng -->
+            <div style="font-size: 11pt; line-height: 1.8; margin-bottom: 20px;">
+                <div style="border-bottom: 1px dotted #000; display: flex;">
+                    <span style="white-space: nowrap;">Số tiền phải thanh toán :</span>
+                    <span style="flex-grow: 1; padding-left: 8px; font-style: italic;">${docSoThanhChu(total)}</span>
+                </div>
+                <div style="font-size: 9.5pt; font-style: italic; color: #333; margin-top: -3px; margin-bottom: 3px;">
+                    (Viết bằng chữ)
+                </div>
+                <div style="border-bottom: 1px dotted #000; display: flex;">
+                    <span style="white-space: nowrap;">Số chứng từ gốc kèm theo :</span>
+                    <span style="flex-grow: 1; padding-left: 8px;"></span>
+                </div>
+            </div>
+
+            <!-- Chữ ký -->
+            <div style="margin-top: 15px; font-size: 11pt;">
+                <div style="text-align: right; font-style: italic; margin-bottom: 10px; padding-right: 25px;">
+                    ${ngayText}
+                </div>
+                <div style="display: flex; justify-content: space-around; text-align: center;">
+                    ${isXuat ? `
+                        <div style="flex: 1;">
+                            <strong>Người lập phiếu</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <strong>Người nhận hàng</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <strong>Thủ kho</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <strong>Kế toán trưởng</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <strong>Giám đốc</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                    ` : `
+                        <div style="flex: 1;">
+                            <strong>Người lập phiếu</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <strong>Người giao hàng</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <strong>Thủ kho</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                        <div style="flex: 1;">
+                            <strong>Kế toán trưởng</strong><br>
+                            <span style="font-size: 9.5pt; font-style: italic;">(Ký, họ tên)</span>
+                        </div>
+                    `}
+                </div>
+            </div>
+
             <script>
                 window.onload = function() {
                     setTimeout(function() {

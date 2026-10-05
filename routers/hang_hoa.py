@@ -122,7 +122,6 @@ async def create_hang_hoa(
             "danh_muc": data.danh_muc or "",
             "don_vi_tinh": data.don_vi_tinh or "Cái",
             "gia_nhap": float(data.gia_nhap),
-            "gia_ban": float(data.gia_ban),
             "ton_kho": int(data.ton_kho),
             "chi_tiet_lo": chi_tiet_lo,
             "ghi_chu": data.ghi_chu or "",
@@ -171,9 +170,18 @@ async def update_hang_hoa(
         if data.danh_muc is not None: update_dict["danh_muc"] = data.danh_muc
         if data.don_vi_tinh is not None: update_dict["don_vi_tinh"] = data.don_vi_tinh
         if data.gia_nhap is not None: update_dict["gia_nhap"] = float(data.gia_nhap)
-        if data.gia_ban is not None: update_dict["gia_ban"] = float(data.gia_ban)
         if data.ton_kho is not None: update_dict["ton_kho"] = int(data.ton_kho)
         if data.ghi_chu is not None: update_dict["ghi_chu"] = data.ghi_chu
+
+        if data.chi_tiet_lo is not None:
+            update_dict["chi_tiet_lo"] = data.chi_tiet_lo
+        elif data.batches is not None:
+            from services.sheets_service import format_batches_str
+            update_dict["chi_tiet_lo"] = format_batches_str(data.batches)
+            if data.ton_kho is None:
+                update_dict["ton_kho"] = sum(int(b.get("so_luong", 0)) for b in data.batches)
+            if data.gia_nhap is None and data.batches:
+                update_dict["gia_nhap"] = float(data.batches[0].get("gia_nhap", 0))
 
         updated = db_manager.update_hang_hoa(record_id, update_dict)
         return {"success": True, "message": "Cập nhật hàng hóa thành công", "data": updated}

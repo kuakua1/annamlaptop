@@ -207,7 +207,7 @@ async def create_nhap_hang(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/nhap-hang/{so_phieu}")
+@router.get("/api/nhap-hang/{so_phieu:path}")
 async def get_nhap_hang_detail(
     so_phieu: str,
     request: Request,

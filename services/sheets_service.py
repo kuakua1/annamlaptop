@@ -416,8 +416,8 @@ class SheetsService:
             raise ValueError(f"Không tìm thấy hàng hóa với mã {ma_hang}")
         current = int(rec.get("ton_kho", 0) or 0)
         new_value = current + delta
-        # ton_kho is column 8 (1-based)
-        self.update_cell(SHEET_HANG_HOA, row_num, 8, new_value)
+        # ton_kho is column 7 (1-based, after dropping gia_ban)
+        self.update_cell(SHEET_HANG_HOA, row_num, 7, new_value)
         return new_value
 
     def nhap_hang_batch(self, ma_hang: str, so_luong: int, gia_nhap: float) -> tuple[int, str]:
@@ -453,8 +453,8 @@ class SheetsService:
 
         # Cập nhật các ô tương ứng trên Sheet HangHoa
         self.update_cell(SHEET_HANG_HOA, row_num, 6, gia_nhap)      # Cột 6: Giá nhập mới nhất
-        self.update_cell(SHEET_HANG_HOA, row_num, 8, new_total_sl)  # Cột 8: SL
-        self.update_cell(SHEET_HANG_HOA, row_num, 9, new_lo_str)    # Cột 9: Chi Tiết Lô Giá
+        self.update_cell(SHEET_HANG_HOA, row_num, 7, new_total_sl)  # Cột 7: SL
+        self.update_cell(SHEET_HANG_HOA, row_num, 8, new_lo_str)    # Cột 8: Chi Tiết Lô Giá
 
         return new_total_sl, new_lo_str
 
@@ -502,8 +502,8 @@ class SheetsService:
         new_lo_str = format_batches_str(new_batches)
 
         # Cập nhật Sheet HangHoa
-        self.update_cell(SHEET_HANG_HOA, row_num, 8, new_total_sl)  # Cột 8: SL
-        self.update_cell(SHEET_HANG_HOA, row_num, 9, new_lo_str)    # Cột 9: Chi Tiết Lô Giá
+        self.update_cell(SHEET_HANG_HOA, row_num, 7, new_total_sl)  # Cột 7: SL
+        self.update_cell(SHEET_HANG_HOA, row_num, 8, new_lo_str)    # Cột 8: Chi Tiết Lô Giá
 
         return new_total_sl, new_lo_str, total_cost
 
@@ -537,28 +537,42 @@ class SheetsService:
         return f"HH{max_num + 1:03d}"
 
     def generate_so_phieu_nhap(self, date_str: str) -> str:
-        """Generate import receipt number: NH{YYYYMMDD}{seq:04d}."""
-        date_compact = date_str.replace("-", "")
+        """Tạo mã số phiếu nhập rút gọn dạng NHxxxx/MM (ví dụ: NH1003/10)."""
+        from datetime import date
+        if not date_str:
+            date_str = date.today().isoformat()
+        parts = date_str.split("-")
+        month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
         records = self.get_all_records(SHEET_NHAP_HANG)
-        prefix = f"NH{date_compact}"
-        max_seq = 0
+        max_seq = 1000
         for rec in records:
-            sp = str(rec.get("so_phieu", ""))
-            if sp.startswith(prefix) and sp[len(prefix):].isdigit():
-                max_seq = max(max_seq, int(sp[len(prefix):]))
-        return f"{prefix}{max_seq + 1:04d}"
+            sp = str(rec.get("so_phieu", "")).strip()
+            if "/" in sp:
+                p_part, m_part = sp.split("/", 1)
+                if m_part == month and p_part.startswith("NH"):
+                    digits = p_part[2:]
+                    if digits.isdigit():
+                        max_seq = max(max_seq, int(digits))
+        return f"NH{max_seq + 1:04d}/{month}"
 
     def generate_so_phieu_xuat(self, date_str: str) -> str:
-        """Generate export receipt number: XH{YYYYMMDD}{seq:04d}."""
-        date_compact = date_str.replace("-", "")
+        """Tạo mã số phiếu xuất rút gọn dạng XHxxxx/MM (ví dụ: XH1020/10)."""
+        from datetime import date
+        if not date_str:
+            date_str = date.today().isoformat()
+        parts = date_str.split("-")
+        month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
         records = self.get_all_records(SHEET_XUAT_HANG)
-        prefix = f"XH{date_compact}"
-        max_seq = 0
+        max_seq = 1000
         for rec in records:
-            sp = str(rec.get("so_phieu", ""))
-            if sp.startswith(prefix) and sp[len(prefix):].isdigit():
-                max_seq = max(max_seq, int(sp[len(prefix):]))
-        return f"{prefix}{max_seq + 1:04d}"
+            sp = str(rec.get("so_phieu", "")).strip()
+            if "/" in sp:
+                p_part, m_part = sp.split("/", 1)
+                if m_part == month and p_part.startswith("XH"):
+                    digits = p_part[2:]
+                    if digits.isdigit():
+                        max_seq = max(max_seq, int(digits))
+        return f"XH{max_seq + 1:04d}/{month}"
 
 
 # Singleton instance

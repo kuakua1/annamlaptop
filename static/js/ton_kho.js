@@ -132,7 +132,6 @@ function renderStockTable() {
                 <td><span class="badge bg-light text-secondary border">${escapeHtml(p.danh_muc || 'Khác')}</span></td>
                 <td class="text-center text-muted small">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
                 <td class="text-end text-muted font-monospace">${formatVND(giaNhap)}</td>
-                <td class="text-end font-monospace">${formatVND(giaBan)}</td>
                 <td class="text-center">
                     <div><span class="badge ${badgeClass} fs-6 px-2 py-1 font-monospace">${formatNumber(sl)}</span></div>
                     ${batchBadgeHtml}
@@ -140,9 +139,9 @@ function renderStockTable() {
                 <td class="text-end fw-bold text-primary font-monospace text-nowrap" style="white-space: nowrap; min-width: 165px;">${formatVND(giaTriTon)}</td>
                 <td class="text-center no-print">
                     <div class="btn-group btn-group-sm">
-                        <a href="/nhap-hang?ma_hang=${encodeURIComponent(p.ma_hang)}" class="btn btn-outline-primary" title="Nhập thêm">
-                            <i class="bi bi-plus-lg"></i>
-                        </a>
+                        <button class="btn btn-outline-secondary" onclick="openEditStockModal('${escapeHtml(p.id)}')" title="Chỉnh sửa kho hàng & giá lô">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
                         ${sl > 0 ? `
                             <a href="/xuat-hang?ma_hang=${encodeURIComponent(p.ma_hang)}" class="btn btn-outline-success" title="Xuất kho">
                                 <i class="bi bi-box-arrow-up-right"></i>
@@ -218,6 +217,204 @@ function exportStockExcel() {
         fileName: `Bao_Cao_Tong_Hop_Ton_Kho_${dateStr}.xlsx`,
         sheetName: 'TonKho'
     });
+}
+
+// ── Stock Edit Modal Logic ────────────────────────────────────────────────────
+
+let currentEditingProduct = null;
+let editStockModalInstance = null;
+
+function openEditStockModal(productId) {
+    const p = allProducts.find(x => String(x.id) === String(productId));
+    if (!p) {
+        showToast('Không tìm thấy thông tin hàng hóa!', 'error');
+        return;
+    }
+    currentEditingProduct = p;
+
+    document.getElementById('edit-prod-id').value = p.id;
+    document.getElementById('edit-prod-ma').value = p.ma_hang || '';
+    document.getElementById('edit-prod-ten').value = p.ten_hang || '';
+    document.getElementById('edit-prod-danh-muc').value = p.danh_muc || 'Khác';
+    document.getElementById('edit-prod-dvt').value = p.don_vi_tinh || 'Cái';
+    document.getElementById('edit-prod-ton-kho').value = p.ton_kho || 0;
+    document.getElementById('edit-prod-gia-nhap').value = p.gia_nhap || 0;
+    document.getElementById('edit-prod-ghi-chu').value = p.ghi_chu || '';
+
+    // Render các lô hàng
+    const tbody = document.getElementById('edit-batches-tbody');
+    tbody.innerHTML = '';
+    const batches = (p.batches && p.batches.length > 0) ? p.batches : [
+        { so_luong: p.ton_kho || 1, gia_nhap: p.gia_nhap || 0 }
+    ];
+
+    batches.forEach((b, idx) => {
+        addBatchRow(b.so_luong, b.gia_nhap);
+    });
+    calcBatchTotals();
+
+    // Lắng nghe thay đổi của ô giá nhập / tồn kho đơn để cập nhật lô nếu chỉ có 1 lô
+    const singleQtyInput = document.getElementById('edit-prod-ton-kho');
+    const singleGiaInput = document.getElementById('edit-prod-gia-nhap');
+    singleQtyInput.oninput = () => {
+        const rows = document.querySelectorAll('#edit-batches-tbody tr');
+        if (rows.length === 1) {
+            const slInput = rows[0].querySelector('.batch-sl');
+            if (slInput) slInput.value = singleQtyInput.value;
+            calcBatchTotals(false);
+        }
+    };
+    singleGiaInput.oninput = () => {
+        const rows = document.querySelectorAll('#edit-batches-tbody tr');
+        if (rows.length === 1) {
+            const giaInput = rows[0].querySelector('.batch-gia');
+            if (giaInput) giaInput.value = singleGiaInput.value;
+            calcBatchTotals(false);
+        }
+    };
+
+    const modalEl = document.getElementById('modal-edit-stock');
+    if (!editStockModalInstance) {
+        editStockModalInstance = new bootstrap.Modal(modalEl);
+    }
+    editStockModalInstance.show();
+}
+
+function addBatchRow(so_luong = 1, gia_nhap = 0) {
+    const tbody = document.getElementById('edit-batches-tbody');
+    const rowIdx = tbody.querySelectorAll('tr').length + 1;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td class="text-center text-muted batch-stt">${rowIdx}</td>
+        <td>
+            <input type="number" class="form-control form-control-sm font-monospace batch-sl" value="${so_luong}" min="0" oninput="calcBatchTotals()">
+        </td>
+        <td>
+            <input type="number" class="form-control form-control-sm font-monospace batch-gia" value="${gia_nhap}" min="0" step="any" oninput="calcBatchTotals()">
+        </td>
+        <td class="text-end font-monospace fw-semibold batch-subtotal">0 đ</td>
+        <td class="text-center">
+            <button type="button" class="btn btn-outline-danger btn-xs py-0 px-2" onclick="deleteBatchRow(this)" title="Xóa lô này">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    calcBatchTotals();
+}
+
+function deleteBatchRow(btn) {
+    const tbody = document.getElementById('edit-batches-tbody');
+    if (tbody.querySelectorAll('tr').length <= 1) {
+        showToast('Hàng hóa phải có ít nhất một lô thông số tồn!', 'warning');
+        return;
+    }
+    btn.closest('tr').remove();
+    // Đánh lại số thứ tự
+    tbody.querySelectorAll('tr').forEach((row, i) => {
+        row.querySelector('.batch-stt').textContent = i + 1;
+    });
+    calcBatchTotals();
+}
+
+function calcBatchTotals(updateMainInputs = true) {
+    const rows = document.querySelectorAll('#edit-batches-tbody tr');
+    let totalQty = 0;
+    let totalVal = 0;
+
+    rows.forEach(row => {
+        const sl = parseInt(row.querySelector('.batch-sl')?.value) || 0;
+        const gia = parseFloat(row.querySelector('.batch-gia')?.value) || 0;
+        const sub = Math.round(sl * gia);
+        row.querySelector('.batch-subtotal').textContent = formatVND(sub);
+        totalQty += sl;
+        totalVal += sub;
+    });
+
+    const qtySpan = document.getElementById('batch-total-qty');
+    const valSpan = document.getElementById('batch-total-val');
+    if (qtySpan) qtySpan.textContent = formatNumber(totalQty);
+    if (valSpan) valSpan.textContent = formatVND(totalVal);
+
+    if (updateMainInputs) {
+        const mainQty = document.getElementById('edit-prod-ton-kho');
+        if (mainQty) mainQty.value = totalQty;
+        if (rows.length > 0) {
+            const firstGia = parseFloat(rows[0].querySelector('.batch-gia')?.value) || 0;
+            const mainGia = document.getElementById('edit-prod-gia-nhap');
+            if (mainGia && rows.length === 1) mainGia.value = firstGia;
+        }
+    }
+}
+
+async function saveStockEdit() {
+    if (!currentEditingProduct) return;
+    const id = document.getElementById('edit-prod-id').value;
+    const ten_hang = document.getElementById('edit-prod-ten').value.trim();
+    const danh_muc = document.getElementById('edit-prod-danh-muc').value;
+    const don_vi_tinh = document.getElementById('edit-prod-dvt').value.trim() || 'Cái';
+    const ghi_chu = document.getElementById('edit-prod-ghi-chu').value.trim();
+
+    if (!ten_hang) {
+        showToast('Vui lòng nhập tên hàng hóa!', 'warning');
+        return;
+    }
+
+    // Thu thập các lô
+    const rows = document.querySelectorAll('#edit-batches-tbody tr');
+    const batches = [];
+    rows.forEach(row => {
+        const sl = parseInt(row.querySelector('.batch-sl')?.value) || 0;
+        const gia = parseFloat(row.querySelector('.batch-gia')?.value) || 0;
+        if (sl > 0) {
+            batches.push({ so_luong: sl, gia_nhap: gia });
+        }
+    });
+
+    let ton_kho = parseInt(document.getElementById('edit-prod-ton-kho').value) || 0;
+    let gia_nhap = parseFloat(document.getElementById('edit-prod-gia-nhap').value) || 0;
+
+    if (batches.length > 0) {
+        ton_kho = batches.reduce((sum, b) => sum + b.so_luong, 0);
+        gia_nhap = batches[0].gia_nhap;
+    } else if (ton_kho > 0) {
+        batches.push({ so_luong: ton_kho, gia_nhap: gia_nhap });
+    }
+
+    try {
+        showLoading('Đang lưu thông số kho hàng...');
+        const res = await apiRequest(`/api/hang-hoa/${id}`, 'PUT', {
+            ten_hang,
+            danh_muc,
+            don_vi_tinh,
+            ton_kho,
+            gia_nhap,
+            ghi_chu,
+            batches
+        });
+
+        hideLoading();
+        showToast('Cập nhật thông số hàng tồn kho thành công!', 'success');
+        if (editStockModalInstance) {
+            editStockModalInstance.hide();
+        }
+
+        // Tải lại bảng tồn kho ngay lập tức
+        await loadStockData();
+
+        // Đồng bộ các tab khác
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                new BroadcastChannel('inventory_sync').postMessage({ type: 'PRODUCTS_UPDATED' });
+            }
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+            }
+        } catch (err) {}
+    } catch (e) {
+        hideLoading();
+        showToast(`Lỗi cập nhật: ${e.message}`, 'error');
+    }
 }
 
 // ── Bind Events ───────────────────────────────────────────────────────────────

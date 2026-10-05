@@ -244,7 +244,7 @@ async def create_xuat_hang(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/xuat-hang/{so_phieu}")
+@router.get("/api/xuat-hang/{so_phieu:path}")
 async def get_xuat_hang_detail(
     so_phieu: str,
     request: Request,

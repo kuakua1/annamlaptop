@@ -93,12 +93,6 @@ function renderImportTable(apiRes) {
                 <td class="text-center fw-bold fs-6 text-primary font-monospace">${formatNumber(sl)}</td>
                 <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(giaNhap)}</td>
                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
-                <td>
-                    <div class="fw-bold text-dark"><i class="bi bi-building me-1 text-primary"></i>${escapeHtml(nccTen)}</div>
-                    ${nccSdt ? `<div class="text-muted small"><i class="bi bi-telephone me-1 text-success"></i>${escapeHtml(nccSdt)}</div>` : ''}
-                    ${nccDiaChi ? `<div class="text-muted small text-truncate" style="max-width: 260px;"><i class="bi bi-geo-alt me-1 text-secondary"></i>${escapeHtml(nccDiaChi)}</div>` : ''}
-                </td>
-                <td>${r.ghi_chu ? `<small class="text-muted text-truncate d-block" style="max-width: 180px;">${escapeHtml(r.ghi_chu)}</small>` : '<span class="text-muted small">-</span>'}</td>
                 <td class="text-center no-print">
                     <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu nhập">
                         <i class="bi bi-eye"></i>
@@ -113,43 +107,33 @@ async function viewReceipt(so_phieu) {
     try {
         const res = await apiRequest(`/api/nhap-hang/${so_phieu}`);
         const items = res.items || [];
+        window.currentReceiptDetail = { ...res, type: 'nhap' };
         const ncc = res.nha_cung_cap || {};
         const modal = document.getElementById('detail-modal-body');
 
         modal.innerHTML = `
             <div class="card bg-light border-0 mb-3">
-                <div class="card-body py-2 px-3">
-                    <div class="row align-items-center">
-                        <div class="col-sm-7 mb-2 mb-sm-0">
-                            <div class="d-flex align-items-center gap-2 mb-1">
-                                <span class="badge bg-primary fs-6 px-3 py-1 font-monospace">${so_phieu}</span>
-                                <span class="badge bg-success-subtle text-success border border-success-subtle"><i class="bi bi-check2-circle me-1"></i>Đã nhập kho</span>
-                            </div>
-                            <div class="text-secondary small mt-1">
-                                <i class="bi bi-calendar-event me-1 text-primary"></i>Ngày nhập: <strong class="text-dark">${formatDate(res.ngay_nhap)}</strong>
-                            </div>
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-2 border-bottom">
+                        <div>
+                            <span class="badge bg-primary fs-6 px-3 py-1 font-monospace">${so_phieu}</span>
+                            <span class="text-secondary small ms-2">Ngày nhập: <strong class="text-dark">${formatDate(res.ngay_nhap)}</strong></span>
                         </div>
-                        <div class="col-sm-5 text-sm-end">
-                            <div class="small text-muted mb-0">Tổng tiền thanh toán</div>
-                            <div class="fs-4 fw-bold text-primary font-monospace">${formatVND(res.total)}</div>
+                        <div class="text-end">
+                            <span class="text-muted small me-2">Tổng tiền:</span>
+                            <span class="fs-4 fw-bold text-primary font-monospace">${formatVND(res.total)}</span>
                         </div>
                     </div>
-                    <hr class="my-2 border-secondary opacity-25">
                     <div class="row g-2 small">
                         <div class="col-md-7">
-                            <div class="d-flex align-items-start">
-                                <i class="bi bi-building me-2 text-primary fs-6 mt-1"></i>
-                                <div>
-                                    <div class="fw-bold text-dark fs-6">${escapeHtml(ncc.ten_ncc || 'Không xác định')}</div>
-                                    ${ncc.dien_thoai ? `<div class="text-muted"><i class="bi bi-telephone me-1 text-success"></i>SĐT: <strong>${escapeHtml(ncc.dien_thoai)}</strong></div>` : ''}
-                                    ${ncc.dia_chi ? `<div class="text-muted"><i class="bi bi-geo-alt me-1 text-danger"></i>Địa chỉ: ${escapeHtml(ncc.dia_chi)}</div>` : ''}
-                                </div>
-                            </div>
+                            <div class="fw-bold text-dark fs-6">${escapeHtml(ncc.ten_ncc || 'Không xác định')}</div>
+                            ${ncc.dien_thoai ? `<div class="text-muted">SĐT: <strong class="text-dark font-monospace">${escapeHtml(ncc.dien_thoai)}</strong></div>` : ''}
+                            ${ncc.dia_chi ? `<div class="text-muted">Địa chỉ: <span class="text-dark">${escapeHtml(ncc.dia_chi)}</span></div>` : ''}
                         </div>
                         <div class="col-md-5 text-md-end">
-                            ${res.ghi_chu ? `<div class="text-muted fst-italic mb-1"><i class="bi bi-chat-left-text me-1"></i>${escapeHtml(res.ghi_chu)}</div>` : '<div class="text-muted fst-italic mb-1">Không có ghi chú</div>'}
+                            ${res.ghi_chu ? `<div class="text-muted fst-italic mb-1">Ghi chú: ${escapeHtml(res.ghi_chu)}</div>` : '<div class="text-muted fst-italic mb-1">Không có ghi chú</div>'}
                             <div class="text-muted">
-                                Quy mô: <strong>${res.so_mat_hang || items.length}</strong> mặt hàng &middot; Tổng SL: <strong class="text-primary fs-6">${formatNumber(res.tong_so_luong)}</strong>
+                                Quy mô: <strong>${res.so_mat_hang || items.length}</strong> mặt hàng &middot; Tổng SL: <strong class="text-primary font-monospace">${formatNumber(res.tong_so_luong)}</strong>
                             </div>
                         </div>
                     </div>

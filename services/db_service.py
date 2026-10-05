@@ -85,7 +85,6 @@ class DatabaseManager:
                     danh_muc TEXT,
                     don_vi_tinh TEXT,
                     gia_nhap REAL DEFAULT 0,
-                    gia_ban REAL DEFAULT 0,
                     ton_kho INTEGER DEFAULT 0,
                     chi_tiet_lo TEXT,
                     ghi_chu TEXT
@@ -288,21 +287,19 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO HangHoa (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO HangHoa (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, ton_kho, chi_tiet_lo, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     item["id"], item["ma_hang"], item["ten_hang"], item.get("danh_muc", ""),
                     item.get("don_vi_tinh", "Cái"), float(item.get("gia_nhap", 0)),
-                    float(item.get("gia_ban", 0)), int(item.get("ton_kho", 0)),
-                    item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
+                    int(item.get("ton_kho", 0)), item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
                 ))
                 conn.commit()
 
         row = [
             item["id"], item["ma_hang"], item["ten_hang"], item.get("danh_muc", ""),
             item.get("don_vi_tinh", "Cái"), float(item.get("gia_nhap", 0)),
-            float(item.get("gia_ban", 0)), int(item.get("ton_kho", 0)),
-            item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
+            int(item.get("ton_kho", 0)), item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
         ]
         self._enqueue_task("APPEND_ROW", SHEET_HANG_HOA, {"row": row})
         return item
@@ -325,26 +322,25 @@ class DatabaseManager:
                     "danh_muc": data.get("danh_muc", cur_dict["danh_muc"]),
                     "don_vi_tinh": data.get("don_vi_tinh", cur_dict["don_vi_tinh"]),
                     "gia_nhap": float(data.get("gia_nhap", cur_dict["gia_nhap"])),
-                    "gia_ban": float(data.get("gia_ban", cur_dict["gia_ban"])),
                     "ton_kho": int(data.get("ton_kho", cur_dict["ton_kho"])),
-                    "chi_tiet_lo": cur_dict.get("chi_tiet_lo", ""),
+                    "chi_tiet_lo": data.get("chi_tiet_lo", cur_dict.get("chi_tiet_lo", "")),
                     "ghi_chu": data.get("ghi_chu", cur_dict["ghi_chu"]),
                 }
 
                 cursor.execute("""
                     UPDATE HangHoa SET ten_hang = ?, danh_muc = ?, don_vi_tinh = ?, gia_nhap = ?,
-                        gia_ban = ?, ton_kho = ?, ghi_chu = ?
+                        ton_kho = ?, chi_tiet_lo = ?, ghi_chu = ?
                     WHERE id = ?
                 """, (
                     updated["ten_hang"], updated["danh_muc"], updated["don_vi_tinh"],
-                    updated["gia_nhap"], updated["gia_ban"], updated["ton_kho"],
+                    updated["gia_nhap"], updated["ton_kho"], updated["chi_tiet_lo"],
                     updated["ghi_chu"], record_id
                 ))
                 conn.commit()
 
         row = [
             updated["id"], updated["ma_hang"], updated["ten_hang"], updated["danh_muc"],
-            updated["don_vi_tinh"], updated["gia_nhap"], updated["gia_ban"],
+            updated["don_vi_tinh"], updated["gia_nhap"],
             updated["ton_kho"], updated["chi_tiet_lo"], updated["ghi_chu"]
         ]
         self._enqueue_task("UPDATE_ROW", SHEET_HANG_HOA, {"id": record_id, "row": row})
@@ -467,22 +463,25 @@ class DatabaseManager:
         return True
 
     def generate_so_phieu_nhap(self, date_str: str = "") -> str:
-        """Tạo số phiếu nhập NH{YYYYMMDD}{0001} tức thì từ SQLite."""
+        """Tạo mã số phiếu nhập rút gọn dạng NHxxxx/MM (ví dụ: NH1003/10)."""
         if not date_str:
             date_str = date.today().isoformat()
-        date_compact = date_str.replace("-", "")
-        prefix = f"NH{date_compact}"
+        parts = date_str.split("-")
+        month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT so_phieu FROM NhapHang WHERE so_phieu LIKE ?", (f"{prefix}%",))
+            cursor.execute("SELECT so_phieu FROM NhapHang WHERE so_phieu LIKE ? OR so_phieu LIKE ?", (f"NH%/{month}", f"NH%{month}%"))
             rows = cursor.fetchall()
-            max_seq = 0
+            max_seq = 1000
             for r in rows:
-                sp = str(r["so_phieu"] or "")
-                num_part = sp[len(prefix):]
-                if num_part.isdigit():
-                    max_seq = max(max_seq, int(num_part))
-            return f"{prefix}{max_seq + 1:04d}"
+                sp = str(r["so_phieu"] or "").strip()
+                if "/" in sp:
+                    p_part, m_part = sp.split("/", 1)
+                    if m_part == month and p_part.startswith("NH"):
+                        digits = p_part[2:]
+                        if digits.isdigit():
+                            max_seq = max(max_seq, int(digits))
+            return f"NH{max_seq + 1:04d}/{month}"
 
     def nhap_hang_batch_local(self, ma_hang: str, so_luong: int, gia_nhap: float) -> tuple[int, str]:
         """Cập nhật tồn kho theo lô trong SQLite."""
@@ -569,22 +568,25 @@ class DatabaseManager:
         return created_rows
 
     def generate_so_phieu_xuat(self, date_str: str = "") -> str:
-        """Tạo số phiếu xuất XH{YYYYMMDD}{0001} tức thì từ SQLite."""
+        """Tạo mã số phiếu xuất rút gọn dạng XHxxxx/MM (ví dụ: XH1020/10)."""
         if not date_str:
             date_str = date.today().isoformat()
-        date_compact = date_str.replace("-", "")
-        prefix = f"XH{date_compact}"
+        parts = date_str.split("-")
+        month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT so_phieu FROM XuatHang WHERE so_phieu LIKE ?", (f"{prefix}%",))
+            cursor.execute("SELECT so_phieu FROM XuatHang WHERE so_phieu LIKE ? OR so_phieu LIKE ?", (f"XH%/{month}", f"XH%{month}%"))
             rows = cursor.fetchall()
-            max_seq = 0
+            max_seq = 1000
             for r in rows:
-                sp = str(r["so_phieu"] or "")
-                num_part = sp[len(prefix):]
-                if num_part.isdigit():
-                    max_seq = max(max_seq, int(num_part))
-            return f"{prefix}{max_seq + 1:04d}"
+                sp = str(r["so_phieu"] or "").strip()
+                if "/" in sp:
+                    p_part, m_part = sp.split("/", 1)
+                    if m_part == month and p_part.startswith("XH"):
+                        digits = p_part[2:]
+                        if digits.isdigit():
+                            max_seq = max(max_seq, int(digits))
+            return f"XH{max_seq + 1:04d}/{month}"
 
     def xuat_hang_batch_local(self, ma_hang: str, so_luong: int) -> tuple[int, str, float]:
         """Trừ tồn kho FIFO trong SQLite và tính chính xác giá vốn (COGS)."""
@@ -722,8 +724,8 @@ class DatabaseManager:
                         for r in records:
                             cursor.execute("""
                                 INSERT OR REPLACE INTO HangHoa 
-                                (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, ton_kho, chi_tiet_lo, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
                                 str(r.get("id") or ""),
                                 str(r.get("ma_hang") or ""),
@@ -731,7 +733,6 @@ class DatabaseManager:
                                 str(r.get("danh_muc") or ""),
                                 str(r.get("don_vi_tinh") or "Cái"),
                                 _safe_float(r.get("gia_nhap")),
-                                _safe_float(r.get("gia_ban")),
                                 _safe_int(r.get("ton_kho") or r.get("so_luong")),
                                 str(r.get("chi_tiet_lo") or ""),
                                 str(r.get("ghi_chu") or "")
@@ -869,15 +870,15 @@ class DatabaseManager:
 
                 # 1. Đẩy HangHoa
                 try:
-                    cursor.execute("SELECT id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu FROM HangHoa")
+                    cursor.execute("SELECT id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, ton_kho, chi_tiet_lo, ghi_chu FROM HangHoa")
                     rows = cursor.fetchall()
                     ws = sheets_service._sheet(SHEET_HANG_HOA)
-                    header = ["ID", "Mã Hàng", "Tên Hàng Hóa", "Danh Mục", "ĐVT", "Giá Nhập (đ)", "Giá Bán (đ)", "SL", "Chi Tiết Lô Giá", "Ghi Chú"]
+                    header = ["ID", "Mã Hàng", "Tên Hàng Hóa", "Danh Mục", "ĐVT", "Giá Nhập (đ)", "SL", "Chi Tiết Lô Giá", "Ghi Chú"]
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
                             r["id"], r["ma_hang"], r["ten_hang"], r["danh_muc"],
-                            r["don_vi_tinh"], r["gia_nhap"], r["gia_ban"],
+                            r["don_vi_tinh"], r["gia_nhap"],
                             r["ton_kho"], r["chi_tiet_lo"], r["ghi_chu"]
                         ])
                     ws.clear()

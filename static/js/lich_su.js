@@ -170,6 +170,7 @@ async function viewHistoryReceipt(loai, so_phieu) {
         
         const res = await apiRequest(apiUrl);
         const items = res.items || [];
+        window.currentReceiptDetail = { ...res, type: isNhap ? 'nhap' : 'xuat' };
         const partner = isNhap ? (res.nha_cung_cap || {}) : (res.khach_hang || {});
         const partnerName = isNhap ? (partner.ten_ncc || 'Không xác định') : (partner.ten_kh || 'Không xác định');
         const badgeColor = isNhap ? 'bg-primary' : 'bg-danger';
@@ -184,40 +185,27 @@ async function viewHistoryReceipt(loai, so_phieu) {
         modal.innerHTML = `
             <!-- Khung Thông Tin Phiếu & Đối Tác -->
             <div class="card bg-light border-0 mb-3">
-                <div class="card-body py-2 px-3">
-                    <div class="row align-items-center">
-                        <div class="col-sm-7 mb-2 mb-sm-0">
-                            <div class="d-flex align-items-center gap-2 mb-1">
-                                <span class="badge ${badgeColor} fs-6 px-3 py-1 font-monospace">${escapeHtml(so_phieu)}</span>
-                                <span class="badge bg-success-subtle text-success border border-success-subtle">
-                                    <i class="bi bi-check2-circle me-1"></i>${isNhap ? 'Đã nhập kho' : 'Đã xuất kho'}
-                                </span>
-                            </div>
-                            <div class="text-secondary small mt-1">
-                                <i class="bi bi-calendar-event me-1 ${isNhap ? 'text-primary' : 'text-danger'}"></i>Ngày: <strong class="text-dark">${dateLabel}</strong>
-                            </div>
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-2 border-bottom">
+                        <div>
+                            <span class="badge ${badgeColor} fs-6 px-3 py-1 font-monospace">${escapeHtml(so_phieu)}</span>
+                            <span class="text-secondary small ms-2">Ngày: <strong class="text-dark">${dateLabel}</strong></span>
                         </div>
-                        <div class="col-sm-5 text-sm-end">
-                            <div class="small text-muted mb-0">Tổng tiền giao dịch</div>
-                            <div class="fs-4 fw-bold ${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatVND(res.total)}</div>
+                        <div class="text-end">
+                            <span class="text-muted small me-2">Tổng tiền:</span>
+                            <span class="fs-4 fw-bold ${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatVND(res.total)}</span>
                         </div>
                     </div>
-                    <hr class="my-2 border-secondary opacity-25">
                     <div class="row g-2 small">
                         <div class="col-md-7">
-                            <div class="d-flex align-items-start">
-                                <i class="bi ${isNhap ? 'bi-building text-primary' : 'bi-person-fill text-danger'} me-2 fs-6 mt-1"></i>
-                                <div>
-                                    <div class="fw-bold text-dark fs-6">${escapeHtml(partnerName)}</div>
-                                    ${partner.dien_thoai ? `<div class="text-muted"><i class="bi bi-telephone me-1 text-success"></i>SĐT: <strong>${escapeHtml(partner.dien_thoai)}</strong></div>` : ''}
-                                    ${partner.dia_chi ? `<div class="text-muted"><i class="bi bi-geo-alt me-1 text-danger"></i>Địa chỉ: ${escapeHtml(partner.dia_chi)}</div>` : ''}
-                                </div>
-                            </div>
+                            <div class="fw-bold text-dark fs-6">${escapeHtml(partnerName)}</div>
+                            ${partner.dien_thoai ? `<div class="text-muted">SĐT: <strong class="text-dark font-monospace">${escapeHtml(partner.dien_thoai)}</strong></div>` : ''}
+                            ${partner.dia_chi ? `<div class="text-muted">Địa chỉ: <span class="text-dark">${escapeHtml(partner.dia_chi)}</span></div>` : ''}
                         </div>
                         <div class="col-md-5 text-md-end">
-                            ${res.ghi_chu ? `<div class="text-muted fst-italic mb-1"><i class="bi bi-chat-left-text me-1"></i>${escapeHtml(res.ghi_chu)}</div>` : '<div class="text-muted fst-italic mb-1">Không có ghi chú</div>'}
+                            ${res.ghi_chu ? `<div class="text-muted fst-italic mb-1">Ghi chú: ${escapeHtml(res.ghi_chu)}</div>` : '<div class="text-muted fst-italic mb-1">Không có ghi chú</div>'}
                             <div class="text-muted">
-                                Quy mô: <strong>${items.length}</strong> mặt hàng &middot; Tổng SL: <strong class="${isNhap ? 'text-primary' : 'text-danger'} fs-6">${formatNumber(totalQty)}</strong>
+                                Quy mô: <strong>${items.length}</strong> mặt hàng &middot; Tổng SL: <strong class="${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatNumber(totalQty)}</strong>
                             </div>
                         </div>
                     </div>
