@@ -704,148 +704,157 @@ class DatabaseManager:
 
     # ── 7. Bulk Sync 2 Chiều ──────────────────────────────────────────────────
 
-    def sync_from_google_sheets(self) -> dict:
-        """Kéo toàn bộ dữ liệu mới nhất từ Google Sheets đổ vào SQLite."""
+    def sync_from_google_sheets(self, target_table: str = "") -> dict:
+        """Kéo dữ liệu từ Google Sheets đổ vào SQLite (toàn bộ hoặc chỉ 1 bảng cụ thể)."""
         counts = {}
+        target = target_table.lower().replace("_", "").replace("-", "").strip()
+        do_all = not target or target == "all"
+
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
 
                 # 1. Đồng bộ Hàng Hóa
-                try:
-                    records = sheets_service.get_all_records(SHEET_HANG_HOA, force_refresh=True)
-                    cursor.execute("DELETE FROM HangHoa")
-                    for r in records:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO HangHoa 
-                            (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            str(r.get("id") or ""),
-                            str(r.get("ma_hang") or ""),
-                            str(r.get("ten_hang") or ""),
-                            str(r.get("danh_muc") or ""),
-                            str(r.get("don_vi_tinh") or "Cái"),
-                            _safe_float(r.get("gia_nhap")),
-                            _safe_float(r.get("gia_ban")),
-                            _safe_int(r.get("ton_kho") or r.get("so_luong")),
-                            str(r.get("chi_tiet_lo") or ""),
-                            str(r.get("ghi_chu") or "")
-                        ))
-                    counts["HangHoa"] = len(records)
-                except Exception as e:
-                    counts["HangHoa_err"] = str(e)
+                if do_all or target in ("hanghoa", "sanpham"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_HANG_HOA, force_refresh=True)
+                        cursor.execute("DELETE FROM HangHoa")
+                        for r in records:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO HangHoa 
+                                (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                str(r.get("id") or ""),
+                                str(r.get("ma_hang") or ""),
+                                str(r.get("ten_hang") or ""),
+                                str(r.get("danh_muc") or ""),
+                                str(r.get("don_vi_tinh") or "Cái"),
+                                _safe_float(r.get("gia_nhap")),
+                                _safe_float(r.get("gia_ban")),
+                                _safe_int(r.get("ton_kho") or r.get("so_luong")),
+                                str(r.get("chi_tiet_lo") or ""),
+                                str(r.get("ghi_chu") or "")
+                            ))
+                        counts["HangHoa"] = len(records)
+                    except Exception as e:
+                        counts["HangHoa_err"] = str(e)
 
                 # 2. Đồng bộ Khách Hàng
-                try:
-                    records = sheets_service.get_all_records(SHEET_KHACH_HANG, force_refresh=True)
-                    cursor.execute("DELETE FROM KhachHang")
-                    for r in records:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO KhachHang 
-                            (id, ten_kh, dia_chi, dien_thoai, email, ghi_chu)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            str(r.get("id") or ""),
-                            str(r.get("ten_kh") or ""),
-                            str(r.get("dia_chi") or ""),
-                            str(r.get("dien_thoai") or ""),
-                            str(r.get("email") or ""),
-                            str(r.get("ghi_chu") or "")
-                        ))
-                    counts["KhachHang"] = len(records)
-                except Exception as e:
-                    counts["KhachHang_err"] = str(e)
+                if do_all or target in ("khachhang", "kh"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_KHACH_HANG, force_refresh=True)
+                        cursor.execute("DELETE FROM KhachHang")
+                        for r in records:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO KhachHang 
+                                (id, ten_kh, dia_chi, dien_thoai, email, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (
+                                str(r.get("id") or ""),
+                                str(r.get("ten_kh") or ""),
+                                str(r.get("dia_chi") or ""),
+                                str(r.get("dien_thoai") or ""),
+                                str(r.get("email") or ""),
+                                str(r.get("ghi_chu") or "")
+                            ))
+                        counts["KhachHang"] = len(records)
+                    except Exception as e:
+                        counts["KhachHang_err"] = str(e)
 
                 # 3. Đồng bộ Nhà Cung Cấp
-                try:
-                    records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP, force_refresh=True)
-                    cursor.execute("DELETE FROM NhaCungCap")
-                    for r in records:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO NhaCungCap 
-                            (id, ten_ncc, dia_chi, dien_thoai, email, ghi_chu)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            str(r.get("id") or ""),
-                            str(r.get("ten_ncc") or ""),
-                            str(r.get("dia_chi") or ""),
-                            str(r.get("dien_thoai") or ""),
-                            str(r.get("email") or ""),
-                            str(r.get("ghi_chu") or "")
-                        ))
-                    counts["NhaCungCap"] = len(records)
-                except Exception as e:
-                    counts["NhaCungCap_err"] = str(e)
+                if do_all or target in ("nhacungcap", "ncc"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP, force_refresh=True)
+                        cursor.execute("DELETE FROM NhaCungCap")
+                        for r in records:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO NhaCungCap 
+                                (id, ten_ncc, dia_chi, dien_thoai, email, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (
+                                str(r.get("id") or ""),
+                                str(r.get("ten_ncc") or ""),
+                                str(r.get("dia_chi") or ""),
+                                str(r.get("dien_thoai") or ""),
+                                str(r.get("email") or ""),
+                                str(r.get("ghi_chu") or "")
+                            ))
+                        counts["NhaCungCap"] = len(records)
+                    except Exception as e:
+                        counts["NhaCungCap_err"] = str(e)
 
                 # 4. Đồng bộ Bảng Nhập Hàng
-                try:
-                    records = sheets_service.get_all_records(SHEET_NHAP_HANG, force_refresh=True)
-                    cursor.execute("DELETE FROM NhapHang")
-                    for r in records:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO NhapHang 
-                            (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, dia_chi, dien_thoai, ghi_chu)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            str(r.get("id") or ""),
-                            str(r.get("so_phieu") or ""),
-                            str(r.get("ngay_nhap") or r.get("ngay") or ""),
-                            str(r.get("ma_hang") or ""),
-                            str(r.get("ten_hang") or ""),
-                            _safe_int(r.get("so_luong")),
-                            _safe_float(r.get("gia_nhap")),
-                            _safe_float(r.get("thanh_tien")),
-                            str(r.get("nha_cung_cap_id") or r.get("ten_ncc") or ""),
-                            str(r.get("dia_chi") or ""),
-                            str(r.get("dien_thoai") or ""),
-                            str(r.get("ghi_chu") or "")
-                        ))
-                    counts["NhapHang"] = len(records)
-                except Exception as e:
-                    counts["NhapHang_err"] = str(e)
+                if do_all or target in ("nhaphang", "nhap"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_NHAP_HANG, force_refresh=True)
+                        cursor.execute("DELETE FROM NhapHang")
+                        for r in records:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO NhapHang 
+                                (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, dia_chi, dien_thoai, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                str(r.get("id") or ""),
+                                str(r.get("so_phieu") or ""),
+                                str(r.get("ngay_nhap") or r.get("ngay") or ""),
+                                str(r.get("ma_hang") or ""),
+                                str(r.get("ten_hang") or ""),
+                                _safe_int(r.get("so_luong")),
+                                _safe_float(r.get("gia_nhap")),
+                                _safe_float(r.get("thanh_tien")),
+                                str(r.get("nha_cung_cap_id") or r.get("ten_ncc") or ""),
+                                str(r.get("dia_chi") or ""),
+                                str(r.get("dien_thoai") or ""),
+                                str(r.get("ghi_chu") or "")
+                            ))
+                        counts["NhapHang"] = len(records)
+                    except Exception as e:
+                        counts["NhapHang_err"] = str(e)
 
                 # 5. Đồng bộ Bảng Xuất Hàng
-                try:
-                    records = sheets_service.get_all_records(SHEET_XUAT_HANG, force_refresh=True)
-                    cursor.execute("DELETE FROM XuatHang")
-                    for r in records:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO XuatHang 
-                            (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, dia_chi, dien_thoai, ghi_chu, gia_von, loi_nhuan)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            str(r.get("id") or ""),
-                            str(r.get("so_phieu") or ""),
-                            str(r.get("ngay_xuat") or r.get("ngay") or ""),
-                            str(r.get("ma_hang") or ""),
-                            str(r.get("ten_hang") or ""),
-                            _safe_int(r.get("so_luong")),
-                            _safe_float(r.get("gia_ban")),
-                            _safe_float(r.get("thanh_tien")),
-                            str(r.get("khach_hang_id") or r.get("ten_kh") or ""),
-                            str(r.get("dia_chi") or ""),
-                            str(r.get("dien_thoai") or ""),
-                            str(r.get("ghi_chu") or ""),
-                            _safe_float(r.get("gia_von")),
-                            _safe_float(r.get("loi_nhuan"))
-                        ))
-                    counts["XuatHang"] = len(records)
-                except Exception as e:
-                    counts["XuatHang_err"] = str(e)
+                if do_all or target in ("xuathang", "xuat"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_XUAT_HANG, force_refresh=True)
+                        cursor.execute("DELETE FROM XuatHang")
+                        for r in records:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO XuatHang 
+                                (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, dia_chi, dien_thoai, ghi_chu, gia_von, loi_nhuan)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                str(r.get("id") or ""),
+                                str(r.get("so_phieu") or ""),
+                                str(r.get("ngay_xuat") or r.get("ngay") or ""),
+                                str(r.get("ma_hang") or ""),
+                                str(r.get("ten_hang") or ""),
+                                _safe_int(r.get("so_luong")),
+                                _safe_float(r.get("gia_ban")),
+                                _safe_float(r.get("thanh_tien")),
+                                str(r.get("khach_hang_id") or r.get("ten_kh") or ""),
+                                str(r.get("dia_chi") or ""),
+                                str(r.get("dien_thoai") or ""),
+                                str(r.get("ghi_chu") or ""),
+                                _safe_float(r.get("gia_von")),
+                                _safe_float(r.get("loi_nhuan"))
+                            ))
+                        counts["XuatHang"] = len(records)
+                    except Exception as e:
+                        counts["XuatHang_err"] = str(e)
 
                 # 6. Đồng bộ Config
-                try:
-                    records = sheets_service.get_all_records(SHEET_CONFIG, force_refresh=True)
-                    cursor.execute("DELETE FROM Config")
-                    for r in records:
-                        cursor.execute("""
-                            INSERT OR REPLACE INTO Config (key, value)
-                            VALUES (?, ?)
-                        """, (str(r.get("key") or ""), str(r.get("value") or "")))
-                    counts["Config"] = len(records)
-                except Exception as e:
-                    counts["Config_err"] = str(e)
+                if do_all or target in ("config", "cauhinh"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_CONFIG, force_refresh=True)
+                        cursor.execute("DELETE FROM Config")
+                        for r in records:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO Config (key, value)
+                                VALUES (?, ?)
+                            """, (str(r.get("key") or ""), str(r.get("value") or "")))
+                        counts["Config"] = len(records)
+                    except Exception as e:
+                        counts["Config_err"] = str(e)
 
                 conn.commit()
 

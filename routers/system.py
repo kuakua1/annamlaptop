@@ -18,14 +18,25 @@ from config import SECRET_KEY
 @router.post("/api/system/sync-sheets")
 async def sync_from_sheets(
     request: Request,
+    table: str = "",
     user: str = Depends(require_login)
 ):
     """Kéo dữ liệu từ Google Sheets về cập nhật vào SQLite (Gọi từ Web Admin)."""
+    target = table or request.query_params.get("table", "")
     try:
-        counts = db_manager.sync_from_google_sheets()
+        counts = db_manager.sync_from_google_sheets(target)
+        name_map = {
+            "hanghoa": "Hàng Hóa & Tồn Kho",
+            "nhaphang": "Nhập Hàng",
+            "xuathang": "Xuất Hàng",
+            "nhacungcap": "Nhà Cung Cấp",
+            "khachhang": "Khách Hàng",
+            "config": "Cấu hình"
+        }
+        ten_bang = name_map.get(target.lower().replace("_", "").strip(), target or "toàn bộ dữ liệu")
         return {
             "success": True,
-            "message": "Đã đồng bộ toàn bộ dữ liệu từ Google Sheets vào Database SQLite!",
+            "message": f"Đã đồng bộ thành công [{ten_bang}] từ Google Sheets vào Database SQLite!",
             "details": counts
         }
     except Exception as e:
@@ -34,7 +45,8 @@ async def sync_from_sheets(
 
 @router.post("/api/system/sync-sheets-webhook")
 async def sync_from_sheets_webhook(
-    request: Request
+    request: Request,
+    table: str = ""
 ):
     """Webhook cho phép Google Apps Script gọi trực tiếp bằng token bảo mật."""
     token = request.headers.get("X-Sync-Token") or request.query_params.get("token")
@@ -44,11 +56,29 @@ async def sync_from_sheets_webhook(
             detail="Token bảo mật không hợp lệ hoặc thiếu X-Sync-Token."
         )
 
+    target = table or request.query_params.get("table", "")
+    if not target:
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                target = body.get("table", "")
+        except Exception:
+            pass
+
     try:
-        counts = db_manager.sync_from_google_sheets()
+        counts = db_manager.sync_from_google_sheets(target)
+        name_map = {
+            "hanghoa": "Hàng Hóa & Tồn Kho",
+            "nhaphang": "Nhập Hàng",
+            "xuathang": "Xuất Hàng",
+            "nhacungcap": "Nhà Cung Cấp",
+            "khachhang": "Khách Hàng",
+            "config": "Cấu hình"
+        }
+        ten_bang = name_map.get(target.lower().replace("_", "").strip(), target or "toàn bộ các bảng")
         return {
             "success": True,
-            "message": "Đã nhận lệnh từ Google Sheet và cập nhật thành công vào Database SQLite!",
+            "message": f"Đã cập nhật thành công bảng [{ten_bang}] vào Database SQLite!",
             "details": counts
         }
     except Exception as e:
