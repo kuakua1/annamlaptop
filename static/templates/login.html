@@ -53,119 +53,10 @@
             <i class="bi bi-stars text-warning me-1"></i>Made by <strong>Kiên</strong>
         </span>
     </div>
-
-    <!-- Minion Mascot Peeking at Bottom Corner -->
-    <div class="minion-peeker" id="minion-peeker">
-        <div class="minion-wrapper">
-            <!-- Minion Body -->
-            <img src="/static/img/minion_base.png" alt="Minion" class="minion-body-img">
-            
-            <!-- Left Eye Socket & Pupil -->
-            <div class="minion-eye minion-eye-left">
-                <div class="minion-pupil" id="minion-pupil-left">
-                    <img src="/static/img/minion_pupil_real.png" alt="pupil">
-                </div>
-            </div>
-            
-            <!-- Right Eye Socket & Pupil -->
-            <div class="minion-eye minion-eye-right">
-                <div class="minion-pupil" id="minion-pupil-right">
-                    <img src="/static/img/minion_pupil_real.png" alt="pupil">
-                </div>
-            </div>
-
-            <!-- Left Hand (Covering Eye) -->
-            <div class="minion-hand minion-hand-left" id="minion-hand-left">
-                <img src="/static/img/minion_arm_left.png" alt="left hand">
-            </div>
-
-            <!-- Right Hand (Covering Eye) -->
-            <div class="minion-hand minion-hand-right" id="minion-hand-right">
-                <img src="/static/img/minion_arm_right.png" alt="right hand">
-            </div>
-        </div>
-    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-const minionPeeker = document.getElementById('minion-peeker');
-const pupilLeft = document.getElementById('minion-pupil-left');
-const pupilRight = document.getElementById('minion-pupil-right');
-const usernameInput = document.getElementById('username');
-const passwordInput = document.getElementById('password');
-
-let isPasswordFocused = false;
-
-// Cập nhật vị trí tròng mắt Minion
-function setPupilPos(x, y) {
-    // Giới hạn biên độ di chuyển trong tròng kính (-5px đến +5px)
-    const clampX = Math.max(-6, Math.min(6, x));
-    const clampY = Math.max(-6, Math.min(6, y));
-    const transform = `translate(${clampX}px, ${clampY}px)`;
-    pupilLeft.style.transform = transform;
-    pupilRight.style.transform = transform;
-}
-
-// 1. Minion nhìn theo con trỏ chuột khi người dùng di chuột tự do
-document.addEventListener('mousemove', (e) => {
-    if (minionPeeker.classList.contains('covering-eyes')) return;
-    if (document.activeElement === usernameInput || document.activeElement === passwordInput) return;
-
-    const rect = minionPeeker.getBoundingClientRect();
-    const minionCenterX = rect.left + rect.width / 2;
-    const minionCenterY = rect.top + rect.height * 0.3;
-
-    const deltaX = (e.clientX - minionCenterX) / 35;
-    const deltaY = (e.clientY - minionCenterY) / 35;
-    setPupilPos(deltaX, deltaY);
-});
-
-// 2. Khi người dùng nhập Tên đăng nhập: Minion tò mò nhìn sang trái & hướng lên ô đăng nhập
-usernameInput.addEventListener('focus', () => {
-    minionPeeker.classList.remove('covering-eyes');
-    // Nhìn sang trái và hơi ngước lên trên
-    setPupilPos(-5, -4);
-});
-
-usernameInput.addEventListener('input', (e) => {
-    // Di chuyển tròng mắt nhẹ theo độ dài ký tự đang gõ
-    const charProgress = Math.min(10, e.target.value.length);
-    setPupilPos(-5 + (charProgress * 0.2), -4);
-});
-
-usernameInput.addEventListener('blur', () => {
-    setPupilPos(0, 0);
-});
-
-// 3. Khi người dùng nhập Mật khẩu:
-// Nếu đang ở chế độ che mật khẩu (type="password") -> Minion lấy 2 tay che mắt lại!
-// Nếu người dùng bật hiện mật khẩu (type="text") -> Minion hé tay ra tò mò nhìn!
-function updatePasswordCoverState() {
-    if (document.activeElement === passwordInput) {
-        if (passwordInput.type === 'password') {
-            minionPeeker.classList.add('covering-eyes');
-        } else {
-            // Mở mắt nhìn trộm mật khẩu
-            minionPeeker.classList.remove('covering-eyes');
-            setPupilPos(-5, -1);
-        }
-    } else {
-        minionPeeker.classList.remove('covering-eyes');
-    }
-}
-
-passwordInput.addEventListener('focus', () => {
-    isPasswordFocused = true;
-    updatePasswordCoverState();
-});
-
-passwordInput.addEventListener('blur', () => {
-    isPasswordFocused = false;
-    minionPeeker.classList.remove('covering-eyes');
-    setPupilPos(0, 0);
-});
-
 function togglePassword() {
     const pw = document.getElementById('password');
     const eye = document.getElementById('pw-eye');
@@ -176,7 +67,6 @@ function togglePassword() {
         pw.type = 'password';
         eye.className = 'bi bi-eye';
     }
-    updatePasswordCoverState();
 }
 
 async function doLogin(e) {
