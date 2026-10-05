@@ -104,6 +104,7 @@ async def get_khach_hang(request: Request, user: str = Depends(require_login)):
 
 
 @router.get("/api/khach-hang/{record_id}")
+@router.get("/api/khach-hang/{record_id}/lich-su")
 async def get_khach_hang_detail(record_id: str, request: Request, user: str = Depends(require_login)):
     try:
         kh_data = db_manager.get_by_id("KhachHang", record_id)

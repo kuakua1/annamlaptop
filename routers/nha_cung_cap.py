@@ -104,6 +104,7 @@ async def get_nha_cung_cap(request: Request, user: str = Depends(require_login))
 
 
 @router.get("/api/nha-cung-cap/{record_id}")
+@router.get("/api/nha-cung-cap/{record_id}/lich-su")
 async def get_nha_cung_cap_detail(record_id: str, request: Request, user: str = Depends(require_login)):
     try:
         ncc_data = db_manager.get_by_id("NhaCungCap", record_id)
