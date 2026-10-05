@@ -43,7 +43,7 @@ sys.path.insert(0, str(BASE_DIR))
 # Chuyển working directory về project root để các module khác hoạt động đúng
 os.chdir(BASE_DIR)
 
-from config import HOST, PORT, DEBUG
+from config import HOST, PORT, DEBUG, ALLOWED_ORIGINS
 from services.sheets_service import sheets_service
 from routers import auth, hang_hoa, nhap_hang, xuat_hang, nha_cung_cap, khach_hang, bao_cao, lich_su, danh_muc, system
 
@@ -73,17 +73,31 @@ app = FastAPI(
 )
 
 # CORS
+cors_origins = ALLOWED_ORIGINS if ALLOWED_ORIGINS else [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost",
+    "http://127.0.0.1",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if DEBUG else ["http://localhost:8000"],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$" if DEBUG else None,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 @app.middleware("http")
-async def add_no_cache_header(request: Request, call_next):
+async def security_and_cache_headers(request: Request, call_next):
     response = await call_next(request)
+    # Header bảo mật chuẩn OWASP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+
     if DEBUG:
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"

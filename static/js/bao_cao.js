@@ -89,7 +89,7 @@ async function loadTopProducts() {
         const renderTable = (items, valueKey, valueFn) => items.map((p, i) => `
             <tr>
                 <td>${i + 1}</td>
-                <td><strong>${p.ten_hang}</strong><br><small class="text-muted">${p.ma_hang}</small></td>
+                <td><strong>${escapeHtml(p.ten_hang)}</strong><br><small class="text-muted">${escapeHtml(p.ma_hang)}</small></td>
                 <td class="text-end">${valueFn(p[valueKey])}</td>
             </tr>
         `).join('');
@@ -109,10 +109,10 @@ async function loadTonKho() {
         document.getElementById('ton-kho-body').innerHTML = items.map((p, i) => `
             <tr>
                 <td>${i + 1}</td>
-                <td>${p.ma_hang}</td>
-                <td><strong>${p.ten_hang}</strong></td>
-                <td>${p.danh_muc || '-'}</td>
-                <td class="text-center">${formatNumber(p.ton_kho)} ${p.don_vi_tinh}</td>
+                <td><span class="badge bg-secondary font-monospace">${escapeHtml(p.ma_hang)}</span></td>
+                <td><strong>${escapeHtml(p.ten_hang)}</strong></td>
+                <td>${p.danh_muc ? `<span class="badge bg-light text-dark border">${escapeHtml(p.danh_muc)}</span>` : '-'}</td>
+                <td class="text-center">${formatNumber(p.ton_kho)} ${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
                 <td class="text-end">${formatVND(p.gia_nhap)}</td>
                 <td class="text-end fw-bold">${formatVND(p.gia_tri)}</td>
             </tr>

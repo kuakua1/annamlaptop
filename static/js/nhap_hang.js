@@ -90,20 +90,22 @@ function onNccInput(input) {
     if (!matches.length) { box.classList.add('d-none'); return; }
 
     box.innerHTML = matches.map(s => `
-        <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectNcc(${JSON.stringify(s).replace(/"/g, '&quot;')})">
-            <div class="fw-semibold text-primary">${s.ten_ncc}</div>
+        <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectNcc('${s.id}')">
+            <div class="fw-semibold text-primary">${escapeHtml(s.ten_ncc)}</div>
             <div class="small text-muted">
-                ${s.dien_thoai ? '📞 ' + s.dien_thoai : ''}
-                ${s.dia_chi ? ' · ' + s.dia_chi : ''}
+                ${s.dien_thoai ? '📞 ' + escapeHtml(s.dien_thoai) : ''}
+                ${s.dia_chi ? ' · ' + escapeHtml(s.dia_chi) : ''}
             </div>
         </div>
     `).join('');
     box.classList.remove('d-none');
 }
 
-function selectNcc(s) {
-    document.getElementById('f-ncc-ten').value = s.ten_ncc;
-    document.getElementById('f-ncc-id').value = s.id;
+function selectNcc(sOrId) {
+    const s = typeof sOrId === 'object' ? sOrId : suppliers.find(x => x.id === sOrId);
+    if (!s) return;
+    document.getElementById('f-ncc-ten').value = s.ten_ncc || '';
+    document.getElementById('f-ncc-id').value = s.id || '';
     document.getElementById('f-ncc-dia-chi').value = s.dia_chi || '';
     document.getElementById('f-ncc-sdt').value = s.dien_thoai || '';
     document.getElementById('ncc-suggestions').classList.add('d-none');
@@ -139,14 +141,14 @@ function onProductSearchInput(id, input) {
     }
 
     box.innerHTML = matches.map(p => `
-        <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.ma_hang}')">
+        <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.id}')">
             <div class="d-flex justify-content-between align-items-center">
-                <span class="badge bg-primary bg-opacity-10 text-primary me-2">${p.ma_hang}</span>
-                <span class="fw-semibold text-truncate small flex-grow-1">${p.ten_hang}</span>
+                <span class="badge bg-primary bg-opacity-10 text-primary me-2">${escapeHtml(p.ma_hang)}</span>
+                <span class="fw-semibold text-truncate small flex-grow-1">${escapeHtml(p.ten_hang)}</span>
                 <span class="text-success fw-bold small ms-2 text-nowrap">${formatVND(p.gia_nhap)}</span>
             </div>
             <div class="text-muted small mt-1 d-flex justify-content-between" style="font-size: 0.75rem;">
-                <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${p.danh_muc}</span>` : ''} ĐVT: ${p.don_vi_tinh}</span>
+                <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${escapeHtml(p.danh_muc)}</span>` : ''} ĐVT: ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
                 <span>Tồn hiện tại: <strong>${formatNumber(p.ton_kho)}</strong></span>
             </div>
         </div>
@@ -154,8 +156,8 @@ function onProductSearchInput(id, input) {
     box.classList.remove('d-none');
 }
 
-function selectProductForRow(id, ma_hang) {
-    const p = products.find(x => x.ma_hang === ma_hang);
+function selectProductForRow(id, prodIdOrMa) {
+    const p = products.find(x => x.id === prodIdOrMa || x.ma_hang === prodIdOrMa);
     if (!p) return;
 
     document.getElementById(`prod-input-${id}`).value = `${p.ma_hang} - ${p.ten_hang}`;
@@ -170,7 +172,7 @@ function selectProductForRow(id, ma_hang) {
 
     const infoEl = document.getElementById(`prod-info-${id}`);
     if (infoEl) {
-        infoEl.innerHTML = `<span class="badge bg-light text-dark border">${p.danh_muc || 'Hàng hóa'}</span> ĐVT: <strong>${p.don_vi_tinh}</strong> | Tồn hiện tại: <strong>${formatNumber(p.ton_kho)}</strong>`;
+        infoEl.innerHTML = `<span class="badge bg-light text-dark border">${escapeHtml(p.danh_muc || 'Hàng hóa')}</span> ĐVT: <strong>${escapeHtml(p.don_vi_tinh || 'Cái')}</strong> | Tồn hiện tại: <strong>${formatNumber(p.ton_kho)}</strong>`;
     }
 
     calcRow(id);
@@ -309,7 +311,7 @@ function onQuantityInputKeydown(id, e) {
 function _appendRow(id, ma_hang, so_luong, gia_nhap) {
     const prod = products.find(p => p.ma_hang === ma_hang);
     const prodName = prod ? `${prod.ma_hang} - ${prod.ten_hang}` : '';
-    const infoText = prod ? `<span class="badge bg-light text-dark border">${prod.danh_muc || 'Hàng hóa'}</span> ĐVT: <strong>${prod.don_vi_tinh}</strong> | Tồn: <strong>${formatNumber(prod.ton_kho)}</strong>` : '';
+    const infoText = prod ? `<span class="badge bg-light text-dark border">${escapeHtml(prod.danh_muc || 'Hàng hóa')}</span> ĐVT: <strong>${escapeHtml(prod.don_vi_tinh || 'Cái')}</strong> | Tồn: <strong>${formatNumber(prod.ton_kho)}</strong>` : '';
 
     const tbody = document.getElementById('items-tbody');
     const tr = document.createElement('tr');
@@ -641,9 +643,9 @@ async function viewReceipt(so_phieu) {
                         ${items.map((it, idx) => `
                             <tr>
                                 <td class="text-center text-muted small">${idx + 1}</td>
-                                <td><span class="badge bg-secondary font-monospace">${it.ma_hang}</span></td>
+                                <td><span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang)}</span></td>
                                 <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
-                                <td class="text-center text-muted small">${it.don_vi_tinh || 'Cái'}</td>
+                                <td class="text-center text-muted small">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
                                 <td class="text-center fw-bold fs-6 text-primary">${formatNumber(it.so_luong)}</td>
                                 <td class="text-end text-nowrap" style="white-space: nowrap;">${formatVND(it.gia_nhap)}</td>
                                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 165px;">${formatVND(it.thanh_tien)}</td>

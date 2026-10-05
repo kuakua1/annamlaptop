@@ -85,13 +85,13 @@ function renderExportTable(apiRes) {
                 <td class="text-center text-muted small">${idx + 1}</td>
                 <td><span class="badge bg-light text-secondary border font-monospace">${formatDate(r.ngay_xuat)}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-link p-0 text-danger fw-bold font-monospace text-decoration-none" onclick="viewReceipt('${r.so_phieu}')">
-                        <i class="bi bi-file-earmark-text me-1"></i>${r.so_phieu}
+                    <button class="btn btn-sm btn-link p-0 text-danger fw-bold font-monospace text-decoration-none" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')">
+                        <i class="bi bi-file-earmark-text me-1"></i>${escapeHtml(r.so_phieu)}
                     </button>
                 </td>
-                <td><span class="badge bg-secondary font-monospace">${r.ma_hang}</span></td>
+                <td><span class="badge bg-secondary font-monospace">${escapeHtml(r.ma_hang)}</span></td>
                 <td class="fw-semibold text-dark">${escapeHtml(r.ten_hang)}</td>
-                <td class="text-center text-muted small">${r.don_vi_tinh || 'Cái'}</td>
+                <td class="text-center text-muted small">${escapeHtml(r.don_vi_tinh || 'Cái')}</td>
                 <td class="text-center fw-bold fs-6 text-danger font-monospace">${formatNumber(sl)}</td>
                 <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(giaBan)}</td>
                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
@@ -102,7 +102,7 @@ function renderExportTable(apiRes) {
                 </td>
                 <td>${r.ghi_chu ? `<small class="text-muted text-truncate d-block" style="max-width: 180px;">${escapeHtml(r.ghi_chu)}</small>` : '<span class="text-muted small">-</span>'}</td>
                 <td class="text-center no-print">
-                    <button class="btn btn-xs btn-outline-danger btn-sm" onclick="viewReceipt('${r.so_phieu}')" title="Xem chi tiết phiếu xuất">
+                    <button class="btn btn-xs btn-outline-danger btn-sm" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu xuất">
                         <i class="bi bi-eye"></i>
                     </button>
                 </td>
@@ -175,9 +175,9 @@ async function viewReceipt(so_phieu) {
                         ${items.map((it, idx) => `
                             <tr>
                                 <td class="text-center text-muted small">${idx + 1}</td>
-                                <td><span class="badge bg-secondary font-monospace">${it.ma_hang}</span></td>
+                                <td><span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang)}</span></td>
                                 <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
-                                <td class="text-center text-muted small">${it.don_vi_tinh || 'Cái'}</td>
+                                <td class="text-center text-muted small">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
                                 <td class="text-center fw-bold fs-6 text-danger">${formatNumber(it.so_luong)}</td>
                                 <td class="text-end text-nowrap" style="white-space: nowrap;">${formatVND(it.gia_ban)}</td>
                                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 165px;">${formatVND(it.thanh_tien)}</td>

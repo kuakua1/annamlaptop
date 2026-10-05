@@ -78,6 +78,13 @@ def format_batches_str(batches: list[dict]) -> str:
     return " | ".join(parts)
 
 
+def sanitize_cell_value(val):
+    """Sanitize cell value to prevent Google Sheets Formula Injection (CSV injection)."""
+    if isinstance(val, str) and val.startswith(("=", "+", "-", "@")):
+        return "'" + val
+    return val
+
+
 # ── Key normalization map for Google Sheets Vietnamese/English headers ──────
 COLUMN_ALIAS_MAP = {
     # HangHoa
@@ -259,7 +266,8 @@ class SheetsService:
         """Append a row and return the new row number (1-based)."""
         try:
             ws = self._sheet(sheet_name)
-            result = ws.append_row(row, value_input_option="USER_ENTERED")
+            clean_row = [sanitize_cell_value(c) for c in row]
+            result = ws.append_row(clean_row, value_input_option="USER_ENTERED")
             # Parse updated range to get row number
             updated_range = result.get("updates", {}).get("updatedRange", "")
             if updated_range:
@@ -277,11 +285,12 @@ class SheetsService:
         """Update all cells in a row (row_num is 1-based)."""
         try:
             ws = self._sheet(sheet_name)
+            clean_row = [sanitize_cell_value(c) for c in row]
             # Build A1 notation range for the whole row
-            num_cols = len(row)
+            num_cols = len(clean_row)
             end_col_letter = self._col_letter(num_cols)
             cell_range = f"A{row_num}:{end_col_letter}{row_num}"
-            ws.update(cell_range, [row], value_input_option="USER_ENTERED")
+            ws.update(cell_range, [clean_row], value_input_option="USER_ENTERED")
         except Exception as e:
             raise RuntimeError(f"Lỗi khi cập nhật dòng {row_num} trong sheet {sheet_name}: {str(e)}")
 
@@ -312,7 +321,7 @@ class SheetsService:
         """Update a single cell. row and col are 1-based."""
         try:
             ws = self._sheet(sheet_name)
-            ws.update_cell(row, col, value)
+            ws.update_cell(row, col, sanitize_cell_value(value))
         except Exception as e:
             raise RuntimeError(f"Lỗi khi cập nhật ô ({row},{col}) trong sheet {sheet_name}: {str(e)}")
 

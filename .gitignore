@@ -9,4 +9,6 @@ build/
 dist/
 installer/
 *.exe
+.secret_key
+*.bat
 

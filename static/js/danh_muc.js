@@ -122,7 +122,7 @@ function renderNCCTable(records) {
                     <button class="btn btn-sm btn-outline-primary btn-icon me-1" onclick="openEditNCC('${r.id}')" title="Chỉnh sửa">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteNCC('${r.id}', '${escapeHtml(r.ten_ncc)}')" title="Xóa">
+                    <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteNCC('${r.id}')" title="Xóa">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -175,7 +175,9 @@ async function saveNCC() {
     finally { hideLoading(); }
 }
 
-async function deleteNCC(id, name) {
+async function deleteNCC(id) {
+    const r = rawNCCList.find(x => x.id === id);
+    const name = r ? r.ten_ncc : 'này';
     if (!confirmDelete(`Xóa nhà cung cấp "${name}"?`)) return;
     try {
         showLoading();
@@ -300,7 +302,7 @@ function renderKHTable(records) {
                     <button class="btn btn-sm btn-outline-primary btn-icon me-1" onclick="openEditKH('${r.id}')" title="Chỉnh sửa">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteKH('${r.id}', '${escapeHtml(r.ten_kh)}')" title="Xóa">
+                    <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteKH('${r.id}')" title="Xóa">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -353,7 +355,9 @@ async function saveKH() {
     finally { hideLoading(); }
 }
 
-async function deleteKH(id, name) {
+async function deleteKH(id) {
+    const r = rawKHList.find(x => x.id === id);
+    const name = r ? r.ten_kh : 'này';
     if (!confirmDelete(`Xóa khách hàng "${name}"?`)) return;
     try {
         showLoading();

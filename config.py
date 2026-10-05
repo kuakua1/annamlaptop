@@ -19,10 +19,27 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "./credentials.json")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "")
 
+import secrets
+
 # App Settings
-SECRET_KEY = os.getenv("SECRET_KEY", "change-this-secret-key-in-production")
+env_secret = os.getenv("SECRET_KEY", "").strip()
+if not env_secret or env_secret == "change-this-secret-key-in-production":
+    # Sinh secret key 256-bit ngẫu nhiên và lưu cố định vào .secret_key nếu chưa cấu hình trong .env
+    secret_file = (EXE_DIR if getattr(sys, "frozen", False) else BASE_DIR) / ".secret_key"
+    try:
+        if secret_file.exists():
+            SECRET_KEY = secret_file.read_text(encoding="utf-8").strip()
+        else:
+            SECRET_KEY = secrets.token_hex(32)
+            secret_file.write_text(SECRET_KEY, encoding="utf-8")
+    except Exception:
+        SECRET_KEY = secrets.token_hex(32)
+else:
+    SECRET_KEY = env_secret
+
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
 
 # Server
 HOST = os.getenv("HOST", "0.0.0.0")

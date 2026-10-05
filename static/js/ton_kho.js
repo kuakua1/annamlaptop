@@ -112,7 +112,7 @@ function renderStockTable() {
                         <li class="dropdown-header py-1 text-uppercase text-muted" style="font-size: 0.7rem;">Chi tiết lô nhập FIFO:</li>
                         ${batches.map(b => `
                             <li class="d-flex justify-content-between py-1 border-bottom border-light">
-                                <span><span class="badge bg-light text-dark border me-1">${b.so_luong} ${p.don_vi_tinh}</span></span>
+                                <span><span class="badge bg-light text-dark border me-1">${b.so_luong} ${escapeHtml(p.don_vi_tinh || 'Cái')}</span></span>
                                 <span class="fw-semibold text-primary font-monospace">${formatVND(b.gia_nhap)}</span>
                             </li>
                         `).join('')}
@@ -124,13 +124,13 @@ function renderStockTable() {
         return `
             <tr>
                 <td class="text-center text-muted small">${idx + 1}</td>
-                <td><span class="badge bg-secondary font-monospace">${p.ma_hang}</span></td>
+                <td><span class="badge bg-secondary font-monospace">${escapeHtml(p.ma_hang)}</span></td>
                 <td>
                     <div class="fw-semibold text-dark">${escapeHtml(p.ten_hang)}</div>
                     ${p.ghi_chu ? `<small class="text-muted text-truncate d-block" style="max-width: 250px;">${escapeHtml(p.ghi_chu)}</small>` : ''}
                 </td>
-                <td><span class="badge bg-light text-secondary border">${p.danh_muc || 'Khác'}</span></td>
-                <td class="text-center text-muted small">${p.don_vi_tinh || 'Cái'}</td>
+                <td><span class="badge bg-light text-secondary border">${escapeHtml(p.danh_muc || 'Khác')}</span></td>
+                <td class="text-center text-muted small">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
                 <td class="text-end text-muted font-monospace">${formatVND(giaNhap)}</td>
                 <td class="text-end font-monospace">${formatVND(giaBan)}</td>
                 <td class="text-center">
@@ -140,11 +140,11 @@ function renderStockTable() {
                 <td class="text-end fw-bold text-primary font-monospace text-nowrap" style="white-space: nowrap; min-width: 165px;">${formatVND(giaTriTon)}</td>
                 <td class="text-center no-print">
                     <div class="btn-group btn-group-sm">
-                        <a href="/nhap-hang?ma_hang=${p.ma_hang}" class="btn btn-outline-primary" title="Nhập thêm">
+                        <a href="/nhap-hang?ma_hang=${encodeURIComponent(p.ma_hang)}" class="btn btn-outline-primary" title="Nhập thêm">
                             <i class="bi bi-plus-lg"></i>
                         </a>
                         ${sl > 0 ? `
-                            <a href="/xuat-hang?ma_hang=${p.ma_hang}" class="btn btn-outline-success" title="Xuất kho">
+                            <a href="/xuat-hang?ma_hang=${encodeURIComponent(p.ma_hang)}" class="btn btn-outline-success" title="Xuất kho">
                                 <i class="bi bi-box-arrow-up-right"></i>
                             </a>
                         ` : ''}

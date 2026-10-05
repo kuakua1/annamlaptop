@@ -66,7 +66,7 @@ function renderTonKhoCell(p) {
                 </li>
                 ${batches.map((b, idx) => `
                     <li class="dropdown-item-text py-1 px-3 d-flex justify-content-between align-items-center">
-                        <span><span class="badge bg-secondary me-1">Lô ${idx + 1}</span> <strong>${formatNumber(b.so_luong)}</strong> ${p.don_vi_tinh}</span>
+                        <span><span class="badge bg-secondary me-1">Lô ${idx + 1}</span> <strong>${formatNumber(b.so_luong)}</strong> ${escapeHtml(p.don_vi_tinh)}</span>
                         <span class="text-primary fw-semibold ms-2">${formatVND(b.gia_nhap)}</span>
                     </li>
                 `).join('')}
@@ -89,10 +89,10 @@ function renderTable(products) {
     tbody.innerHTML = products.map((p, i) => `
         <tr>
             <td>${i + 1}</td>
-            <td><span class="badge bg-secondary">${p.ma_hang}</span></td>
-            <td><strong>${p.ten_hang}</strong></td>
-            <td>${p.danh_muc ? `<span class="badge bg-info bg-opacity-75 text-dark">${p.danh_muc}</span>` : '-'}</td>
-            <td>${p.don_vi_tinh}</td>
+            <td><span class="badge bg-secondary">${escapeHtml(p.ma_hang)}</span></td>
+            <td><strong>${escapeHtml(p.ten_hang)}</strong></td>
+            <td>${p.danh_muc ? `<span class="badge bg-info bg-opacity-75 text-dark">${escapeHtml(p.danh_muc)}</span>` : '-'}</td>
+            <td>${escapeHtml(p.don_vi_tinh)}</td>
             <td class="text-end">${formatVND(p.gia_nhap)}</td>
             <td class="text-end">${formatVND(p.gia_ban)}</td>
             <td class="text-center">
@@ -102,7 +102,7 @@ function renderTable(products) {
                 <button class="btn btn-sm btn-outline-primary btn-icon me-1" onclick="openEdit('${p.id}')">
                     <i class="bi bi-pencil"></i>
                 </button>
-                <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteProduct('${p.id}', '${p.ten_hang}')">
+                <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteProduct('${p.id}')">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
@@ -168,7 +168,9 @@ async function saveProduct() {
     }
 }
 
-async function deleteProduct(id, name) {
+async function deleteProduct(id) {
+    const p = allProducts.find(x => x.id === id);
+    const name = p ? p.ten_hang : 'này';
     if (!confirmDelete(`Xóa hàng hóa "${name}"?`)) return;
     try {
         showLoading();

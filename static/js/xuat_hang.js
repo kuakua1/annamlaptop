@@ -90,20 +90,22 @@ function onKhInput(input) {
     if (!matches.length) { box.classList.add('d-none'); return; }
 
     box.innerHTML = matches.map(c => `
-        <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectKh(${JSON.stringify(c).replace(/"/g, '&quot;')})">
-            <div class="fw-semibold text-danger">${c.ten_kh}</div>
+        <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectKh('${c.id}')">
+            <div class="fw-semibold text-danger">${escapeHtml(c.ten_kh)}</div>
             <div class="small text-muted">
-                ${c.dien_thoai ? '📞 ' + c.dien_thoai : ''}
-                ${c.dia_chi ? ' · ' + c.dia_chi : ''}
+                ${c.dien_thoai ? '📞 ' + escapeHtml(c.dien_thoai) : ''}
+                ${c.dia_chi ? ' · ' + escapeHtml(c.dia_chi) : ''}
             </div>
         </div>
     `).join('');
     box.classList.remove('d-none');
 }
 
-function selectKh(c) {
-    document.getElementById('f-kh-ten').value = c.ten_kh;
-    document.getElementById('f-kh-id').value = c.id;
+function selectKh(cOrId) {
+    const c = typeof cOrId === 'object' ? cOrId : customers.find(x => x.id === cOrId);
+    if (!c) return;
+    document.getElementById('f-kh-ten').value = c.ten_kh || '';
+    document.getElementById('f-kh-id').value = c.id || '';
     document.getElementById('f-kh-dia-chi').value = c.dia_chi || '';
     document.getElementById('f-kh-sdt').value = c.dien_thoai || '';
     document.getElementById('kh-suggestions').classList.add('d-none');
@@ -137,14 +139,14 @@ function onProductSearchInput(id, input) {
     }
 
     box.innerHTML = matches.map(p => `
-        <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.ma_hang}')">
+        <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.id}')">
             <div class="d-flex justify-content-between align-items-center">
-                <span class="badge bg-danger bg-opacity-10 text-danger me-2">${p.ma_hang}</span>
-                <span class="fw-semibold text-truncate small flex-grow-1">${p.ten_hang}</span>
+                <span class="badge bg-danger bg-opacity-10 text-danger me-2">${escapeHtml(p.ma_hang)}</span>
+                <span class="fw-semibold text-truncate small flex-grow-1">${escapeHtml(p.ten_hang)}</span>
                 <span class="text-danger fw-bold small ms-2 text-nowrap">${formatVND(p.gia_ban)}</span>
             </div>
             <div class="text-muted small mt-1 d-flex justify-content-between" style="font-size: 0.75rem;">
-                <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${p.danh_muc}</span>` : ''} ĐVT: ${p.don_vi_tinh}</span>
+                <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${escapeHtml(p.danh_muc)}</span>` : ''} ĐVT: ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
                 <span class="${p.ton_kho <= 0 ? 'text-danger fw-bold' : 'text-success fw-bold'}">Tồn kho: ${formatNumber(p.ton_kho)}</span>
             </div>
         </div>
@@ -152,8 +154,8 @@ function onProductSearchInput(id, input) {
     box.classList.remove('d-none');
 }
 
-function selectProductForRow(id, ma_hang) {
-    const p = products.find(x => x.ma_hang === ma_hang);
+function selectProductForRow(id, prodIdOrMa) {
+    const p = products.find(x => x.id === prodIdOrMa || x.ma_hang === prodIdOrMa);
     if (!p) return;
 
     document.getElementById(`prod-input-${id}`).value = `${p.ma_hang} - ${p.ten_hang}`;
@@ -174,7 +176,7 @@ function selectProductForRow(id, ma_hang) {
             batchInfo = ` &middot; <span class="text-muted">(${p.batches.map((b, i) => `Lô ${i+1}: ${b.so_luong}c @ ${formatVND(b.gia_nhap)}`).join(', ')})</span>`;
         }
         const statusClass = p.ton_kho <= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
-        infoEl.innerHTML = `<span class="badge bg-light text-dark border">${p.danh_muc || 'Hàng hóa'}</span> ĐVT: <strong>${p.don_vi_tinh}</strong> | <span class="${statusClass}">Tồn: ${formatNumber(p.ton_kho)}</span>${batchInfo}`;
+        infoEl.innerHTML = `<span class="badge bg-light text-dark border">${escapeHtml(p.danh_muc || 'Hàng hóa')}</span> ĐVT: <strong>${escapeHtml(p.don_vi_tinh || 'Cái')}</strong> | <span class="${statusClass}">Tồn: ${formatNumber(p.ton_kho)}</span>${batchInfo}`;
     }
 
     calcRow(id);
@@ -270,7 +272,7 @@ function _appendRow(id, ma_hang, so_luong, gia_ban) {
             batchInfo = ` &middot; <span class="text-muted">(${prod.batches.map((b, i) => `Lô ${i+1}: ${b.so_luong}c @ ${formatVND(b.gia_nhap)}`).join(', ')})</span>`;
         }
         const statusClass = prod.ton_kho <= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
-        infoText = `<span class="badge bg-light text-dark border">${prod.danh_muc || 'Hàng hóa'}</span> ĐVT: <strong>${prod.don_vi_tinh}</strong> | <span class="${statusClass}">Tồn: ${formatNumber(prod.ton_kho)}</span>${batchInfo}`;
+        infoText = `<span class="badge bg-light text-dark border">${escapeHtml(prod.danh_muc || 'Hàng hóa')}</span> ĐVT: <strong>${escapeHtml(prod.don_vi_tinh || 'Cái')}</strong> | <span class="${statusClass}">Tồn: ${formatNumber(prod.ton_kho)}</span>${batchInfo}`;
     }
 
     const tbody = document.getElementById('items-tbody');
@@ -644,9 +646,9 @@ async function viewReceipt(so_phieu) {
                         ${items.map((it, idx) => `
                             <tr>
                                 <td class="text-center text-muted small">${idx + 1}</td>
-                                <td><span class="badge bg-secondary font-monospace">${it.ma_hang}</span></td>
+                                <td><span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang)}</span></td>
                                 <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
-                                <td class="text-center text-muted small">${it.don_vi_tinh || 'Cái'}</td>
+                                <td class="text-center text-muted small">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
                                 <td class="text-center fw-bold fs-6 text-danger">${formatNumber(it.so_luong)}</td>
                                 <td class="text-end text-nowrap" style="white-space: nowrap;">${formatVND(it.gia_ban)}</td>
                                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 165px;">${formatVND(it.thanh_tien)}</td>

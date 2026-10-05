@@ -40,17 +40,17 @@ async function loadHistory() {
                         </span>
                     </td>
                     <td>
-                        <a href="javascript:void(0)" class="fw-bold text-decoration-none font-monospace ${r.loai === 'Nhập' ? 'text-primary' : 'text-danger'}" onclick="viewHistoryReceipt('${r.loai}', '${r.so_phieu}')" title="Xem chi tiết phiếu">${r.so_phieu}</a>
+                        <a href="javascript:void(0)" class="fw-bold text-decoration-none font-monospace ${r.loai === 'Nhập' ? 'text-primary' : 'text-danger'}" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu">${escapeHtml(r.so_phieu)}</a>
                     </td>
                     <td>${formatDate(r.ngay)}</td>
-                    <td><span class="badge bg-secondary font-monospace">${r.ma_hang}</span></td>
+                    <td><span class="badge bg-secondary font-monospace">${escapeHtml(r.ma_hang)}</span></td>
                     <td>${escapeHtml(r.ten_hang)}</td>
                     <td class="text-center">${formatNumber(r.so_luong)}</td>
                     <td class="text-end">${formatVND(r.don_gia)}</td>
                     <td class="text-end fw-bold ${r.loai === 'Nhập' ? 'text-primary' : 'text-danger'}">${formatVND(r.thanh_tien)}</td>
                     <td>${escapeHtml(r.doi_tac || '-')}</td>
                     <td class="text-center">
-                        <button class="btn btn-sm btn-outline-primary py-0 px-2 shadow-sm" onclick="viewHistoryReceipt('${r.loai}', '${r.so_phieu}')" title="Xem chi tiết phiếu">
+                        <button class="btn btn-sm btn-outline-primary py-0 px-2 shadow-sm" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu">
                             <i class="bi bi-eye me-1"></i>Xem
                         </button>
                     </td>
