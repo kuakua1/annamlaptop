@@ -303,25 +303,34 @@ body.sidebar-collapsed .sidebar-link:hover::before {
 }
 
 /* ── Embedded Tab Mode (Loaded inside child iframe) ────── */
+html.is-embedded-tab,
 body.is-embedded-tab {
-  background: #f0f4f8;
+  background: #f0f4f8 !important;
   overflow-y: auto !important;
 }
 
+html.is-embedded-tab .sidebar,
 body.is-embedded-tab .sidebar,
+html.is-embedded-tab .topbar,
 body.is-embedded-tab .topbar,
+html.is-embedded-tab .chrome-tab-container,
 body.is-embedded-tab .chrome-tab-container,
-body.is-embedded-tab #deadswitch-modal {
+html.is-embedded-tab #deadswitch-modal,
+body.is-embedded-tab #deadswitch-modal,
+html.is-embedded-tab #chrome-tab-viewport,
+body.is-embedded-tab #chrome-tab-viewport {
   display: none !important;
 }
 
+html.is-embedded-tab .main-wrapper,
 body.is-embedded-tab .main-wrapper {
   margin-left: 0 !important;
-  min-height: 100vh;
+  min-height: auto !important;
 }
 
+html.is-embedded-tab .content-area,
 body.is-embedded-tab .content-area {
-  padding: 16px 20px 30px 20px !important;
+  padding: 12px 20px 24px 20px !important;
 }
 
 /* In parent shell window, hide the direct content block completely (rendered inside iframe tabs instead) */
