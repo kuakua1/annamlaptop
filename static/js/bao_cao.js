@@ -8,6 +8,20 @@ let currentFromDate = '';
 let currentToDate = '';
 let currentReportData = null;
 
+const COMPANY_REPORT_INFO = window.COMPANY_INFO || {
+    name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',
+    address: '454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam',
+    brand: 'KHO HÀNG AN NAM',
+    hotline: '0386.539.555',
+    email: 'contact@laptopannam.com'
+};
+
+function formatVNDClean(v) {
+    if (!v || isNaN(v)) return '0';
+    return Math.round(Number(v)).toLocaleString('vi-VN');
+}
+window.formatVNDClean = formatVNDClean;
+
 /**
  * Tải dữ liệu tổng quan theo khoảng ngày
  */
@@ -293,9 +307,9 @@ async function exportFinancialReportToExcel() {
     };
 
     // Header góc trái: Đơn vị, Địa chỉ
-    ws.getCell('A1').value = `Đơn vị: ${COMPANY_INFO.name}`;
+    ws.getCell('A1').value = `Đơn vị: ${COMPANY_REPORT_INFO.name}`;
     ws.getCell('A1').font = fontBold;
-    ws.getCell('A2').value = `Địa chỉ: ${COMPANY_INFO.address}`;
+    ws.getCell('A2').value = `Địa chỉ: ${COMPANY_REPORT_INFO.address}`;
     ws.getCell('A2').font = fontBold;
 
     // Header góc phải: Mẫu số S16-DNN
@@ -559,217 +573,284 @@ async function exportFinancialReportToExcel() {
 }
 
 /**
+ * Trình kích hoạt in HTML an toàn (chống popup blocker)
+ */
+function executePrintHtml(htmlContent) {
+    try {
+        const printWindow = window.open('', '_blank', 'width=1100,height=800');
+        if (printWindow) {
+            printWindow.document.open();
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+            return;
+        }
+    } catch (e) {
+        console.warn('Cửa sổ popup bị chặn, chuyển sang in qua iframe', e);
+    }
+
+    // Fallback: In qua hidden iframe nội trang (không bao giờ bị trình duyệt chặn)
+    let frame = document.getElementById('report-print-hidden-frame');
+    if (!frame) {
+        frame = document.createElement('iframe');
+        frame.id = 'report-print-hidden-frame';
+        frame.style.position = 'fixed';
+        frame.style.right = '0';
+        frame.style.bottom = '0';
+        frame.style.width = '0';
+        frame.style.height = '0';
+        frame.style.border = '0';
+        frame.style.visibility = 'hidden';
+        document.body.appendChild(frame);
+    }
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+    setTimeout(() => {
+        try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        } catch (err) {
+            console.error('Lỗi khi kích hoạt in:', err);
+            window.print();
+        }
+    }, 450);
+}
+
+/**
  * In Báo Cáo Tài Chính / Sổ Chi Tiết Bán Hàng chuẩn Thông tư 133
  */
 async function printFinancialReport() {
-    const fromInput = document.getElementById('report-from-date')?.value;
-    const toInput = document.getElementById('report-to-date')?.value;
-    if (fromInput) currentFromDate = fromInput;
-    if (toInput) currentToDate = toInput;
+    try {
+        const fromInput = document.getElementById('report-from-date')?.value;
+        const toInput = document.getElementById('report-to-date')?.value;
+        if (fromInput) currentFromDate = fromInput;
+        if (toInput) currentToDate = toInput;
 
-    if (!currentReportData || !currentReportData.chi_tiet_ban_hang) {
-        await loadStats(currentFromDate, currentToDate);
-    }
-    const items = currentReportData?.chi_tiet_ban_hang || [];
-    if (!items.length) {
-        showToast('Không có dữ liệu để in báo cáo trong khoảng thời gian này!', 'warning');
-        return;
-    }
-
-    const periodText = getPeriodDisplayText();
-    const totalRev = currentReportData?.doanh_thu || 0;
-    const giaVon = currentReportData?.gia_von || 0;
-    const laiGop = totalRev - giaVon;
-    let totalQty = 0;
-
-    const rowsHtml = items.map((it, idx) => {
-        const sl = parseInt(it.so_luong) || 0;
-        totalQty += sl;
-        const donGia = parseFloat(it.don_gia) || 0;
-        const thanhTien = parseFloat(it.thanh_tien) || 0;
-        let ngayDM = '';
-        if (it.ngay_xuat) {
-            const p = it.ngay_xuat.split('-');
-            ngayDM = p.length === 3 ? `${p[2]}/${p[1]}` : it.ngay_xuat;
+        if (!currentReportData || !currentReportData.chi_tiet_ban_hang) {
+            await loadStats(currentFromDate, currentToDate);
+        }
+        const items = currentReportData?.chi_tiet_ban_hang || [];
+        if (!items.length) {
+            showToast('Không có dữ liệu để in báo cáo trong khoảng thời gian này!', 'warning');
+            return;
         }
 
-        return `
-            <tr>
-                <td style="text-align: center; padding: 4px;">${idx + 1}</td>
-                <td style="text-align: center; padding: 4px; font-weight: 500;">${escapeHtml(it.so_phieu)}</td>
-                <td style="text-align: center; padding: 4px;">${escapeHtml(ngayDM)}</td>
-                <td style="text-align: left; padding: 4px 6px;">${escapeHtml(it.ten_hang)}</td>
-                <td style="text-align: center; padding: 4px;">${escapeHtml(it.tk_du || '131')}</td>
-                <td style="text-align: right; padding: 4px 6px;">${formatNumber(sl)}</td>
-                <td style="text-align: right; padding: 4px 6px;">${donGia > 0 ? formatVNDClean(donGia) : ''}</td>
-                <td style="text-align: right; padding: 4px 6px; font-weight: 500;">${formatVNDClean(thanhTien)}</td>
-                <td style="text-align: center; padding: 4px;"></td>
-                <td style="text-align: center; padding: 4px;"></td>
-            </tr>
+        const periodText = getPeriodDisplayText();
+        const totalRev = currentReportData?.doanh_thu || 0;
+        const giaVon = currentReportData?.gia_von || 0;
+        const laiGop = totalRev - giaVon;
+        let totalQty = 0;
+
+        const rowsHtml = items.map((it, idx) => {
+            const sl = parseInt(it.so_luong) || 0;
+            totalQty += sl;
+            const donGia = parseFloat(it.don_gia) || 0;
+            const thanhTien = parseFloat(it.thanh_tien) || 0;
+            let ngayDM = '';
+            if (it.ngay_xuat) {
+                const p = it.ngay_xuat.split('-');
+                ngayDM = p.length === 3 ? `${p[2]}/${p[1]}` : it.ngay_xuat;
+            }
+
+            return `
+                <tr>
+                    <td style="text-align: center; padding: 4px;">${idx + 1}</td>
+                    <td style="text-align: center; padding: 4px; font-weight: 500;">${escapeHtml(it.so_phieu)}</td>
+                    <td style="text-align: center; padding: 4px;">${escapeHtml(ngayDM)}</td>
+                    <td style="text-align: left; padding: 4px 6px;">${escapeHtml(it.ten_hang)}</td>
+                    <td style="text-align: center; padding: 4px;">${escapeHtml(it.tk_du || '131')}</td>
+                    <td style="text-align: right; padding: 4px 6px;">${formatNumber(sl)}</td>
+                    <td style="text-align: right; padding: 4px 6px;">${donGia > 0 ? formatVNDClean(donGia) : ''}</td>
+                    <td style="text-align: right; padding: 4px 6px; font-weight: 500;">${formatVNDClean(thanhTien)}</td>
+                    <td style="text-align: center; padding: 4px;"></td>
+                    <td style="text-align: center; padding: 4px;"></td>
+                </tr>
+            `;
+        }).join('');
+
+        const now = new Date();
+        const dateOpenStr = currentFromDate ? `Ngày mở sổ: ${currentFromDate.split('-').reverse().join('/')}` : `Ngày mở sổ: 01/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
+        const dateCloseStr = `Ngày ${String(now.getDate()).padStart(2,'0')} tháng ${String(now.getMonth()+1).padStart(2,'0')} năm ${now.getFullYear()}`;
+
+        const reportHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Sổ Chi Tiết Bán Hàng - Mẫu S16-DNN</title>
+                <style>
+                    @page { size: A4 landscape; margin: 12mm 15mm; }
+                    body {
+                        font-family: "Times New Roman", Times, serif;
+                        font-size: 10pt;
+                        color: #000;
+                        margin: 0;
+                        padding: 10px;
+                    }
+                    .no-print-bar {
+                        display: flex;
+                        justify-content: flex-end;
+                        margin-bottom: 12px;
+                    }
+                    .btn-print {
+                        background: #0284c7;
+                        color: #fff;
+                        border: none;
+                        padding: 7px 18px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: bold;
+                    }
+                    @media print {
+                        .no-print-bar { display: none !important; }
+                        body { padding: 0; }
+                    }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-top: 10px;
+                    }
+                    th, td {
+                        border: 1px solid #000;
+                    }
+                    th {
+                        background-color: #f7f7f7;
+                        font-weight: bold;
+                        text-align: center;
+                    }
+                    .no-border { border: none !important; }
+                </style>
+            </head>
+            <body>
+                <div class="no-print-bar">
+                    <button class="btn-print" onclick="window.print()">🖨️ In Báo Cáo (A4)</button>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <div style="font-size: 10pt; line-height: 1.4;">
+                        <strong>Đơn vị:</strong> ${COMPANY_REPORT_INFO.name}<br>
+                        <strong>Địa chỉ:</strong> ${COMPANY_REPORT_INFO.address}
+                    </div>
+                    <div style="text-align: center; font-size: 10pt; line-height: 1.3;">
+                        <strong>Mẫu số S16-DNN</strong><br>
+                        <span style="font-style: italic; font-size: 9pt;">(Ban hành theo TT 133/2016/TT-BTC<br>ngày 26/08/2016 của Bộ Trưởng BTC)</span>
+                    </div>
+                </div>
+
+                <div style="text-align: center; margin-bottom: 8px;">
+                    <h2 style="font-size: 16pt; margin: 0; text-transform: uppercase; font-weight: bold;">SỔ CHI TIẾT BÁN HÀNG</h2>
+                    <div style="font-size: 10.5pt; margin-top: 3px;">${periodText}</div>
+                    <div style="font-size: 10pt; margin-top: 2px;">Tài khoản: 511 (Doanh thu bán hàng và cung cấp dịch vụ)</div>
+                </div>
+
+                <div style="text-align: right; font-weight: bold; font-size: 10pt; margin-bottom: 5px;">
+                    Đơn vị tính: Đồng
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th rowspan="2" style="width: 35px;">STT</th>
+                            <th colspan="2">Chứng từ</th>
+                            <th rowspan="2">Diễn giải</th>
+                            <th rowspan="2" style="width: 45px;">TK<br>ĐƯ</th>
+                            <th colspan="3">Doanh thu</th>
+                            <th colspan="2">Các khoản tính trừ</th>
+                        </tr>
+                        <tr>
+                            <th style="width: 85px;">Số hiệu</th>
+                            <th style="width: 65px;">Ngày, tháng</th>
+                            <th style="width: 65px;">Số lượng</th>
+                            <th style="width: 95px;">Đơn giá</th>
+                            <th style="width: 115px;">Thành tiền</th>
+                            <th style="width: 60px;">Thuế</th>
+                            <th style="width: 60px;">Khác</th>
+                        </tr>
+                        <tr style="background-color: #fafafa; font-size: 9pt;">
+                            <th>A</th>
+                            <th>B</th>
+                            <th>C</th>
+                            <th>D</th>
+                            <th>E</th>
+                            <th>1</th>
+                            <th>2</th>
+                            <th>3 = 1 x 2</th>
+                            <th>4</th>
+                            <th>5</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rowsHtml}
+                        <tr style="font-weight: bold;">
+                            <td colspan="5" style="text-align: center; padding: 5px;">Tổng cộng số phát sinh</td>
+                            <td style="text-align: right; padding: 5px;">${formatNumber(totalQty)}</td>
+                            <td></td>
+                            <td style="text-align: right; padding: 5px;">${formatVNDClean(totalRev)}</td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="5" style="padding: 5px; text-indent: 10px;">- Doanh thu thuần</td>
+                            <td></td>
+                            <td></td>
+                            <td style="text-align: right; padding: 5px;">${formatVNDClean(totalRev)}</td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td colspan="5" style="padding: 5px; text-indent: 10px;">- Giá vốn hàng bán</td>
+                            <td></td>
+                            <td></td>
+                            <td style="text-align: right; padding: 5px;">${formatVNDClean(giaVon)}</td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr style="font-weight: bold;">
+                            <td colspan="5" style="padding: 5px; text-indent: 10px;">- Lãi gộp</td>
+                            <td></td>
+                            <td></td>
+                            <td style="text-align: right; padding: 5px;">${formatVNDClean(laiGop)}</td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="margin-top: 15px; display: flex; justify-content: space-between; font-size: 10pt;">
+                    <div style="font-style: italic;">${dateOpenStr}</div>
+                    <div style="font-style: italic;">${dateCloseStr}</div>
+                </div>
+
+                <div style="display: flex; justify-content: space-around; text-align: center; margin-top: 10px; font-size: 10pt;">
+                    <div style="flex: 1;">
+                        <strong>Người ghi sổ</strong><br>
+                        <span style="font-size: 9pt; font-style: italic;">(Ký, họ tên)</span>
+                    </div>
+                    <div style="flex: 1;">
+                        <strong>Kế toán trưởng</strong><br>
+                        <span style="font-size: 9pt; font-style: italic;">(Ký, họ tên)</span>
+                    </div>
+                    <div style="flex: 1;">
+                        <strong>Giám đốc</strong><br>
+                        <span style="font-size: 9pt; font-style: italic;">(Ký, họ tên, đóng dấu)</span>
+                    </div>
+                </div>
+
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() { window.print(); }, 400);
+                    };
+                </script>
+            </body>
+            </html>
         `;
-    }).join('');
 
-    const now = new Date();
-    const dateOpenStr = currentFromDate ? `Ngày mở sổ: ${currentFromDate.split('-').reverse().join('/')}` : `Ngày mở sổ: 01/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()}`;
-    const dateCloseStr = `Ngày ${String(now.getDate()).padStart(2,'0')} tháng ${String(now.getMonth()+1).padStart(2,'0')} năm ${now.getFullYear()}`;
-
-    const printWindow = window.open('', '_blank', 'width=1100,height=800');
-    if (!printWindow) {
-        showToast('Trình duyệt đã chặn pop-up in, vui lòng cho phép để tiếp tục!', 'warning');
-        return;
+        executePrintHtml(reportHtml);
+    } catch (err) {
+        console.error('Lỗi khi in báo cáo:', err);
+        showToast('Có lỗi xảy ra khi chuẩn bị bản in: ' + (err.message || err), 'error');
     }
-
-    printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Sổ Chi Tiết Bán Hàng - Mẫu S16-DNN</title>
-            <style>
-                @page { size: A4 landscape; margin: 12mm 15mm; }
-                body {
-                    font-family: "Times New Roman", Times, serif;
-                    font-size: 10pt;
-                    color: #000;
-                    margin: 0;
-                    padding: 10px;
-                }
-                table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-top: 10px;
-                }
-                th, td {
-                    border: 1px solid #000;
-                }
-                th {
-                    background-color: #f7f7f7;
-                    font-weight: bold;
-                    text-align: center;
-                }
-                .no-border { border: none !important; }
-            </style>
-        </head>
-        <body>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                <div style="font-size: 10pt; line-height: 1.4;">
-                    <strong>Đơn vị:</strong> ${COMPANY_INFO.name}<br>
-                    <strong>Địa chỉ:</strong> ${COMPANY_INFO.address}
-                </div>
-                <div style="text-align: center; font-size: 10pt; line-height: 1.3;">
-                    <strong>Mẫu số S16-DNN</strong><br>
-                    <span style="font-style: italic; font-size: 9pt;">(Ban hành theo TT 133/2016/TT-BTC<br>ngày 26/08/2016 của Bộ Trưởng BTC)</span>
-                </div>
-            </div>
-
-            <div style="text-align: center; margin-bottom: 8px;">
-                <h2 style="font-size: 16pt; margin: 0; text-transform: uppercase; font-weight: bold;">SỔ CHI TIẾT BÁN HÀNG</h2>
-                <div style="font-size: 10.5pt; margin-top: 3px;">${periodText}</div>
-                <div style="font-size: 10pt; margin-top: 2px;">Tài khoản: 511 (Doanh thu bán hàng và cung cấp dịch vụ)</div>
-            </div>
-
-            <div style="text-align: right; font-weight: bold; font-size: 10pt; margin-bottom: 5px;">
-                Đơn vị tính: Đồng
-            </div>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th rowspan="2" style="width: 35px;">STT</th>
-                        <th colspan="2">Chứng từ</th>
-                        <th rowspan="2">Diễn giải</th>
-                        <th rowspan="2" style="width: 45px;">TK<br>ĐƯ</th>
-                        <th colspan="3">Doanh thu</th>
-                        <th colspan="2">Các khoản tính trừ</th>
-                    </tr>
-                    <tr>
-                        <th style="width: 85px;">Số hiệu</th>
-                        <th style="width: 65px;">Ngày, tháng</th>
-                        <th style="width: 65px;">Số lượng</th>
-                        <th style="width: 95px;">Đơn giá</th>
-                        <th style="width: 115px;">Thành tiền</th>
-                        <th style="width: 60px;">Thuế</th>
-                        <th style="width: 60px;">Khác</th>
-                    </tr>
-                    <tr style="background-color: #fafafa; font-size: 9pt;">
-                        <th>A</th>
-                        <th>B</th>
-                        <th>C</th>
-                        <th>D</th>
-                        <th>E</th>
-                        <th>1</th>
-                        <th>2</th>
-                        <th>3 = 1 x 2</th>
-                        <th>4</th>
-                        <th>5</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rowsHtml}
-                    <tr style="font-weight: bold;">
-                        <td colspan="5" style="text-align: center; padding: 5px;">Tổng cộng số phát sinh</td>
-                        <td style="text-align: right; padding: 5px;">${formatNumber(totalQty)}</td>
-                        <td></td>
-                        <td style="text-align: right; padding: 5px;">${formatVNDClean(totalRev)}</td>
-                        <td></td>
-                        <td></td>
-                    </tr>
-                    <tr>
-                        <td colspan="5" style="padding: 5px; text-indent: 10px;">- Doanh thu thuần</td>
-                        <td></td>
-                        <td></td>
-                        <td style="text-align: right; padding: 5px;">${formatVNDClean(totalRev)}</td>
-                        <td></td>
-                        <td></td>
-                    </tr>
-                    <tr>
-                        <td colspan="5" style="padding: 5px; text-indent: 10px;">- Giá vốn hàng bán</td>
-                        <td></td>
-                        <td></td>
-                        <td style="text-align: right; padding: 5px;">${formatVNDClean(giaVon)}</td>
-                        <td></td>
-                        <td></td>
-                    </tr>
-                    <tr style="font-weight: bold;">
-                        <td colspan="5" style="padding: 5px; text-indent: 10px;">- Lãi gộp</td>
-                        <td></td>
-                        <td></td>
-                        <td style="text-align: right; padding: 5px;">${formatVNDClean(laiGop)}</td>
-                        <td></td>
-                        <td></td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <div style="margin-top: 15px; display: flex; justify-content: space-between; font-size: 10pt;">
-                <div style="font-style: italic;">${dateOpenStr}</div>
-                <div style="font-style: italic;">${dateCloseStr}</div>
-            </div>
-
-            <div style="display: flex; justify-content: space-around; text-align: center; margin-top: 10px; font-size: 10pt;">
-                <div style="flex: 1;">
-                    <strong>Người ghi sổ</strong><br>
-                    <span style="font-size: 9pt; font-style: italic;">(Ký, họ tên)</span>
-                </div>
-                <div style="flex: 1;">
-                    <strong>Kế toán trưởng</strong><br>
-                    <span style="font-size: 9pt; font-style: italic;">(Ký, họ tên)</span>
-                </div>
-                <div style="flex: 1;">
-                    <strong>Giám đốc</strong><br>
-                    <span style="font-size: 9pt; font-style: italic;">(Ký, họ tên, đóng dấu)</span>
-                </div>
-            </div>
-
-            <script>
-                window.onload = function() {
-                    setTimeout(function() { window.print(); }, 400);
-                };
-            </script>
-        </body>
-        </html>
-    `);
-    printWindow.document.close();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
