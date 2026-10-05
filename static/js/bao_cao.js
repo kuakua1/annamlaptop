@@ -382,7 +382,6 @@ function setQuickPeriod(type) {
     }
 
     loadStats(currentFromDate, currentToDate);
-    loadNhapXuatTon(currentFromDate, currentToDate);
 }
 
 function onDateRangeChanged() {
@@ -392,7 +391,6 @@ function onDateRangeChanged() {
     currentToDate = document.getElementById('report-to-date')?.value || '';
     if (currentFromDate && currentToDate && currentFromDate <= currentToDate) {
         loadStats(currentFromDate, currentToDate);
-        loadNhapXuatTon(currentFromDate, currentToDate);
     }
 }
 
@@ -410,7 +408,6 @@ function applyCustomRange() {
     currentFromDate = from;
     currentToDate = to;
     loadStats(currentFromDate, currentToDate);
-    loadNhapXuatTon(currentFromDate, currentToDate);
 }
 
 /**
@@ -1619,7 +1616,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await Promise.all([
         loadStats(currentFromDate, currentToDate),
-        loadNhapXuatTon(currentFromDate, currentToDate),
         loadChart(),
         loadTopProducts(),
         loadTonKho(),

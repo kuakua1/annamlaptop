@@ -43,18 +43,13 @@
 <!-- Tabs Navigation -->
 <ul class="nav nav-pills mb-3 bg-white p-2 rounded shadow-sm border gap-2" id="reportTabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active fw-bold px-3 py-2" id="tab-nxt-link" data-bs-toggle="pill" data-bs-target="#tab-nxt" type="button" role="tab">
-            <i class="bi bi-table me-2"></i>01. Tổng Hợp Nhập Xuất Tồn
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link fw-bold px-3 py-2" id="tab-banhang-link" data-bs-toggle="pill" data-bs-target="#tab-banhang" type="button" role="tab">
-            <i class="bi bi-file-earmark-spreadsheet me-2"></i>02. Sổ Chi Tiết Bán Hàng (S16-DNN)
+        <button class="nav-link active fw-bold px-3 py-2" id="tab-banhang-link" data-bs-toggle="pill" data-bs-target="#tab-banhang" type="button" role="tab">
+            <i class="bi bi-file-earmark-spreadsheet me-2"></i>01. Sổ Chi Tiết Bán Hàng (S16-DNN)
         </button>
     </li>
     <li class="nav-item" role="presentation">
         <button class="nav-link fw-bold px-3 py-2" id="tab-analytics-link" data-bs-toggle="pill" data-bs-target="#tab-analytics" type="button" role="tab">
-            <i class="bi bi-graph-up me-2"></i>03. Biểu Đồ & Thống Kê Doanh Thu
+            <i class="bi bi-graph-up me-2"></i>02. Biểu Đồ & Thống Kê Doanh Thu
         </button>
     </li>
 </ul>
@@ -62,108 +57,8 @@
 <!-- Tab Content -->
 <div class="tab-content" id="reportTabContent">
 
-    <!-- TAB 1: BẢNG TỔNG HỢP NHẬP XUẤT TỒN (GIỐNG ẢNH ĐÍNH KÈM) -->
-    <div class="tab-pane fade show active" id="tab-nxt" role="tabpanel">
-        <div class="card shadow-sm border-0 mb-4">
-            <div class="card-header bg-white py-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
-                        <h5 class="mb-0 fw-bold text-dark">
-                            <i class="bi bi-boxes text-primary me-2"></i>Bảng Tổng Hợp Nhập - Xuất - Tồn
-                        </h5>
-                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="nxt-period-badge">Tháng này</span>
-                    </div>
-
-                    <!-- Nút Xuất Excel & In Bảng Nhập Xuất Tồn -->
-                    <div class="d-flex align-items-center gap-2">
-                        <button class="btn btn-sm btn-success px-3 fw-semibold shadow-sm" onclick="exportNhapXuatTonToExcel()">
-                            <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel (NXT)
-                        </button>
-                        <button class="btn btn-sm btn-primary px-3 fw-semibold shadow-sm" onclick="printNhapXuatTonReport()">
-                            <i class="bi bi-printer me-1"></i>In Báo Cáo
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Thanh lọc nội bộ bảng NXT -->
-                <div class="row g-2 mt-2 align-items-center">
-                    <div class="col-md-4 col-sm-6">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
-                            <input type="text" class="form-control" id="nxt-search-input" placeholder="Tìm tên hàng, mã hàng..." oninput="onNxtFilterChanged()">
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-sm-6">
-                        <select class="form-select form-select-sm" id="nxt-filter-category" onchange="onNxtFilterChanged()">
-                            <option value="">-- Tất cả nhóm hàng --</option>
-                        </select>
-                    </div>
-                    <div class="col-md-5 col-sm-12 d-flex align-items-center justify-content-md-end gap-3">
-                        <div class="form-check form-switch small mb-0">
-                            <input class="form-check-input" type="checkbox" id="nxt-toggle-zero" checked onchange="onNxtFilterChanged()">
-                            <label class="form-check-label text-muted" for="nxt-toggle-zero">Chỉ hiện hàng có số lượng &gt; 0</label>
-                        </div>
-                        <span class="small text-muted" id="nxt-row-count">Hiển thị: 0 mặt hàng</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Table Container -->
-            <div class="card-body p-0">
-                <div class="table-responsive" style="max-height: 700px;">
-                    <table class="table table-bordered table-sm table-hover align-middle mb-0 text-nowrap nxt-table">
-                        <thead class="table-light sticky-top text-center" style="z-index: 5;">
-                            <tr>
-                                <th rowspan="2" style="width: 45px; vertical-align: middle;">STT</th>
-                                <th rowspan="2" style="min-width: 260px; vertical-align: middle; text-align: left;">Mặt hàng</th>
-                                <th rowspan="2" style="width: 65px; vertical-align: middle;">ĐVT</th>
-                                <th colspan="2" class="bg-info bg-opacity-10 text-primary">Tồn đầu kỳ</th>
-                                <th colspan="2" class="bg-success bg-opacity-10 text-success">Nhập trong kỳ</th>
-                                <th colspan="2" class="bg-danger bg-opacity-10 text-danger">Xuất trong kỳ</th>
-                                <th rowspan="2" style="width: 110px; vertical-align: middle;">Đơn giá</th>
-                                <th colspan="2" class="bg-primary bg-opacity-10 text-primary">Tồn cuối kỳ</th>
-                            </tr>
-                            <tr class="small text-muted">
-                                <th style="width: 80px;">Lượng đầu</th>
-                                <th style="width: 120px;">Tiền đầu</th>
-                                <th style="width: 80px;">Lượng nhập</th>
-                                <th style="width: 120px;">Tiền nhập</th>
-                                <th style="width: 80px;">Lượng xuất</th>
-                                <th style="width: 120px;">Tiền xuất</th>
-                                <th style="width: 85px;">Lượng tồn</th>
-                                <th style="width: 125px;">Tiền tồn</th>
-                            </tr>
-                        </thead>
-                        <tbody id="nxt-table-body">
-                            <tr>
-                                <td colspan="12" class="text-center text-muted py-5">
-                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu nhập xuất tồn...
-                                </td>
-                            </tr>
-                        </tbody>
-                        <tfoot class="sticky-bottom fw-bold" style="background-color: #dbeafe; color: #1e3a8a; border-top: 2px solid #3b82f6;" id="nxt-table-footer">
-                            <tr>
-                                <td class="text-center">#</td>
-                                <td colspan="2" class="text-uppercase ps-3">Tổng cộng</td>
-                                <td class="text-end" id="nxt-tot-luong-dau">0</td>
-                                <td class="text-end" id="nxt-tot-tien-dau">0</td>
-                                <td class="text-end text-success" id="nxt-tot-luong-nhap">0</td>
-                                <td class="text-end text-success" id="nxt-tot-tien-nhap">0</td>
-                                <td class="text-end text-danger" id="nxt-tot-luong-xuat">0</td>
-                                <td class="text-end text-danger" id="nxt-tot-tien-xuat">0</td>
-                                <td class="text-center text-muted">-</td>
-                                <td class="text-end text-primary" id="nxt-tot-luong-ton">0</td>
-                                <td class="text-end text-primary" id="nxt-tot-tien-ton">0</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- TAB 2: SỔ CHI TIẾT BÁN HÀNG (S16-DNN) -->
-    <div class="tab-pane fade" id="tab-banhang" role="tabpanel">
+    <!-- TAB 1: SỔ CHI TIẾT BÁN HÀNG (S16-DNN) -->
+    <div class="tab-pane fade show active" id="tab-banhang" role="tabpanel">
         <div class="card shadow-sm border-0 mb-4">
             <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
@@ -321,5 +216,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/bao_cao.js?v=20261005_v12"></script>
+<script src="/static/js/bao_cao.js?v=20261005_v13"></script>
 {% endblock %}
