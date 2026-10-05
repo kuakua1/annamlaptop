@@ -11,6 +11,34 @@ from services.sheets_service import (
 # Đường dẫn database SQLite nội bộ
 DB_PATH = Path("inventory.db").resolve()
 
+def _safe_float(val, default=0.0) -> float:
+    if val is None or val == "":
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        cleaned = str(val).replace("đ", "").replace("Đ", "").replace(",", "").replace(".", "").strip()
+        # Nếu có dấu chấm thập phân thực tế
+        return float(cleaned) if cleaned else default
+    except Exception:
+        try:
+            return float(val)
+        except Exception:
+            return default
+
+def _safe_int(val, default=0) -> int:
+    if val is None or val == "":
+        return default
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float):
+        return int(val)
+    try:
+        cleaned = "".join(c for c in str(val) if c.isdigit() or c == "-")
+        return int(cleaned) if cleaned else default
+    except Exception:
+        return default
+
 class DatabaseManager:
     """Quản lý CSDL SQLite cục bộ + Đồng bộ dữ liệu 2 chiều với Google Sheets."""
 
@@ -145,9 +173,9 @@ class DatabaseManager:
                             str(r.get("ten_hang") or ""),
                             str(r.get("danh_muc") or ""),
                             str(r.get("don_vi_tinh") or "Cái"),
-                            float(r.get("gia_nhap") or 0),
-                            float(r.get("gia_ban") or 0),
-                            int(r.get("ton_kho") or r.get("so_luong") or 0),
+                            _safe_float(r.get("gia_nhap")),
+                            _safe_float(r.get("gia_ban")),
+                            _safe_int(r.get("ton_kho") or r.get("so_luong")),
                             str(r.get("chi_tiet_lo") or ""),
                             str(r.get("ghi_chu") or "")
                         ))
@@ -212,9 +240,9 @@ class DatabaseManager:
                             str(r.get("ngay_nhap") or r.get("ngay") or ""),
                             str(r.get("ma_hang") or ""),
                             str(r.get("ten_hang") or ""),
-                            int(r.get("so_luong") or 0),
-                            float(r.get("gia_nhap") or 0),
-                            float(r.get("thanh_tien") or 0),
+                            _safe_int(r.get("so_luong")),
+                            _safe_float(r.get("gia_nhap")),
+                            _safe_float(r.get("thanh_tien")),
                             str(r.get("nha_cung_cap_id") or r.get("ten_ncc") or ""),
                             str(r.get("dia_chi") or ""),
                             str(r.get("dien_thoai") or ""),
@@ -239,15 +267,17 @@ class DatabaseManager:
                             str(r.get("ngay_xuat") or r.get("ngay") or ""),
                             str(r.get("ma_hang") or ""),
                             str(r.get("ten_hang") or ""),
-                            int(r.get("so_luong") or 0),
-                            float(r.get("gia_ban") or 0),
-                            float(r.get("thanh_tien") or 0),
+                            _safe_int(r.get("so_luong")),
+                            _safe_float(r.get("gia_ban")),
+                            _safe_float(r.get("thanh_tien")),
                             str(r.get("khach_hang_id") or r.get("ten_kh") or ""),
                             str(r.get("dia_chi") or ""),
                             str(r.get("dien_thoai") or ""),
                             str(r.get("ghi_chu") or "")
                         ))
                     counts["XuatHang"] = len(records)
+                except Exception as e:
+                    counts["XuatHang_err"] = str(e)
                 except Exception as e:
                     counts["XuatHang_err"] = str(e)
 

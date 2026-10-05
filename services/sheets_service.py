@@ -200,6 +200,8 @@ class SheetsService:
         self._initialized = True
 
     def _sheet(self, name: str) -> gspread.Worksheet:
+        if not self._initialized:
+            self.initialize()
         if name not in self._sheet_cache:
             self._sheet_cache[name] = self._spreadsheet.worksheet(name)
         return self._sheet_cache[name]
