@@ -591,7 +591,12 @@ function renderReceiptsPage(page) {
             <!-- Dòng 3: Tổng số lượng hàng & Số loại món -->
             <div class="d-flex justify-content-between align-items-center text-muted small pt-1 border-top">
                 <span><i class="bi bi-box-seam me-1 text-secondary"></i>Tổng nhập: <strong class="text-dark">${formatNumber(r.total_sl)}</strong> cái &middot; <strong>${r.count}</strong> món</span>
-                <span class="text-primary small fw-semibold">Xem chi tiết <i class="bi bi-arrow-right-short"></i></span>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="event.stopPropagation(); confirmDeleteReceipt('${r.so_phieu}', 'nhap', () => { loadReceipts(); loadData(); })" title="Xóa phiếu nhập">
+                        <i class="bi bi-trash"></i> Xóa
+                    </button>
+                    <span class="text-primary small fw-semibold">Xem chi tiết <i class="bi bi-arrow-right-short"></i></span>
+                </div>
             </div>
         </div>
     `).join('');
@@ -605,83 +610,14 @@ function renderReceiptsPage(page) {
 async function viewReceipt(so_phieu) {
     try {
         const res = await apiRequest(`/api/nhap-hang/${so_phieu}`);
-        const items = res.items || [];
         document.querySelectorAll('.receipt-list-item').forEach(el => el.classList.remove('selected'));
         event?.currentTarget?.classList.add('selected');
 
-        window.currentReceiptDetail = { ...res, type: 'nhap' };
-        const ncc = res.nha_cung_cap || {};
-        const modal = document.getElementById('detail-modal-body');
-        modal.innerHTML = `
-            <!-- Khung Thông Tin Phiếu Nhập Kho -->
-            <div class="card bg-light border-0 mb-3">
-                <div class="card-body p-3">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-2 border-bottom">
-                        <div>
-                            <span class="badge bg-primary fs-6 px-3 py-1 font-monospace">${so_phieu}</span>
-                            <span class="text-secondary small ms-2">Ngày nhập: <strong class="text-dark">${formatDate(res.ngay_nhap)}</strong></span>
-                        </div>
-                        <div class="text-end">
-                            <span class="text-muted small me-2">Tổng tiền:</span>
-                            <span class="fs-4 fw-bold text-primary font-monospace">${formatVND(res.total)}</span>
-                        </div>
-                    </div>
-                    <div class="row g-2 small">
-                        <div class="col-md-7">
-                            <div class="fw-bold text-dark fs-6">${escapeHtml(ncc.ten_ncc || 'Không xác định')}</div>
-                            ${ncc.dien_thoai ? `<div class="text-muted">SĐT: <strong class="text-dark font-monospace">${escapeHtml(ncc.dien_thoai)}</strong></div>` : ''}
-                            ${ncc.dia_chi ? `<div class="text-muted">Địa chỉ: <span class="text-dark">${escapeHtml(ncc.dia_chi)}</span></div>` : ''}
-                        </div>
-                        <div class="col-md-5 text-md-end">
-                            ${res.ghi_chu ? `<div class="text-muted fst-italic mb-1">Ghi chú: ${escapeHtml(res.ghi_chu)}</div>` : '<div class="text-muted fst-italic mb-1">Không có ghi chú</div>'}
-                            <div class="text-muted">
-                                Quy mô: <strong>${res.so_mat_hang || items.length}</strong> mặt hàng &middot; Tổng SL: <strong class="text-primary font-monospace">${formatNumber(res.tong_so_luong)}</strong>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Bảng chi tiết hàng hóa -->
-            <div class="table-responsive border rounded mb-2">
-                <table class="table table-hover table-striped align-middle mb-0">
-                    <thead style="background-color: #1e293b !important; color: #ffffff !important;">
-                        <tr style="background-color: #1e293b !important;">
-                            <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">#</th>
-                            <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Mã hàng</th>
-                            <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên hàng hóa</th>
-                            <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
-                            <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">SL</th>
-                            <th class="text-end text-nowrap" style="width: 140px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Đơn giá nhập</th>
-                            <th class="text-end text-nowrap" style="min-width: 165px; width: 175px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Thành tiền</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${items.map((it, idx) => `
-                            <tr>
-                                <td class="text-center text-muted small">${idx + 1}</td>
-                                <td><span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang)}</span></td>
-                                <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
-                                <td class="text-center text-muted small">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
-                                <td class="text-center fw-bold fs-6 text-primary">${formatNumber(it.so_luong)}</td>
-                                <td class="text-end text-nowrap" style="white-space: nowrap;">${formatVND(it.gia_nhap)}</td>
-                                <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 165px;">${formatVND(it.thanh_tien)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                    <tfoot class="table-light fw-bold border-top border-2">
-                        <tr>
-                            <td colspan="4" class="text-end text-uppercase small text-secondary">Tổng cộng:</td>
-                            <td class="text-center text-primary fs-6">${formatNumber(res.tong_so_luong)}</td>
-                            <td></td>
-                            <td class="text-end text-primary fs-5 font-monospace text-nowrap" style="white-space: nowrap !important; min-width: 165px;">${formatVND(res.total)}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        `;
         lastLoadedReceipt = res;
-        openModal('detail-modal');
+        await renderEditableReceiptDetail(res, 'nhap', 'detail-modal-body', () => {
+            loadReceipts();
+            loadData();
+        });
     } catch (e) {
         showToast(e.message, 'error');
     }

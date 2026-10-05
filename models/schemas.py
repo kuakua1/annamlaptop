@@ -174,3 +174,27 @@ class XuatHang(BaseModel):
     khach_hang_id: str
     ghi_chu: str
     row_num: Optional[int] = None
+
+
+class NhapHangUpdate(BaseModel):
+    ngay_nhap: Optional[str] = None
+    nha_cung_cap_id: Optional[str] = ""
+    nha_cung_cap_ten: Optional[str] = ""
+    nha_cung_cap_dia_chi: Optional[str] = ""
+    nha_cung_cap_sdt: Optional[str] = ""
+    dia_chi: Optional[str] = ""
+    dien_thoai: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+    items: List[NhapHangItem]
+
+
+class XuatHangUpdate(BaseModel):
+    ngay_xuat: Optional[str] = None
+    khach_hang_id: Optional[str] = ""
+    khach_hang_ten: Optional[str] = ""
+    khach_hang_dia_chi: Optional[str] = ""
+    khach_hang_sdt: Optional[str] = ""
+    dia_chi: Optional[str] = ""
+    dien_thoai: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+    items: List[XuatHangItem]

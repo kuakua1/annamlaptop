@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 import time
 
 from routers.auth import get_current_user, require_login
-from models.schemas import XuatHangCreate
+from models.schemas import XuatHangCreate, XuatHangUpdate
 from services.db_service import db_manager
 
 router = APIRouter()
@@ -316,3 +316,115 @@ async def get_xuat_hang_detail(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/xuat-hang/{so_phieu:path}")
+async def delete_xuat_hang(
+    so_phieu: str,
+    request: Request,
+    user: str = Depends(require_login)
+):
+    try:
+        ok = db_manager.delete_xuat_hang_receipt(so_phieu)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu xuất {so_phieu}")
+        return {"success": True, "message": f"Đã xóa thành công phiếu xuất {so_phieu} và hoàn trả hàng về kho"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/xuat-hang/{so_phieu:path}")
+async def update_xuat_hang(
+    so_phieu: str,
+    data: XuatHangUpdate,
+    request: Request,
+    user: str = Depends(require_login)
+):
+    if not data.items:
+        raise HTTPException(status_code=400, detail="Phiếu xuất phải có ít nhất 1 mặt hàng")
+
+    for item in data.items:
+        if item.gia_ban is None or item.gia_ban < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Giá bán của mặt hàng {item.ten_hang or item.ma_hang} không được để trống hoặc âm"
+            )
+
+    try:
+        old_records = [r for r in db_manager.get_all("XuatHang") if str(r.get("so_phieu", "")) == so_phieu]
+        if not old_records:
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu xuất {so_phieu}")
+
+        old_rec = old_records[0]
+        ngay_xuat = data.ngay_xuat or str(old_rec.get("ngay_xuat", ""))
+        kh_ten = (data.khach_hang_ten or "").strip()
+        kh_id = (data.khach_hang_id or str(old_rec.get("khach_hang_id", ""))).strip()
+        kh_dia_chi = (data.khach_hang_dia_chi or data.dia_chi or "").strip()
+        kh_sdt = (data.khach_hang_sdt or data.dien_thoai or "").strip()
+
+        if kh_ten or kh_sdt:
+            kh_list = db_manager.get_all("KhachHang")
+            matched = None
+            if kh_id:
+                for k in kh_list:
+                    if str(k.get("id", "")).strip() == kh_id:
+                        matched = k
+                        break
+            if not matched and kh_sdt:
+                for k in kh_list:
+                    if str(k.get("dien_thoai", "")).strip() == kh_sdt:
+                        matched = k
+                        break
+            if not matched and kh_ten:
+                for k in kh_list:
+                    if str(k.get("ten_kh", "")).strip().lower() == kh_ten.lower():
+                        matched = k
+                        break
+
+            if not matched and (kh_ten or kh_sdt):
+                new_kh_id = str(int(time.time() * 1000))
+                db_manager.insert_khach_hang({
+                    "id": new_kh_id,
+                    "ten_kh": kh_ten or "Khách lẻ",
+                    "dia_chi": kh_dia_chi,
+                    "dien_thoai": kh_sdt,
+                    "email": "",
+                    "ghi_chu": f"Tự động lưu từ cập nhật phiếu {so_phieu}",
+                })
+                kh_id = new_kh_id
+            elif matched:
+                kh_id = str(matched.get("id", "")).strip()
+
+        kh_save_ref = kh_id if kh_id else (kh_ten or str(old_rec.get("khach_hang_id", "")))
+        items_payload = []
+        for it in data.items:
+            items_payload.append({
+                "ma_hang": it.ma_hang,
+                "ten_hang": it.ten_hang,
+                "so_luong": int(it.so_luong),
+                "gia_ban": float(it.gia_ban)
+            })
+
+        updated_rows = db_manager.update_xuat_hang_receipt(
+            so_phieu=so_phieu,
+            ngay_xuat=ngay_xuat,
+            kh_save_ref=kh_save_ref,
+            ghi_chu=data.ghi_chu or "",
+            items=items_payload
+        )
+
+        return {
+            "success": True,
+            "message": f"Cập nhật phiếu xuất {so_phieu} thành công",
+            "so_phieu": so_phieu,
+            "data": updated_rows
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

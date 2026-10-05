@@ -50,9 +50,14 @@ async function loadHistory() {
                     <td class="text-end fw-bold ${r.loai === 'Nhập' ? 'text-primary' : 'text-danger'}">${formatVND(r.thanh_tien)}</td>
                     <td>${escapeHtml(r.doi_tac || '-')}</td>
                     <td class="text-center">
-                        <button class="btn btn-sm btn-outline-primary py-0 px-2 shadow-sm" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu">
-                            <i class="bi bi-eye me-1"></i>Xem
-                        </button>
+                        <div class="d-flex justify-content-center gap-1">
+                            <button class="btn btn-sm btn-outline-primary py-0 px-2 shadow-sm" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu">
+                                <i class="bi bi-eye me-1"></i>Xem
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger py-0 px-2 shadow-sm" onclick="confirmDeleteReceipt('${escapeHtml(r.so_phieu)}', '${(r.loai || '').toLowerCase().includes('nhập') ? 'nhap' : 'xuat'}', () => loadHistory())" title="Xóa phiếu">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -169,88 +174,13 @@ async function viewHistoryReceipt(loai, so_phieu) {
         const apiUrl = isNhap ? `/api/nhap-hang/${encodeURIComponent(so_phieu)}` : `/api/xuat-hang/${encodeURIComponent(so_phieu)}`;
         
         const res = await apiRequest(apiUrl);
-        const items = res.items || [];
-        window.currentReceiptDetail = { ...res, type: isNhap ? 'nhap' : 'xuat' };
-        const partner = isNhap ? (res.nha_cung_cap || {}) : (res.khach_hang || {});
-        const partnerName = isNhap ? (partner.ten_ncc || 'Không xác định') : (partner.ten_kh || 'Không xác định');
-        const badgeColor = isNhap ? 'bg-primary' : 'bg-danger';
-        const typeLabel = isNhap ? 'Phiếu Nhập Kho' : 'Phiếu Xuất Kho';
-        const dateLabel = isNhap ? formatDate(res.ngay_nhap) : formatDate(res.ngay_xuat);
-        const totalQty = res.tong_so_luong || res.total_sl || items.reduce((s, x) => s + (parseInt(x.so_luong) || 0), 0);
-
+        const type = isNhap ? 'nhap' : 'xuat';
         const titleEl = document.getElementById('history-modal-title');
-        if (titleEl) titleEl.textContent = `Chi Tiết ${typeLabel}: ${so_phieu}`;
-        
-        const modal = document.getElementById('history-modal-body');
-        modal.innerHTML = `
-            <!-- Khung Thông Tin Phiếu & Đối Tác -->
-            <div class="card bg-light border-0 mb-3">
-                <div class="card-body p-3">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-2 border-bottom">
-                        <div>
-                            <span class="badge ${badgeColor} fs-6 px-3 py-1 font-monospace">${escapeHtml(so_phieu)}</span>
-                            <span class="text-secondary small ms-2">Ngày: <strong class="text-dark">${dateLabel}</strong></span>
-                        </div>
-                        <div class="text-end">
-                            <span class="text-muted small me-2">Tổng tiền:</span>
-                            <span class="fs-4 fw-bold ${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatVND(res.total)}</span>
-                        </div>
-                    </div>
-                    <div class="row g-2 small">
-                        <div class="col-md-7">
-                            <div class="fw-bold text-dark fs-6">${escapeHtml(partnerName)}</div>
-                            ${partner.dien_thoai ? `<div class="text-muted">SĐT: <strong class="text-dark font-monospace">${escapeHtml(partner.dien_thoai)}</strong></div>` : ''}
-                            ${partner.dia_chi ? `<div class="text-muted">Địa chỉ: <span class="text-dark">${escapeHtml(partner.dia_chi)}</span></div>` : ''}
-                        </div>
-                        <div class="col-md-5 text-md-end">
-                            ${res.ghi_chu ? `<div class="text-muted fst-italic mb-1">Ghi chú: ${escapeHtml(res.ghi_chu)}</div>` : '<div class="text-muted fst-italic mb-1">Không có ghi chú</div>'}
-                            <div class="text-muted">
-                                Quy mô: <strong>${items.length}</strong> mặt hàng &middot; Tổng SL: <strong class="${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatNumber(totalQty)}</strong>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        if (titleEl) titleEl.textContent = `Chi Tiết ${isNhap ? 'Phiếu Nhập Kho' : 'Phiếu Xuất Kho'}: ${so_phieu}`;
 
-            <!-- Bảng chi tiết hàng hóa -->
-            <div class="table-responsive border rounded mb-2">
-                <table class="table table-hover table-striped align-middle mb-0">
-                    <thead style="background-color: #1e293b !important; color: #ffffff !important;">
-                        <tr style="background-color: #1e293b !important;">
-                            <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">#</th>
-                            <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Mã hàng</th>
-                            <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên hàng hóa</th>
-                            <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
-                            <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">SL</th>
-                            <th class="text-end text-nowrap" style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Đơn giá</th>
-                            <th class="text-end text-nowrap" style="min-width: 165px; width: 175px; background-color: #1e293b !important; color: #ffffff !important;">Thành tiền</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${items.map((it, idx) => `
-                            <tr>
-                                <td class="text-center text-muted small">${idx + 1}</td>
-                                <td><span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang)}</span></td>
-                                <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
-                                <td class="text-center text-muted small">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
-                                <td class="text-center fw-bold fs-6 ${isNhap ? 'text-primary' : 'text-danger'}">${formatNumber(it.so_luong)}</td>
-                                <td class="text-end text-nowrap">${formatVND(isNhap ? it.gia_nhap : it.gia_ban)}</td>
-                                <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="min-width: 165px;">${formatVND(it.thanh_tien)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                    <tfoot class="table-light fw-bold border-top border-2">
-                        <tr>
-                            <td colspan="4" class="text-end text-uppercase small text-secondary">Tổng cộng:</td>
-                            <td class="text-center ${isNhap ? 'text-primary' : 'text-danger'} fs-6">${formatNumber(totalQty)}</td>
-                            <td></td>
-                            <td class="text-end ${isNhap ? 'text-primary' : 'text-danger'} fs-5 font-monospace text-nowrap" style="min-width: 165px;">${formatVND(res.total)}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        `;
-        openModal('history-detail-modal');
+        await renderEditableReceiptDetail(res, type, 'history-modal-body', () => {
+            loadHistory();
+        });
     } catch (e) {
         showToast(e.message, 'error');
     } finally {

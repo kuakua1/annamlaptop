@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 import time
 
 from routers.auth import get_current_user, require_login
-from models.schemas import NhapHangCreate
+from models.schemas import NhapHangCreate, NhapHangUpdate
 from services.db_service import db_manager
 
 router = APIRouter()
@@ -279,3 +279,106 @@ async def get_nhap_hang_detail(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/nhap-hang/{so_phieu:path}")
+async def delete_nhap_hang(
+    so_phieu: str,
+    request: Request,
+    user: str = Depends(require_login)
+):
+    try:
+        ok = db_manager.delete_nhap_hang_receipt(so_phieu)
+        if not ok:
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu nhập {so_phieu}")
+        return {"success": True, "message": f"Đã xóa thành công phiếu nhập {so_phieu} và hoàn trả tồn kho"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/nhap-hang/{so_phieu:path}")
+async def update_nhap_hang(
+    so_phieu: str,
+    data: NhapHangUpdate,
+    request: Request,
+    user: str = Depends(require_login)
+):
+    if not data.items:
+        raise HTTPException(status_code=400, detail="Phiếu nhập phải có ít nhất 1 mặt hàng")
+
+    try:
+        old_records = [r for r in db_manager.get_all("NhapHang") if str(r.get("so_phieu", "")) == so_phieu]
+        if not old_records:
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu nhập {so_phieu}")
+
+        old_rec = old_records[0]
+        ngay_nhap = data.ngay_nhap or str(old_rec.get("ngay_nhap", ""))
+        ncc_ten = (data.nha_cung_cap_ten or "").strip()
+        ncc_id = (data.nha_cung_cap_id or str(old_rec.get("nha_cung_cap_id", ""))).strip()
+        ncc_dia_chi = (data.nha_cung_cap_dia_chi or data.dia_chi or "").strip()
+        ncc_sdt = (data.nha_cung_cap_sdt or data.dien_thoai or "").strip()
+
+        if ncc_ten or ncc_sdt:
+            ncc_list = db_manager.get_all("NhaCungCap")
+            matched = None
+            if ncc_id:
+                for n in ncc_list:
+                    if str(n.get("id", "")).strip() == ncc_id:
+                        matched = n
+                        break
+            if not matched and ncc_sdt:
+                for n in ncc_list:
+                    if str(n.get("dien_thoai", "")).strip() == ncc_sdt:
+                        matched = n
+                        break
+            if not matched and ncc_ten:
+                for n in ncc_list:
+                    if str(n.get("ten_ncc", "")).strip().lower() == ncc_ten.lower():
+                        matched = n
+                        break
+
+            if not matched and (ncc_ten or ncc_sdt):
+                new_ncc_id = str(int(time.time() * 1000))
+                db_manager.insert_nha_cung_cap({
+                    "id": new_ncc_id,
+                    "ten_ncc": ncc_ten or "Nhà cung cấp mới",
+                    "dia_chi": ncc_dia_chi,
+                    "dien_thoai": ncc_sdt,
+                    "email": "",
+                    "ghi_chu": f"Tự động lưu từ cập nhật phiếu {so_phieu}",
+                })
+                ncc_id = new_ncc_id
+            elif matched:
+                ncc_id = str(matched.get("id", "")).strip()
+
+        ncc_save_ref = ncc_id if ncc_id else (ncc_ten or str(old_rec.get("nha_cung_cap_id", "")))
+        items_payload = []
+        for it in data.items:
+            items_payload.append({
+                "ma_hang": it.ma_hang,
+                "ten_hang": it.ten_hang,
+                "so_luong": int(it.so_luong),
+                "gia_nhap": float(it.gia_nhap)
+            })
+
+        updated_rows = db_manager.update_nhap_hang_receipt(
+            so_phieu=so_phieu,
+            ngay_nhap=ngay_nhap,
+            ncc_save_ref=ncc_save_ref,
+            ghi_chu=data.ghi_chu or "",
+            items=items_payload
+        )
+
+        return {
+            "success": True,
+            "message": f"Cập nhật phiếu nhập {so_phieu} thành công",
+            "so_phieu": so_phieu,
+            "data": updated_rows
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

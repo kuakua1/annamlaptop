@@ -994,7 +994,504 @@ function printOfficialReceipt(receiptData = null, receiptType = null) {
     printWindow.document.close();
 }
 
+// ── Hệ Thống Quản Lý, Chỉnh Sửa & Xóa Phiếu Nhập/Xuất ───────────────────────
+
+window.isReceiptDetailDirty = false;
+window.currentReceiptDetail = null;
+window.receiptDetailOnUpdated = null;
+window.allReceiptProductsCache = null;
+
+async function fetchAllProductsForReceipt() {
+    if (window.allReceiptProductsCache && window.allReceiptProductsCache.length) {
+        return window.allReceiptProductsCache;
+    }
+    try {
+        const res = await apiRequest('/api/hang-hoa');
+        window.allReceiptProductsCache = res.data || [];
+        return window.allReceiptProductsCache;
+    } catch (e) {
+        console.error('Lỗi tải danh sách sản phẩm:', e);
+        return [];
+    }
+}
+
+/**
+ * Mở hộp thoại xác nhận xóa phiếu lần 2 (Đồng ý hoặc Không)
+ */
+function confirmDeleteReceipt(so_phieu, type, onDone) {
+    if (!so_phieu) return;
+    const isXuat = (type === 'xuat') || so_phieu.startsWith('XH');
+    const typeLabel = isXuat ? 'phiếu xuất kho' : 'phiếu nhập kho';
+
+    const modalEl = document.getElementById('confirm-delete-receipt-modal');
+    if (!modalEl) {
+        if (confirm(`Bạn có chắc chắn muốn xóa ${typeLabel} "${so_phieu}"? Thao tác này sẽ tự động hoàn trả tồn kho.`)) {
+            executeDeleteReceiptApi(so_phieu, isXuat ? 'xuat' : 'nhap', onDone);
+        }
+        return;
+    }
+
+    const titleEl = document.getElementById('del-receipt-title');
+    const descEl = document.getElementById('del-receipt-desc');
+    if (titleEl) titleEl.textContent = `Xác nhận xóa ${typeLabel} "${so_phieu}"?`;
+    if (descEl) descEl.textContent = `Hành động này sẽ xóa vĩnh viễn phiếu ${so_phieu} và tự động hoàn trả số lượng hàng tồn kho tương ứng vào hệ thống. Không thể hoàn tác.`;
+
+    const confirmBtn = document.getElementById('btn-confirm-delete-receipt');
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang xóa...';
+            try {
+                await executeDeleteReceiptApi(so_phieu, isXuat ? 'xuat' : 'nhap', onDone);
+                closeModal('confirm-delete-receipt-modal');
+                window.isReceiptDetailDirty = false;
+                closeModal('detail-modal');
+                closeModal('history-detail-modal');
+            } catch (err) {
+                // Lỗi đã được toast trong executeDeleteReceiptApi
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Đồng ý xóa';
+            }
+        };
+    }
+
+    openModal('confirm-delete-receipt-modal');
+}
+
+function confirmDeleteCurrentReceipt() {
+    if (!window.currentReceiptDetail || !window.currentReceiptDetail.so_phieu) return;
+    confirmDeleteReceipt(
+        window.currentReceiptDetail.so_phieu,
+        window.currentReceiptDetail.type,
+        window.receiptDetailOnUpdated
+    );
+}
+
+async function executeDeleteReceiptApi(so_phieu, type, onDone) {
+    const isXuat = type === 'xuat' || so_phieu.startsWith('XH');
+    const apiUrl = isXuat ? `/api/xuat-hang/${encodeURIComponent(so_phieu)}` : `/api/nhap-hang/${encodeURIComponent(so_phieu)}`;
+    try {
+        showLoading();
+        const res = await apiRequest(apiUrl, 'DELETE');
+        showToast(res.message || `Đã xóa phiếu ${so_phieu} thành công!`, 'success');
+
+        // Báo cho các tab iframe khác cập nhật kho
+        try {
+            window.top.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+        } catch (e) {}
+
+        if (typeof onDone === 'function') {
+            await onDone();
+        }
+    } catch (e) {
+        showToast('Lỗi khi xóa phiếu: ' + (e.message || 'Không thể xóa'), 'error');
+        throw e;
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Đánh dấu phiếu đã bị sửa đổi -> nút Lưu sáng màu lên
+ */
+function markReceiptDetailDirty() {
+    window.isReceiptDetailDirty = true;
+    const saveBtn = document.getElementById('btn-save-receipt-detail');
+    if (saveBtn) {
+        saveBtn.className = 'btn btn-success btn-sm fw-bold shadow px-3';
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-floppy2-fill me-1"></i>Lưu thay đổi';
+    }
+}
+
+/**
+ * Đặt lại trạng thái phiếu chưa bị sửa đổi -> nút Lưu mờ/tối
+ */
+function resetReceiptDetailClean() {
+    window.isReceiptDetailDirty = false;
+    const saveBtn = document.getElementById('btn-save-receipt-detail');
+    if (saveBtn) {
+        saveBtn.className = 'btn btn-secondary btn-sm opacity-50 px-3';
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="bi bi-floppy2 me-1"></i>Lưu thay đổi';
+    }
+}
+
+/**
+ * Xử lý khi thay đổi số lượng hoặc đơn giá của 1 dòng
+ */
+function onReceiptDetailRowInput(inputEl) {
+    const tr = inputEl.closest('tr');
+    if (!tr) return;
+    const slInput = tr.querySelector('.receipt-row-sl');
+    const giaInput = tr.querySelector('.receipt-row-gia');
+    const totalEl = tr.querySelector('.receipt-row-total');
+
+    const sl = parseInt(slInput?.value || 0) || 0;
+    const gia = parseFloat(giaInput?.value || 0) || 0;
+    const lineTotal = sl * gia;
+
+    if (totalEl) {
+        totalEl.textContent = formatVND(lineTotal);
+    }
+
+    recalcReceiptDetailTotals();
+    markReceiptDetailDirty();
+}
+
+/**
+ * Tính lại tổng số lượng & tổng thành tiền
+ */
+function recalcReceiptDetailTotals() {
+    const tbody = document.getElementById('receipt-detail-tbody');
+    if (!tbody) return;
+    let totalQty = 0;
+    let grandTotal = 0;
+    const rows = tbody.querySelectorAll('tr');
+
+    rows.forEach((tr, idx) => {
+        const sttEl = tr.querySelector('.row-stt');
+        if (sttEl) sttEl.textContent = idx + 1;
+
+        const sl = parseInt(tr.querySelector('.receipt-row-sl')?.value || 0) || 0;
+        const gia = parseFloat(tr.querySelector('.receipt-row-gia')?.value || 0) || 0;
+        totalQty += sl;
+        grandTotal += (sl * gia);
+    });
+
+    const qtyEl = document.getElementById('receipt-detail-grand-qty');
+    const totalEl = document.getElementById('receipt-detail-grand-total');
+    const countEl = document.getElementById('receipt-detail-item-count');
+
+    if (qtyEl) qtyEl.textContent = formatNumber(totalQty);
+    if (totalEl) totalEl.textContent = formatVND(grandTotal);
+    if (countEl) countEl.textContent = rows.length;
+
+    // Cập nhật lại vào window.currentReceiptDetail để in phiếu đúng số mới
+    if (window.currentReceiptDetail) {
+        window.currentReceiptDetail.total = grandTotal;
+        window.currentReceiptDetail.tong_so_luong = totalQty;
+    }
+}
+
+/**
+ * Xóa 1 mặt hàng khỏi bảng chi tiết
+ */
+function removeReceiptDetailRow(btn) {
+    const tbody = document.getElementById('receipt-detail-tbody');
+    if (!tbody) return;
+    const rows = tbody.querySelectorAll('tr');
+    if (rows.length <= 1) {
+        showToast('Phiếu phải có ít nhất 1 mặt hàng, không thể xóa hết!', 'warning');
+        return;
+    }
+    const tr = btn.closest('tr');
+    if (tr) {
+        tr.remove();
+        recalcReceiptDetailTotals();
+        markReceiptDetailDirty();
+    }
+}
+
+/**
+ * Khi người dùng chọn mặt hàng trong dropdown "Thêm hàng"
+ */
+function onDetailSelectProduct(selectEl) {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    if (!opt || !opt.value) return;
+    const isXuat = window.currentReceiptDetail?.type === 'xuat';
+    const gia = isXuat ? (parseFloat(opt.dataset.giaban) || 0) : (parseFloat(opt.dataset.gianhap) || 0);
+
+    const slInput = document.getElementById('detail-add-sl');
+    const giaInput = document.getElementById('detail-add-gia');
+    if (slInput) slInput.value = 1;
+    if (giaInput) giaInput.value = gia;
+}
+
+/**
+ * Thêm mặt hàng được chọn vào bảng chi tiết
+ */
+function submitAddProductToReceiptDetail() {
+    const selectEl = document.getElementById('detail-add-prod-select');
+    if (!selectEl || !selectEl.value) {
+        showToast('Vui lòng chọn một mặt hàng để thêm', 'warning');
+        return;
+    }
+
+    const opt = selectEl.options[selectEl.selectedIndex];
+    const ma = opt.value;
+    const ten = opt.dataset.ten || ma;
+    const dvt = opt.dataset.dvt || 'Cái';
+
+    const slInput = document.getElementById('detail-add-sl');
+    const giaInput = document.getElementById('detail-add-gia');
+    const sl = parseInt(slInput?.value || 0) || 0;
+    const gia = parseFloat(giaInput?.value || 0) || 0;
+
+    if (sl <= 0) {
+        showToast('Số lượng phải lớn hơn 0', 'warning');
+        return;
+    }
+
+    const tbody = document.getElementById('receipt-detail-tbody');
+    if (!tbody) return;
+
+    // Kiểm tra xem mã hàng đã có trong bảng chưa
+    const existingTr = Array.from(tbody.querySelectorAll('tr')).find(tr => tr.dataset.ma === ma);
+    if (existingTr) {
+        const curSlInput = existingTr.querySelector('.receipt-row-sl');
+        if (curSlInput) {
+            curSlInput.value = (parseInt(curSlInput.value) || 0) + sl;
+            onReceiptDetailRowInput(curSlInput);
+            showToast(`Đã cộng thêm ${sl} ${dvt} vào mã ${ma}`, 'info');
+        }
+    } else {
+        const isXuat = window.currentReceiptDetail?.type === 'xuat';
+        const lineTotal = sl * gia;
+        const newIdx = tbody.querySelectorAll('tr').length + 1;
+        const newTr = document.createElement('tr');
+        newTr.dataset.ma = ma;
+        newTr.dataset.ten = ten;
+        newTr.dataset.dvt = dvt;
+        newTr.innerHTML = `
+            <td class="text-center text-muted small row-stt">${newIdx}</td>
+            <td><span class="badge bg-secondary font-monospace">${escapeHtml(ma)}</span></td>
+            <td class="fw-semibold">${escapeHtml(ten)}</td>
+            <td class="text-center text-muted small">${escapeHtml(dvt)}</td>
+            <td class="text-center">
+                <input type="number" min="1" class="form-control form-control-sm text-center fw-bold receipt-row-sl ${isXuat ? 'text-danger' : 'text-primary'}" value="${sl}" oninput="onReceiptDetailRowInput(this)">
+            </td>
+            <td class="text-end">
+                <input type="number" min="0" step="1000" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
+            </td>
+            <td class="text-end fw-bold font-monospace text-nowrap receipt-row-total">${formatVND(lineTotal)}</td>
+            <td class="text-center">
+                <button type="button" class="btn btn-outline-danger btn-xs p-1" onclick="removeReceiptDetailRow(this)" title="Xóa mặt hàng này">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(newTr);
+        recalcReceiptDetailTotals();
+        markReceiptDetailDirty();
+        showToast(`Đã thêm ${ten} vào phiếu!`, 'success');
+    }
+
+    // Reset form thêm hàng
+    selectEl.value = '';
+    if (slInput) slInput.value = 1;
+    if (giaInput) giaInput.value = 0;
+}
+
+/**
+ * Lưu các thay đổi của phiếu lên server
+ */
+async function saveCurrentReceiptDetail(shouldCloseAfterSave = false) {
+    if (!window.currentReceiptDetail) return;
+    const r = window.currentReceiptDetail;
+    const so_phieu = r.so_phieu;
+    const isXuat = r.type === 'xuat';
+
+    const tbody = document.getElementById('receipt-detail-tbody');
+    if (!tbody) return;
+
+    const rows = tbody.querySelectorAll('tr');
+    if (!rows.length) {
+        showToast('Phiếu phải có ít nhất 1 mặt hàng!', 'warning');
+        return;
+    }
+
+    const items = [];
+    for (const tr of rows) {
+        const ma = tr.dataset.ma;
+        const ten = tr.dataset.ten;
+        const sl = parseInt(tr.querySelector('.receipt-row-sl')?.value || 0) || 0;
+        const gia = parseFloat(tr.querySelector('.receipt-row-gia')?.value || 0) || 0;
+
+        if (sl <= 0) {
+            showToast(`Mặt hàng ${ten} có số lượng không hợp lệ!`, 'warning');
+            return;
+        }
+        if (gia < 0) {
+            showToast(`Mặt hàng ${ten} có đơn giá không hợp lệ!`, 'warning');
+            return;
+        }
+
+        const itemObj = {
+            ma_hang: ma,
+            ten_hang: ten,
+            so_luong: sl
+        };
+        if (isXuat) {
+            itemObj.gia_ban = gia;
+        } else {
+            itemObj.gia_nhap = gia;
+        }
+        items.push(itemObj);
+    }
+
+    const ngay = document.getElementById('receipt-edit-ngay')?.value || (isXuat ? r.ngay_xuat : r.ngay_nhap);
+    const ghiChu = document.getElementById('receipt-edit-ghi-chu')?.value ?? r.ghi_chu ?? '';
+
+    const payload = isXuat ? {
+        ngay_xuat: ngay,
+        ghi_chu: ghiChu,
+        items: items
+    } : {
+        ngay_nhap: ngay,
+        ghi_chu: ghiChu,
+        items: items
+    };
+
+    const apiUrl = isXuat ? `/api/xuat-hang/${encodeURIComponent(so_phieu)}` : `/api/nhap-hang/${encodeURIComponent(so_phieu)}`;
+
+    const saveBtn = document.getElementById('btn-save-receipt-detail');
+    const origHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang lưu...';
+    }
+
+    try {
+        showLoading();
+        const res = await apiRequest(apiUrl, 'PUT', payload);
+        showToast(res.message || `Đã lưu cập nhật phiếu ${so_phieu} thành công!`, 'success');
+
+        resetReceiptDetailClean();
+
+        // Cập nhật lại window.currentReceiptDetail
+        window.currentReceiptDetail.items = items.map(it => ({
+            ...it,
+            don_vi_tinh: rows[0]?.dataset.dvt || 'Cái',
+            thanh_tien: it.so_luong * (isXuat ? it.gia_ban : it.gia_nhap)
+        }));
+        if (isXuat) window.currentReceiptDetail.ngay_xuat = ngay;
+        else window.currentReceiptDetail.ngay_nhap = ngay;
+        window.currentReceiptDetail.ghi_chu = ghiChu;
+
+        // Báo cho các tab khác cập nhật kho
+        try {
+            window.top.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+        } catch (e) {}
+
+        if (typeof window.receiptDetailOnUpdated === 'function') {
+            await window.receiptDetailOnUpdated();
+        }
+
+        if (shouldCloseAfterSave) {
+            closeModal('confirm-unsaved-receipt-modal');
+            closeModal('detail-modal');
+            closeModal('history-detail-modal');
+        }
+    } catch (e) {
+        showToast('Lỗi khi lưu phiếu: ' + (e.message || 'Không thể lưu'), 'error');
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origHtml;
+        }
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Đóng an toàn: Nếu có thay đổi chưa lưu -> Bật cảnh báo lần 2
+ */
+function safeCloseReceiptDetailModal(modalId = 'detail-modal') {
+    if (window.isReceiptDetailDirty) {
+        const unsavedModalEl = document.getElementById('confirm-unsaved-receipt-modal');
+        if (unsavedModalEl) {
+            const btnSave = document.getElementById('btn-unsaved-save');
+            const btnDiscard = document.getElementById('btn-unsaved-discard');
+            const btnCancel = document.getElementById('btn-unsaved-cancel');
+
+            if (btnSave) {
+                btnSave.onclick = () => saveCurrentReceiptDetail(true);
+            }
+            if (btnDiscard) {
+                btnDiscard.onclick = () => {
+                    window.isReceiptDetailDirty = false;
+                    closeModal('confirm-unsaved-receipt-modal');
+                    closeModal(modalId);
+                };
+            }
+            if (btnCancel) {
+                btnCancel.onclick = () => {
+                    closeModal('confirm-unsaved-receipt-modal');
+                };
+            }
+            openModal('confirm-unsaved-receipt-modal');
+            return;
+        }
+    }
+    closeModal(modalId);
+}
+
+/**
+ * Gán listener chống đóng modal khi có thay đổi chưa lưu
+ */
+function setupModalUnsavedWarning(modalId) {
+    const el = document.getElementById(modalId);
+    if (!el || el._unsavedHooked) return;
+    el._unsavedHooked = true;
+
+    el.addEventListener('hide.bs.modal', function(e) {
+        if (window.isReceiptDetailDirty) {
+            e.preventDefault();
+            safeCloseReceiptDetailModal(modalId);
+        }
+    });
+}
+
+/**
+ * Cập nhật các nút ở footer modal chi tiết phiếu
+ */
+function setupReceiptDetailModalFooter(targetModalBodyId, res, isXuat) {
+    const modalBody = document.getElementById(targetModalBodyId);
+    if (!modalBody) return;
+    const parentModal = modalBody.closest('.modal');
+    if (!parentModal) return;
+    const footer = parentModal.querySelector('.modal-footer');
+    if (!footer) return;
+
+    const modalId = parentModal.id;
+    const so_phieu = res.so_phieu;
+
+    footer.innerHTML = `
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="printReceiptModal('${targetModalBodyId}', '${isXuat ? 'Phiếu Xuất Kho' : 'Phiếu Nhập Kho'}')">
+                <i class="bi bi-printer me-1"></i>In Phiếu
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmDeleteCurrentReceipt()">
+                <i class="bi bi-trash3 me-1"></i>Xóa Phiếu
+            </button>
+            ${typeof cloneCurrentReceiptToForm === 'function' ? `
+                <button type="button" class="btn btn-outline-warning btn-sm" onclick="cloneCurrentReceiptToForm()">
+                    <i class="bi bi-copy me-1"></i>Sao chép vào phiếu mới
+                </button>
+            ` : ''}
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="safeCloseReceiptDetailModal('${modalId}')">
+                Đóng
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm opacity-50 px-3" id="btn-save-receipt-detail" disabled onclick="saveCurrentReceiptDetail(false)">
+                <i class="bi bi-floppy2 me-1"></i>Lưu thay đổi
+            </button>
+        </div>
+    `;
+
+    // Thay thế nút X trên header thành safeCloseReceiptDetailModal
+    const closeBtn = parentModal.querySelector('.modal-header .btn-close');
+    if (closeBtn) {
+        closeBtn.removeAttribute('data-bs-dismiss');
+        closeBtn.onclick = () => safeCloseReceiptDetailModal(modalId);
+    }
+}
+
 // ── Company Branding Info & Excel Export Helpers (Chuẩn Mẫu Kế Toán) ────────
+
 
 const COMPANY_INFO = {
     name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',

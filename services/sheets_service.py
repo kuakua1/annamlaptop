@@ -343,6 +343,24 @@ class SheetsService:
         except Exception as e:
             raise RuntimeError(f"Lỗi khi xóa dòng {row_num} trong sheet {sheet_name}: {str(e)}")
 
+    def delete_receipt_rows(self, sheet_name: str, so_phieu: str) -> int:
+        """Xóa tất cả các dòng thuộc một số phiếu (cột 2) từ dưới lên trên."""
+        try:
+            ws = self._sheet(sheet_name)
+            all_values = ws.get_all_values()
+            rows_to_delete = []
+            for i, row in enumerate(all_values):
+                if i == 0:
+                    continue
+                if len(row) > 1 and str(row[1]).strip() == str(so_phieu).strip():
+                    rows_to_delete.append(i + 1)
+            for r_num in sorted(rows_to_delete, reverse=True):
+                ws.delete_rows(r_num)
+            self.invalidate_records_cache(sheet_name)
+            return len(rows_to_delete)
+        except Exception as e:
+            raise RuntimeError(f"Lỗi khi xóa các dòng phiếu {so_phieu} trong sheet {sheet_name}: {str(e)}")
+
     def find_row(self, sheet_name: str, col: int, value: str) -> int:
         """Find row number (1-based) by column index (1-based) and value. Returns -1 if not found."""
         try:
