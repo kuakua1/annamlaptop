@@ -237,6 +237,12 @@ const TabManager = {
             return;
         }
 
+        // Xóa sạch dữ liệu tạm dùng chung cũ nếu có
+        try {
+            sessionStorage.removeItem('nhap_hang_state');
+            sessionStorage.removeItem('xuat_hang_state');
+        } catch (e) {}
+
         this.initSidebar();
 
         // Mở Dashboard làm tab mặc định đầu tiên
@@ -281,12 +287,19 @@ const TabManager = {
         // Đếm số lượng tab cùng loại hiện tại đang mở
         const existingTabs = this.tabs.filter(t => t.type === tabType);
 
+        // Với các màn hình danh sách/báo cáo thông thường: nếu đã mở thì focus sang tab cũ
+        if (tabType !== 'nhap-hang' && tabType !== 'xuat-hang' && !forceNew && !customUrl && existingTabs.length > 0) {
+            this.switchTab(existingTabs[0].id);
+            return;
+        }
+
         // Với các nghiệp vụ giao dịch như Xuất Hàng, Nhập Hàng: Cho phép mở nhiều tab song song
         // Tự động gán số thứ tự nếu đã có tab đang mở
         this.tabCounter[tabType] = (this.tabCounter[tabType] || 0) + 1;
         const count = this.tabCounter[tabType];
         
-        let tabId = `${tabType}_${count}`;
+        // Dùng timestamp để mỗi tab tạo mới luôn là duy nhất, độc lập 100% dữ liệu
+        let tabId = `${tabType}_${Date.now()}_${count}`;
         let tabTitle = existingTabs.length === 0 ? tabDef.title : `${tabDef.title} (${existingTabs.length + 1})`;
 
         const newTab = {
@@ -312,8 +325,14 @@ const TabManager = {
             frame = document.createElement('iframe');
             frame.id = `tab-iframe-${tabId}`;
             frame.className = 'tab-frame';
-            // Thêm query embed=1 nếu chưa có để iframe con chỉ render nội dung trực tiếp
-            const finalUrl = url.includes('?') ? (url.includes('embed=1') ? url : `${url}&embed=1`) : `${url}?embed=1`;
+            // Thêm query embed=1 và tab_id để mỗi iframe có định danh riêng biệt
+            let finalUrl = url;
+            if (!finalUrl.includes('embed=1')) {
+                finalUrl = finalUrl.includes('?') ? `${finalUrl}&embed=1` : `${finalUrl}?embed=1`;
+            }
+            if (!finalUrl.includes('tab_id=')) {
+                finalUrl = finalUrl.includes('?') ? `${finalUrl}&tab_id=${encodeURIComponent(tabId)}` : `${finalUrl}?tab_id=${encodeURIComponent(tabId)}`;
+            }
             frame.src = finalUrl;
             viewport.appendChild(frame);
         }
@@ -383,6 +402,12 @@ const TabManager = {
         if (frame) {
             frame.remove();
         }
+
+        // Xóa sạch trạng thái tạm thời đã lưu của riêng tab này
+        try {
+            sessionStorage.removeItem(`nhap_hang_state_${tabId}`);
+            sessionStorage.removeItem(`xuat_hang_state_${tabId}`);
+        } catch (e) {}
 
         // Bỏ khỏi danh sách tab
         this.tabs.splice(index, 1);

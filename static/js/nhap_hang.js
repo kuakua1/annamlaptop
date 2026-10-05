@@ -4,7 +4,15 @@
  * Sử dụng Autocomplete tìm kiếm hàng hóa theo Mã hoặc Tên thay vì Dropdown
  */
 
-const STATE_KEY = 'nhap_hang_state';
+const urlParams = new URLSearchParams(window.location.search);
+const currentTabId = urlParams.get('tab_id') || `nhap_hang_${Date.now()}`;
+const STATE_KEY = `nhap_hang_state_${currentTabId}`;
+
+// Xóa key dùng chung cũ nếu còn tồn tại trong bộ nhớ trình duyệt
+try {
+    sessionStorage.removeItem('nhap_hang_state');
+} catch (e) {}
+
 let products = [];
 let suppliers = [];
 let itemCount = 0;
