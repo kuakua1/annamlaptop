@@ -3,8 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from routers.auth import get_current_user, require_login
-from services.sheets_service import sheets_service
-from config import SHEET_NHAP_HANG, SHEET_XUAT_HANG, SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG
+from services.db_service import db_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -34,14 +33,14 @@ async def get_lich_su(
     try:
         combined = []
 
-        ncc_records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
-        kh_records = sheets_service.get_all_records(SHEET_KHACH_HANG)
+        ncc_records = db_manager.get_all("NhaCungCap")
+        kh_records = db_manager.get_all("KhachHang")
 
         ncc_map = {str(n.get("id", "")).strip(): str(n.get("ten_ncc", "")).strip() for n in ncc_records}
         kh_map = {str(k.get("id", "")).strip(): str(k.get("ten_kh", "")).strip() for k in kh_records}
 
         if loai in ("all", "nhap"):
-            nhap_records = sheets_service.get_all_records(SHEET_NHAP_HANG)
+            nhap_records = db_manager.get_all("NhapHang")
             for rec in nhap_records:
                 ngay = str(rec.get("ngay_nhap", ""))
                 if from_date and ngay < from_date:
@@ -67,7 +66,7 @@ async def get_lich_su(
                 })
 
         if loai in ("all", "xuat"):
-            xuat_records = sheets_service.get_all_records(SHEET_XUAT_HANG)
+            xuat_records = db_manager.get_all("XuatHang")
             for rec in xuat_records:
                 ngay = str(rec.get("ngay_xuat", ""))
                 if from_date and ngay < from_date:

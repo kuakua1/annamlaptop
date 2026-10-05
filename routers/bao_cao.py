@@ -4,8 +4,7 @@ from fastapi.templating import Jinja2Templates
 from datetime import date, timedelta
 
 from routers.auth import get_current_user, require_login
-from services.sheets_service import sheets_service
-from config import SHEET_HANG_HOA, SHEET_NHAP_HANG, SHEET_XUAT_HANG
+from services.db_service import db_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -53,7 +52,6 @@ def _safe_int(val) -> int:
         return 0
 
 
-
 @router.get("/bao-cao", response_class=HTMLResponse)
 async def bao_cao_page(request: Request):
     user = get_current_user(request)
@@ -74,8 +72,7 @@ async def tong_quan(
     try:
         today = _today_str()
         if period == "today":
-            from_date = today
-            to_date = today
+            from_date = to_date = today
         elif period == "week":
             from_date = _week_start()
             to_date = today
@@ -85,18 +82,18 @@ async def tong_quan(
         elif period == "year":
             from_date = _year_start()
             to_date = today
-        # else custom: use provided from_date, to_date
+        elif period == "custom":
+            pass
+        else:
+            from_date = to_date = today
 
-        # Revenue & cost from XuatHang
-        xuat_records = sheets_service.get_all_records(SHEET_XUAT_HANG)
-        nhap_records = sheets_service.get_all_records(SHEET_NHAP_HANG)
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        xuat_records = db_manager.get_all("XuatHang")
+        nhap_records = db_manager.get_all("NhapHang")
+        hang_records = db_manager.get_all("HangHoa")
+        gia_nhap_map = {str(r.get("ma_hang", "")): _safe_float(r.get("gia_nhap", 0)) for r in hang_records}
 
         total_revenue = 0.0
         total_cost_of_goods = 0.0
-
-        # Build gia_nhap lookup by ma_hang
-        gia_nhap_map = {str(r.get("ma_hang", "")): _safe_float(r.get("gia_nhap", 0)) for r in hang_records}
 
         for rec in xuat_records:
             ngay = str(rec.get("ngay_xuat", ""))
@@ -104,14 +101,18 @@ async def tong_quan(
                 continue
             if to_date and ngay > to_date:
                 continue
-            total_revenue += _safe_float(rec.get("thanh_tien", 0))
-            gv = rec.get("gia_von")
-            if gv is not None and str(gv).strip() != "":
-                total_cost_of_goods += _safe_float(gv)
+            rev = _safe_float(rec.get("thanh_tien", 0))
+            sl = _safe_int(rec.get("so_luong", 0))
+            ma = str(rec.get("ma_hang", ""))
+
+            stored_cogs = rec.get("gia_von")
+            if stored_cogs is not None and str(stored_cogs).strip() != "" and float(stored_cogs or 0) > 0:
+                cost = float(stored_cogs)
             else:
-                ma_hang = str(rec.get("ma_hang", ""))
-                so_luong = _safe_int(rec.get("so_luong", 0))
-                total_cost_of_goods += gia_nhap_map.get(ma_hang, 0) * so_luong
+                cost = gia_nhap_map.get(ma, 0.0) * sl
+
+            total_revenue += rev
+            total_cost_of_goods += cost
 
         total_nhap = 0.0
         for rec in nhap_records:
@@ -120,7 +121,7 @@ async def tong_quan(
                 continue
             if to_date and ngay > to_date:
                 continue
-            total_nhap += float(rec.get("thanh_tien", 0) or 0)
+            total_nhap += _safe_float(rec.get("thanh_tien", 0))
 
         gross_profit = total_revenue - total_cost_of_goods
         margin = (gross_profit / total_revenue * 100) if total_revenue > 0 else 0
@@ -146,8 +147,8 @@ async def tong_quan(
 async def doanh_thu_chart(request: Request, month: str = "", user: str = Depends(require_login)):
     try:
         today = date.today()
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
-        gia_nhap_map = {str(r.get("ma_hang", "")): float(r.get("gia_nhap", 0) or 0) for r in hang_records}
+        hang_records = db_manager.get_all("HangHoa")
+        gia_nhap_map = {str(r.get("ma_hang", "")): _safe_float(r.get("gia_nhap", 0)) for r in hang_records}
 
         if month and len(month) == 7:
             import calendar
@@ -155,37 +156,41 @@ async def doanh_thu_chart(request: Request, month: str = "", user: str = Depends
             num_days = calendar.monthrange(year, m)[1]
             dates = [f"{year:04d}-{m:02d}-{day:02d}" for day in range(1, num_days + 1)]
         else:
-            # 30 ngày gần nhất
             dates = [(today - timedelta(days=29 - i)).isoformat() for i in range(30)]
 
-        revenue_map = {d: 0.0 for d in dates}
-        cost_map = {d: 0.0 for d in dates}
+        date_set = set(dates)
+        xuat_records = db_manager.get_all("XuatHang")
 
-        xuat_records = sheets_service.get_all_records(SHEET_XUAT_HANG)
+        revenue_by_date: dict[str, float] = {d: 0.0 for d in dates}
+        cost_by_date: dict[str, float] = {d: 0.0 for d in dates}
+
         for rec in xuat_records:
             ngay = str(rec.get("ngay_xuat", ""))
-            if ngay in revenue_map:
-                revenue_map[ngay] += float(rec.get("thanh_tien", 0) or 0)
-                gv = rec.get("gia_von")
-                if gv is not None and str(gv).strip() != "":
-                    cost_map[ngay] += float(gv or 0)
-                else:
-                    ma_hang = str(rec.get("ma_hang", ""))
-                    so_luong = int(rec.get("so_luong", 0) or 0)
-                    cost_map[ngay] += gia_nhap_map.get(ma_hang, 0) * so_luong
+            if ngay in date_set:
+                rev = _safe_float(rec.get("thanh_tien", 0))
+                sl = _safe_int(rec.get("so_luong", 0))
+                ma = str(rec.get("ma_hang", ""))
 
-        revenues = [revenue_map[d] for d in dates]
-        costs = [cost_map[d] for d in dates]
-        profits = [revenues[i] - costs[i] for i in range(len(dates))]
-        display_dates = [d[8:] + "/" + d[5:7] for d in dates]  # DD/MM
+                stored_cogs = rec.get("gia_von")
+                if stored_cogs is not None and str(stored_cogs).strip() != "" and float(stored_cogs or 0) > 0:
+                    cost = float(stored_cogs)
+                else:
+                    cost = gia_nhap_map.get(ma, 0.0) * sl
+
+                revenue_by_date[ngay] += rev
+                cost_by_date[ngay] += cost
+
+        revenues = [revenue_by_date[d] for d in dates]
+        costs = [cost_by_date[d] for d in dates]
+        profits = [revenue_by_date[d] - cost_by_date[d] for d in dates]
 
         return {
             "success": True,
             "data": {
-                "dates": display_dates,
+                "dates": dates,
                 "revenue": revenues,
                 "cost": costs,
-                "profit": profits
+                "profit": profits,
             }
         }
     except Exception as e:
@@ -195,7 +200,7 @@ async def doanh_thu_chart(request: Request, month: str = "", user: str = Depends
 @router.get("/api/bao-cao/hang-ban-chay")
 async def hang_ban_chay(request: Request, user: str = Depends(require_login)):
     try:
-        xuat_records = sheets_service.get_all_records(SHEET_XUAT_HANG)
+        xuat_records = db_manager.get_all("XuatHang")
         qty_map: dict[str, dict] = {}
         for rec in xuat_records:
             ma = str(rec.get("ma_hang", ""))
@@ -219,7 +224,7 @@ async def hang_ban_chay(request: Request, user: str = Depends(require_login)):
 @router.get("/api/bao-cao/ton-kho")
 async def ton_kho_report(request: Request, user: str = Depends(require_login)):
     try:
-        records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        records = db_manager.get_all("HangHoa")
         items = []
         for rec in records:
             ton_kho = _safe_int(rec.get("ton_kho", 0))
@@ -248,9 +253,9 @@ async def dashboard_stats(request: Request, month: str = "", user: str = Depends
         if not month or len(month) != 7:
             month = date.today().strftime("%Y-%m")
 
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
-        nhap_records = sheets_service.get_all_records(SHEET_NHAP_HANG)
-        xuat_records = sheets_service.get_all_records(SHEET_XUAT_HANG)
+        hang_records = db_manager.get_all("HangHoa")
+        nhap_records = db_manager.get_all("NhapHang")
+        xuat_records = db_manager.get_all("XuatHang")
 
         total_products = len(hang_records)
         gia_nhap_map = {str(r.get("ma_hang", "")): _safe_float(r.get("gia_nhap", 0)) for r in hang_records}
@@ -274,7 +279,6 @@ async def dashboard_stats(request: Request, month: str = "", user: str = Depends
         )
         month_profit = month_xuat - month_cost
 
-        # Giao dịch gần nhất: Mới nhất trên đầu, cũ hơn ở bên dưới
         recent = []
         for r in nhap_records:
             recent.append({
@@ -286,7 +290,7 @@ async def dashboard_stats(request: Request, month: str = "", user: str = Depends
                 "ten_hang": str(r.get("ten_hang", "")),
                 "so_luong": int(r.get("so_luong", 0) or 0),
                 "thanh_tien": float(r.get("thanh_tien", 0) or 0),
-                "doi_tac": str(r.get("ten_ncc", "") or r.get("nha_cung_cap_id", "")),
+                "doi_tac": str(r.get("nha_cung_cap_id", "")),
             })
         for r in xuat_records:
             recent.append({
@@ -298,10 +302,9 @@ async def dashboard_stats(request: Request, month: str = "", user: str = Depends
                 "ten_hang": str(r.get("ten_hang", "")),
                 "so_luong": int(r.get("so_luong", 0) or 0),
                 "thanh_tien": float(r.get("thanh_tien", 0) or 0),
-                "doi_tac": str(r.get("ten_kh", "") or r.get("khach_hang_id", "")),
+                "doi_tac": str(r.get("khach_hang_id", "")),
             })
 
-        # Sắp xếp: Giao dịch mới nhất ở trên đầu, cũ hơn ở bên dưới
         recent.sort(key=lambda x: (x["ngay"], x["id"]), reverse=True)
         recent = recent[:15]
 

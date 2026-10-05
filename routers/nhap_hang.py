@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+import time
 
 from routers.auth import get_current_user, require_login
 from models.schemas import NhapHangCreate
-from services.sheets_service import sheets_service
-from config import SHEET_NHAP_HANG, SHEET_HANG_HOA, SHEET_NHA_CUNG_CAP
+from services.db_service import db_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -39,9 +39,9 @@ async def get_nhap_hang(
     user: str = Depends(require_login)
 ):
     try:
-        records = sheets_service.get_all_records(SHEET_NHAP_HANG)
-        ncc_records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        records = db_manager.get_all("NhapHang")
+        ncc_records = db_manager.get_all("NhaCungCap")
+        hang_records = db_manager.get_all("HangHoa")
 
         ncc_map = {}
         for n in ncc_records:
@@ -113,7 +113,7 @@ async def get_nhap_hang(
             "data": result,
             "total": len(result),
             "tong_so_luong": total_sl,
-            "tong_thanh_tien": total_tien
+            "tong_tien": total_tien,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -129,100 +129,71 @@ async def create_nhap_hang(
         raise HTTPException(status_code=400, detail="Phiếu nhập phải có ít nhất 1 mặt hàng")
 
     ncc_ten = (data.nha_cung_cap_ten or "").strip()
-    ncc_sdt = (data.nha_cung_cap_sdt or "").strip()
     ncc_id = (data.nha_cung_cap_id or "").strip()
-    ncc_dia_chi = (data.nha_cung_cap_dia_chi or "").strip()
+    ncc_dia_chi = (data.nha_cung_cap_dia_chi or data.dia_chi or "").strip()
+    ncc_sdt = (data.nha_cung_cap_sdt or data.dien_thoai or "").strip()
 
-    if not ncc_ten:
+    if not ncc_ten and not ncc_id:
         raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Nhà Cung Cấp")
+    if not ncc_dia_chi:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập Địa Chỉ Nhà Cung Cấp")
     if not ncc_sdt:
         raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Nhà Cung Cấp")
 
     try:
-        so_phieu = sheets_service.generate_so_phieu_nhap(data.ngay_nhap)
-
-        # ── Tự động lưu nhà cung cấp vào database nếu chưa có ──────────────
+        # Tự động lưu/khớp Nhà Cung Cấp
         if ncc_ten or ncc_id or ncc_sdt:
-            ncc_list = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
+            ncc_list = db_manager.get_all("NhaCungCap")
             matched = None
-
-            # 1. Khớp theo ID nếu có
             if ncc_id:
                 for n in ncc_list:
                     if str(n.get("id", "")).strip() == ncc_id:
                         matched = n
                         break
-
-            # 2. Khớp theo SĐT (SĐT là duy nhất)
             if not matched and ncc_sdt:
                 for n in ncc_list:
-                    n_sdt = str(n.get("dien_thoai", "")).strip()
-                    if n_sdt and n_sdt == ncc_sdt:
+                    if str(n.get("dien_thoai", "")).strip() == ncc_sdt:
+                        matched = n
+                        break
+            if not matched and ncc_ten:
+                for n in ncc_list:
+                    if str(n.get("ten_ncc", "")).strip().lower() == ncc_ten.lower():
                         matched = n
                         break
 
-            # 3. Khớp theo Tên nếu không xung đột SĐT
-            if not matched and ncc_ten:
-                for n in ncc_list:
-                    n_ten = str(n.get("ten_ncc", "")).strip().lower()
-                    n_sdt = str(n.get("dien_thoai", "")).strip()
-                    if n_ten == ncc_ten.lower():
-                        if not n_sdt or not ncc_sdt or n_sdt == ncc_sdt:
-                            matched = n
-                            break
-
-            # Nếu chưa có -> Tạo NCC mới với ID duy nhất
             if not matched:
-                new_ncc_id = sheets_service.new_id()
-                ncc_row = [
-                    new_ncc_id,
-                    ncc_ten,
-                    ncc_dia_chi,
-                    ncc_sdt,
-                    "",
-                    "Tự động lưu từ phiếu nhập",
-                ]
-                sheets_service.append_row(SHEET_NHA_CUNG_CAP, ncc_row)
+                new_ncc_id = str(int(time.time() * 1000))
+                db_manager.insert_nha_cung_cap({
+                    "id": new_ncc_id,
+                    "ten_ncc": ncc_ten,
+                    "dia_chi": ncc_dia_chi,
+                    "dien_thoai": ncc_sdt,
+                    "email": "",
+                    "ghi_chu": "Tự động lưu từ phiếu nhập",
+                })
                 ncc_id = new_ncc_id
             else:
                 ncc_id = str(matched.get("id", "")).strip()
 
-        # Luôn lưu ID nhà cung cấp vào phiếu nhập
         ncc_save_ref = ncc_id if ncc_id else ncc_ten
-        created_rows = []
+        so_phieu = db_manager.generate_so_phieu_nhap(data.ngay_nhap)
 
-        for item in data.items:
-            new_id = sheets_service.new_id()
-            thanh_tien = item.so_luong * item.gia_nhap
-            row = [
-                new_id,
-                so_phieu,
-                data.ngay_nhap,
-                item.ma_hang,
-                item.ten_hang,
-                item.so_luong,
-                float(item.gia_nhap),
-                float(thanh_tien),
-                ncc_save_ref,
-                data.ghi_chu or "",
-            ]
-            row_num = sheets_service.append_row(SHEET_NHAP_HANG, row)
-            # Update ton_kho & multi-price batches
-            sheets_service.nhap_hang_batch(item.ma_hang, item.so_luong, item.gia_nhap)
-            created_rows.append({
-                "id": new_id,
-                "so_phieu": so_phieu,
-                "ngay_nhap": data.ngay_nhap,
-                "ma_hang": item.ma_hang,
-                "ten_hang": item.ten_hang,
-                "so_luong": item.so_luong,
-                "gia_nhap": item.gia_nhap,
-                "thanh_tien": thanh_tien,
-                "nha_cung_cap_id": ncc_id,
-                "nha_cung_cap_ten": ncc_ten,
-                "ghi_chu": data.ghi_chu,
-                "row_num": row_num,
+        items_payload = []
+        for it in data.items:
+            items_payload.append({
+                "ma_hang": it.ma_hang,
+                "ten_hang": it.ten_hang,
+                "so_luong": it.so_luong,
+                "gia_nhap": float(it.gia_nhap)
             })
+
+        created_rows = db_manager.create_nhap_hang_transaction(
+            so_phieu=so_phieu,
+            ngay_nhap=data.ngay_nhap,
+            ncc_save_ref=ncc_save_ref,
+            ghi_chu=data.ghi_chu or "",
+            items=items_payload
+        )
 
         return {
             "success": True,
@@ -243,9 +214,9 @@ async def get_nhap_hang_detail(
     user: str = Depends(require_login)
 ):
     try:
-        records = sheets_service.get_all_records(SHEET_NHAP_HANG)
-        ncc_records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        records = db_manager.get_all("NhapHang")
+        ncc_records = db_manager.get_all("NhaCungCap")
+        hang_records = db_manager.get_all("HangHoa")
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
         items = []

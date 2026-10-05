@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+import time
 
 from routers.auth import get_current_user, require_login
 from models.schemas import NhaCungCapCreate, NhaCungCapUpdate
-from services.sheets_service import sheets_service
-from config import SHEET_NHA_CUNG_CAP
+from services.db_service import db_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -26,9 +26,8 @@ def _parse_record(rec: dict, row_num: int) -> dict:
 @router.get("/api/nha-cung-cap")
 async def get_nha_cung_cap(request: Request, user: str = Depends(require_login)):
     try:
-        from config import SHEET_NHAP_HANG
-        records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
-        nhap_records = sheets_service.get_all_records(SHEET_NHAP_HANG)
+        records = db_manager.get_all("NhaCungCap")
+        nhap_records = db_manager.get_all("NhapHang")
 
         # Đếm số lượng NCC trùng tên để tránh gộp nhầm
         name_counts = {}
@@ -68,73 +67,79 @@ async def get_nha_cung_cap(request: Request, user: str = Depends(require_login))
 
         result = []
         for i, rec in enumerate(records):
-            item = _parse_record(rec, i + 2)
-            s_id = item["id"]
-            s_name = item["ten_ncc"].strip().lower()
+            parsed = _parse_record(rec, i + 2)
+            nid = parsed["id"]
+            name_lower = parsed["ten_ncc"].strip().lower()
 
-            # Ưu tiên lấy thống kê theo ID tuyệt đối
-            stat = ncc_stats_by_id.get(s_id)
-            if not stat and name_counts.get(s_name, 0) == 1:
-                stat = ncc_stats_by_name.get(s_name)
-            stat = stat or {}
+            stats_id = ncc_stats_by_id.get(nid)
+            stats_name = ncc_stats_by_name.get(name_lower) if name_counts.get(name_lower, 0) == 1 else None
 
-            so_phieu_set = stat.get("so_phieu_set", set())
-            item["so_don_nhap"] = len(so_phieu_set)
-            item["tong_so_luong"] = stat.get("tong_so_luong", 0)
-            item["tong_tien_nhap"] = stat.get("tong_tien", 0.0)
-            item["lan_cuoi_nhap"] = stat.get("lan_cuoi", "")
-            result.append(item)
+            so_phieu_set = set()
+            tong_sl = 0
+            tong_tien = 0.0
+            lan_cuoi = ""
+
+            if stats_id:
+                so_phieu_set.update(stats_id["so_phieu_set"])
+                tong_sl += stats_id["tong_so_luong"]
+                tong_tien += stats_id["tong_tien"]
+                lan_cuoi = stats_id["lan_cuoi"]
+
+            if stats_name:
+                so_phieu_set.update(stats_name["so_phieu_set"])
+                tong_sl += stats_name["tong_so_luong"]
+                tong_tien += stats_name["tong_tien"]
+                if not lan_cuoi or (stats_name["lan_cuoi"] and stats_name["lan_cuoi"] > lan_cuoi):
+                    lan_cuoi = stats_name["lan_cuoi"]
+
+            parsed["so_don_nhap"] = len(so_phieu_set)
+            parsed["tong_so_luong"] = tong_sl
+            parsed["tong_tien_nhap"] = tong_tien
+            parsed["lan_cuoi_nhap"] = lan_cuoi
+            result.append(parsed)
 
         return {"success": True, "data": result, "total": len(result)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/nha-cung-cap/{record_id}/lich-su")
-async def get_nha_cung_cap_lich_su(record_id: str, request: Request, user: str = Depends(require_login)):
+@router.get("/api/nha-cung-cap/{record_id}")
+async def get_nha_cung_cap_detail(record_id: str, request: Request, user: str = Depends(require_login)):
     try:
-        from config import SHEET_NHAP_HANG, SHEET_HANG_HOA
-        records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
-        ncc_data = None
-        for r in records:
-            if str(r.get("id", "")).strip() == record_id:
-                ncc_data = r
-                break
+        ncc_data = db_manager.get_by_id("NhaCungCap", record_id)
         if not ncc_data:
-            raise HTTPException(status_code=404, detail="Không tìm thấy thông tin nhà cung cấp")
+            raise HTTPException(status_code=404, detail="Không tìm thấy nhà cung cấp")
 
         ten_ncc = str(ncc_data.get("ten_ncc", "")).strip()
         dien_thoai = str(ncc_data.get("dien_thoai", "")).strip()
 
-        # Đếm số NCC có cùng tên
-        same_name_count = sum(1 for r in records if str(r.get("ten_ncc", "")).strip().lower() == ten_ncc.lower())
+        nhap_records = db_manager.get_all("NhapHang")
+        hang_records = db_manager.get_all("HangHoa")
+        dvt_map = {str(h.get("ma_hang", "")).strip(): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
-        # Get DVT map
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
-        dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
-
-        # Get import records matching this supplier strictly
-        nhap_records = sheets_service.get_all_records(SHEET_NHAP_HANG)
         matched_items = []
         for n in nhap_records:
             ncc_ref = str(n.get("nha_cung_cap_id", "")).strip()
-            # 1. Khớp chính xác theo ID
+            if not ncc_ref:
+                continue
+
+            is_match = False
             if ncc_ref == record_id:
                 is_match = True
-            # 2. Với dữ liệu cũ chưa có ID: chỉ khớp theo tên nếu hệ thống CHỈ CÓ DUY NHẤT 1 NCC tên này
-            elif same_name_count == 1 and ten_ncc and ncc_ref.lower() == ten_ncc.lower():
+            elif ncc_ref.lower() == ten_ncc.lower():
                 is_match = True
-            else:
-                is_match = False
+            elif dien_thoai and dien_thoai in str(n.get("dien_thoai", "")):
+                is_match = True
 
             if is_match:
-                ma_hang = str(n.get("ma_hang", "")).strip()
+                so_phieu = str(n.get("so_phieu", ""))
+                ma_hang = str(n.get("ma_hang", ""))
                 sl = int(n.get("so_luong", 0) or 0)
                 gia_nhap = float(n.get("gia_nhap", 0) or 0)
                 thanh_tien = float(n.get("thanh_tien", 0) or 0)
                 matched_items.append({
                     "id": str(n.get("id", "")),
-                    "so_phieu": str(n.get("so_phieu", "")),
+                    "so_phieu": so_phieu,
                     "ngay_nhap": str(n.get("ngay_nhap", "")),
                     "ma_hang": ma_hang,
                     "ten_hang": str(n.get("ten_hang", "")),
@@ -145,7 +150,6 @@ async def get_nha_cung_cap_lich_su(record_id: str, request: Request, user: str =
                     "ghi_chu": str(n.get("ghi_chu", "")),
                 })
 
-        # Group by so_phieu
         receipts_map = {}
         for item in matched_items:
             sp = item["so_phieu"]
@@ -168,7 +172,6 @@ async def get_nha_cung_cap_lich_su(record_id: str, request: Request, user: str =
 
         receipt_list = list(receipts_map.values())
         receipt_list.sort(key=lambda r: (r["ngay_nhap"], r["so_phieu"]), reverse=True)
-
         matched_items.sort(key=lambda i: (i["ngay_nhap"], i["so_phieu"]), reverse=True)
 
         summary = {
@@ -201,14 +204,20 @@ async def get_nha_cung_cap_lich_su(record_id: str, request: Request, user: str =
 @router.post("/api/nha-cung-cap")
 async def create_nha_cung_cap(data: NhaCungCapCreate, request: Request, user: str = Depends(require_login)):
     try:
-        new_id = sheets_service.new_id()
-        row = [new_id, data.ten_ncc, data.dia_chi or "", data.dien_thoai or "", data.email or "", data.ghi_chu or ""]
-        row_num = sheets_service.append_row(SHEET_NHA_CUNG_CAP, row)
+        new_id = str(int(time.time() * 1000))
+        item = {
+            "id": new_id,
+            "ten_ncc": data.ten_ncc,
+            "dia_chi": data.dia_chi or "",
+            "dien_thoai": data.dien_thoai or "",
+            "email": data.email or "",
+            "ghi_chu": data.ghi_chu or "",
+        }
+        db_manager.insert_nha_cung_cap(item)
         return {
             "success": True,
             "message": "Thêm nhà cung cấp thành công",
-            "data": {"id": new_id, "ten_ncc": data.ten_ncc, "dia_chi": data.dia_chi,
-                     "dien_thoai": data.dien_thoai, "email": data.email, "ghi_chu": data.ghi_chu, "row_num": row_num}
+            "data": item
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -217,27 +226,18 @@ async def create_nha_cung_cap(data: NhaCungCapCreate, request: Request, user: st
 @router.put("/api/nha-cung-cap/{record_id}")
 async def update_nha_cung_cap(record_id: str, data: NhaCungCapUpdate, request: Request, user: str = Depends(require_login)):
     try:
-        records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
-        row_num = -1
-        rec = None
-        for i, r in enumerate(records):
-            if str(r.get("id", "")) == record_id:
-                row_num = i + 2
-                rec = r
-                break
-        if row_num == -1:
+        rec = db_manager.get_by_id("NhaCungCap", record_id)
+        if not rec:
             raise HTTPException(status_code=404, detail="Không tìm thấy nhà cung cấp")
 
-        updated = {
-            "id": record_id,
-            "ten_ncc": data.ten_ncc if data.ten_ncc is not None else str(rec.get("ten_ncc", "")),
-            "dia_chi": data.dia_chi if data.dia_chi is not None else str(rec.get("dia_chi", "")),
-            "dien_thoai": data.dien_thoai if data.dien_thoai is not None else str(rec.get("dien_thoai", "")),
-            "email": data.email if data.email is not None else str(rec.get("email", "")),
-            "ghi_chu": data.ghi_chu if data.ghi_chu is not None else str(rec.get("ghi_chu", "")),
-        }
-        row = [updated["id"], updated["ten_ncc"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"]]
-        sheets_service.update_row(SHEET_NHA_CUNG_CAP, row_num, row)
+        update_dict = {}
+        if data.ten_ncc is not None: update_dict["ten_ncc"] = data.ten_ncc
+        if data.dia_chi is not None: update_dict["dia_chi"] = data.dia_chi
+        if data.dien_thoai is not None: update_dict["dien_thoai"] = data.dien_thoai
+        if data.email is not None: update_dict["email"] = data.email
+        if data.ghi_chu is not None: update_dict["ghi_chu"] = data.ghi_chu
+
+        updated = db_manager.update_nha_cung_cap(record_id, update_dict)
         return {"success": True, "message": "Cập nhật nhà cung cấp thành công", "data": updated}
     except HTTPException:
         raise
@@ -248,15 +248,10 @@ async def update_nha_cung_cap(record_id: str, data: NhaCungCapUpdate, request: R
 @router.delete("/api/nha-cung-cap/{record_id}")
 async def delete_nha_cung_cap(record_id: str, request: Request, user: str = Depends(require_login)):
     try:
-        records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP)
-        row_num = -1
-        for i, rec in enumerate(records):
-            if str(rec.get("id", "")) == record_id:
-                row_num = i + 2
-                break
-        if row_num == -1:
+        rec = db_manager.get_by_id("NhaCungCap", record_id)
+        if not rec:
             raise HTTPException(status_code=404, detail="Không tìm thấy nhà cung cấp")
-        sheets_service.delete_row(SHEET_NHA_CUNG_CAP, row_num)
+        db_manager.delete_nha_cung_cap(record_id)
         return {"success": True, "message": "Xóa nhà cung cấp thành công"}
     except HTTPException:
         raise

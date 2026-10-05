@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+import time
 
 from routers.auth import get_current_user, require_login
 from models.schemas import KhachHangCreate, KhachHangUpdate
-from services.sheets_service import sheets_service
-from config import SHEET_KHACH_HANG
+from services.db_service import db_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -26,9 +26,8 @@ def _parse_record(rec: dict, row_num: int) -> dict:
 @router.get("/api/khach-hang")
 async def get_khach_hang(request: Request, user: str = Depends(require_login)):
     try:
-        from config import SHEET_XUAT_HANG
-        records = sheets_service.get_all_records(SHEET_KHACH_HANG)
-        xuat_records = sheets_service.get_all_records(SHEET_XUAT_HANG)
+        records = db_manager.get_all("KhachHang")
+        xuat_records = db_manager.get_all("XuatHang")
 
         # Đếm số lượng khách hàng trùng tên để tránh gộp nhầm
         name_counts = {}
@@ -68,74 +67,79 @@ async def get_khach_hang(request: Request, user: str = Depends(require_login)):
 
         result = []
         for i, rec in enumerate(records):
-            item = _parse_record(rec, i + 2)
-            c_id = item["id"]
-            c_name = item["ten_kh"].strip().lower()
+            parsed = _parse_record(rec, i + 2)
+            kid = parsed["id"]
+            name_lower = parsed["ten_kh"].strip().lower()
 
-            # Ưu tiên lấy thống kê theo ID tuyệt đối
-            stat = kh_stats_by_id.get(c_id)
-            # Nếu chưa có theo ID và tên này là duy nhất (không có 2 khách trùng tên) thì mới lấy theo tên cũ
-            if not stat and name_counts.get(c_name, 0) == 1:
-                stat = kh_stats_by_name.get(c_name)
-            stat = stat or {}
+            stats_id = kh_stats_by_id.get(kid)
+            stats_name = kh_stats_by_name.get(name_lower) if name_counts.get(name_lower, 0) == 1 else None
 
-            so_phieu_set = stat.get("so_phieu_set", set())
-            item["so_don_hang"] = len(so_phieu_set)
-            item["tong_so_luong"] = stat.get("tong_so_luong", 0)
-            item["tong_tien_mua"] = stat.get("tong_tien", 0.0)
-            item["lan_cuoi_mua"] = stat.get("lan_cuoi", "")
-            result.append(item)
+            so_phieu_set = set()
+            tong_sl = 0
+            tong_tien = 0.0
+            lan_cuoi = ""
+
+            if stats_id:
+                so_phieu_set.update(stats_id["so_phieu_set"])
+                tong_sl += stats_id["tong_so_luong"]
+                tong_tien += stats_id["tong_tien"]
+                lan_cuoi = stats_id["lan_cuoi"]
+
+            if stats_name:
+                so_phieu_set.update(stats_name["so_phieu_set"])
+                tong_sl += stats_name["tong_so_luong"]
+                tong_tien += stats_name["tong_tien"]
+                if not lan_cuoi or (stats_name["lan_cuoi"] and stats_name["lan_cuoi"] > lan_cuoi):
+                    lan_cuoi = stats_name["lan_cuoi"]
+
+            parsed["so_don_hang"] = len(so_phieu_set)
+            parsed["tong_so_luong"] = tong_sl
+            parsed["tong_tien_mua"] = tong_tien
+            parsed["lan_cuoi_mua"] = lan_cuoi
+            result.append(parsed)
 
         return {"success": True, "data": result, "total": len(result)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/khach-hang/{record_id}/lich-su")
-async def get_khach_hang_lich_su(record_id: str, request: Request, user: str = Depends(require_login)):
+@router.get("/api/khach-hang/{record_id}")
+async def get_khach_hang_detail(record_id: str, request: Request, user: str = Depends(require_login)):
     try:
-        from config import SHEET_XUAT_HANG, SHEET_HANG_HOA
-        records = sheets_service.get_all_records(SHEET_KHACH_HANG)
-        kh_data = None
-        for r in records:
-            if str(r.get("id", "")).strip() == record_id:
-                kh_data = r
-                break
+        kh_data = db_manager.get_by_id("KhachHang", record_id)
         if not kh_data:
-            raise HTTPException(status_code=404, detail="Không tìm thấy thông tin khách hàng")
+            raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
 
         ten_kh = str(kh_data.get("ten_kh", "")).strip()
         dien_thoai = str(kh_data.get("dien_thoai", "")).strip()
 
-        # Đếm số khách hàng có cùng tên trong database
-        same_name_count = sum(1 for r in records if str(r.get("ten_kh", "")).strip().lower() == ten_kh.lower())
+        xuat_records = db_manager.get_all("XuatHang")
+        hang_records = db_manager.get_all("HangHoa")
+        dvt_map = {str(h.get("ma_hang", "")).strip(): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
-        # Get DVT map
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
-        dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
-
-        # Get export records matching this customer strictly
-        xuat_records = sheets_service.get_all_records(SHEET_XUAT_HANG)
         matched_items = []
         for x in xuat_records:
             kh_ref = str(x.get("khach_hang_id", "")).strip()
-            # 1. Khớp chính xác theo ID (tuyệt đối không nhầm lẫn dù trùng tên)
+            if not kh_ref:
+                continue
+
+            is_match = False
             if kh_ref == record_id:
                 is_match = True
-            # 2. Với dữ liệu cũ chưa có ID: chỉ khớp theo tên nếu hệ thống CHỈ CÓ DUY NHẤT 1 khách tên này
-            elif same_name_count == 1 and ten_kh and kh_ref.lower() == ten_kh.lower():
+            elif kh_ref.lower() == ten_kh.lower():
                 is_match = True
-            else:
-                is_match = False
+            elif dien_thoai and dien_thoai in str(x.get("dien_thoai", "")):
+                is_match = True
 
             if is_match:
-                ma_hang = str(x.get("ma_hang", "")).strip()
+                so_phieu = str(x.get("so_phieu", ""))
+                ma_hang = str(x.get("ma_hang", ""))
                 sl = int(x.get("so_luong", 0) or 0)
                 gia_ban = float(x.get("gia_ban", 0) or 0)
                 thanh_tien = float(x.get("thanh_tien", 0) or 0)
                 matched_items.append({
                     "id": str(x.get("id", "")),
-                    "so_phieu": str(x.get("so_phieu", "")),
+                    "so_phieu": so_phieu,
                     "ngay_xuat": str(x.get("ngay_xuat", "")),
                     "ma_hang": ma_hang,
                     "ten_hang": str(x.get("ten_hang", "")),
@@ -146,7 +150,6 @@ async def get_khach_hang_lich_su(record_id: str, request: Request, user: str = D
                     "ghi_chu": str(x.get("ghi_chu", "")),
                 })
 
-        # Group by so_phieu
         receipts_map = {}
         for item in matched_items:
             sp = item["so_phieu"]
@@ -169,7 +172,6 @@ async def get_khach_hang_lich_su(record_id: str, request: Request, user: str = D
 
         receipt_list = list(receipts_map.values())
         receipt_list.sort(key=lambda r: (r["ngay_xuat"], r["so_phieu"]), reverse=True)
-
         matched_items.sort(key=lambda i: (i["ngay_xuat"], i["so_phieu"]), reverse=True)
 
         summary = {
@@ -202,14 +204,20 @@ async def get_khach_hang_lich_su(record_id: str, request: Request, user: str = D
 @router.post("/api/khach-hang")
 async def create_khach_hang(data: KhachHangCreate, request: Request, user: str = Depends(require_login)):
     try:
-        new_id = sheets_service.new_id()
-        row = [new_id, data.ten_kh, data.dia_chi or "", data.dien_thoai or "", data.email or "", data.ghi_chu or ""]
-        row_num = sheets_service.append_row(SHEET_KHACH_HANG, row)
+        new_id = str(int(time.time() * 1000))
+        item = {
+            "id": new_id,
+            "ten_kh": data.ten_kh,
+            "dia_chi": data.dia_chi or "",
+            "dien_thoai": data.dien_thoai or "",
+            "email": data.email or "",
+            "ghi_chu": data.ghi_chu or "",
+        }
+        db_manager.insert_khach_hang(item)
         return {
             "success": True,
             "message": "Thêm khách hàng thành công",
-            "data": {"id": new_id, "ten_kh": data.ten_kh, "dia_chi": data.dia_chi,
-                     "dien_thoai": data.dien_thoai, "email": data.email, "ghi_chu": data.ghi_chu, "row_num": row_num}
+            "data": item
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -218,27 +226,18 @@ async def create_khach_hang(data: KhachHangCreate, request: Request, user: str =
 @router.put("/api/khach-hang/{record_id}")
 async def update_khach_hang(record_id: str, data: KhachHangUpdate, request: Request, user: str = Depends(require_login)):
     try:
-        records = sheets_service.get_all_records(SHEET_KHACH_HANG)
-        row_num = -1
-        rec = None
-        for i, r in enumerate(records):
-            if str(r.get("id", "")) == record_id:
-                row_num = i + 2
-                rec = r
-                break
-        if row_num == -1:
+        rec = db_manager.get_by_id("KhachHang", record_id)
+        if not rec:
             raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
 
-        updated = {
-            "id": record_id,
-            "ten_kh": data.ten_kh if data.ten_kh is not None else str(rec.get("ten_kh", "")),
-            "dia_chi": data.dia_chi if data.dia_chi is not None else str(rec.get("dia_chi", "")),
-            "dien_thoai": data.dien_thoai if data.dien_thoai is not None else str(rec.get("dien_thoai", "")),
-            "email": data.email if data.email is not None else str(rec.get("email", "")),
-            "ghi_chu": data.ghi_chu if data.ghi_chu is not None else str(rec.get("ghi_chu", "")),
-        }
-        row = [updated["id"], updated["ten_kh"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"]]
-        sheets_service.update_row(SHEET_KHACH_HANG, row_num, row)
+        update_dict = {}
+        if data.ten_kh is not None: update_dict["ten_kh"] = data.ten_kh
+        if data.dia_chi is not None: update_dict["dia_chi"] = data.dia_chi
+        if data.dien_thoai is not None: update_dict["dien_thoai"] = data.dien_thoai
+        if data.email is not None: update_dict["email"] = data.email
+        if data.ghi_chu is not None: update_dict["ghi_chu"] = data.ghi_chu
+
+        updated = db_manager.update_khach_hang(record_id, update_dict)
         return {"success": True, "message": "Cập nhật khách hàng thành công", "data": updated}
     except HTTPException:
         raise
@@ -249,15 +248,10 @@ async def update_khach_hang(record_id: str, data: KhachHangUpdate, request: Requ
 @router.delete("/api/khach-hang/{record_id}")
 async def delete_khach_hang(record_id: str, request: Request, user: str = Depends(require_login)):
     try:
-        records = sheets_service.get_all_records(SHEET_KHACH_HANG)
-        row_num = -1
-        for i, rec in enumerate(records):
-            if str(rec.get("id", "")) == record_id:
-                row_num = i + 2
-                break
-        if row_num == -1:
+        rec = db_manager.get_by_id("KhachHang", record_id)
+        if not rec:
             raise HTTPException(status_code=404, detail="Không tìm thấy khách hàng")
-        sheets_service.delete_row(SHEET_KHACH_HANG, row_num)
+        db_manager.delete_khach_hang(record_id)
         return {"success": True, "message": "Xóa khách hàng thành công"}
     except HTTPException:
         raise

@@ -4,17 +4,11 @@ from fastapi.templating import Jinja2Templates
 
 from routers.auth import get_current_user, require_login
 from models.schemas import HangHoaCreate, HangHoaUpdate
-from services.sheets_service import sheets_service, parse_batches_str
-from config import SHEET_HANG_HOA
+from services.db_service import db_manager
+from services.sheets_service import parse_batches_str
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
-
-HEADERS = ["id", "ma_hang", "ten_hang", "danh_muc", "don_vi_tinh", "gia_nhap", "gia_ban", "ton_kho", "chi_tiet_lo", "ghi_chu"]
-
-
-def _col_index(col_name: str) -> int:
-    return HEADERS.index(col_name) + 1
 
 
 @router.get("/hang-hoa", response_class=HTMLResponse)
@@ -46,6 +40,7 @@ def _safe_num(val, as_int=False):
     except Exception:
         return 0 if as_int else 0.0
 
+
 @router.get("/api/hang-hoa")
 async def get_hang_hoa(
     request: Request,
@@ -55,7 +50,7 @@ async def get_hang_hoa(
     user: str = Depends(require_login)
 ):
     try:
-        records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        records = db_manager.get_all("HangHoa")
         result = []
         for i, rec in enumerate(records):
             ton_kho = _safe_num(rec.get("ton_kho", 0), as_int=True)
@@ -116,39 +111,45 @@ async def create_hang_hoa(
     user: str = Depends(require_login)
 ):
     try:
-        new_id = sheets_service.new_id()
-        ma_hang = sheets_service.generate_ma_hang()
+        import time
+        new_id = str(int(time.time() * 1000))
+        ma_hang = db_manager.generate_ma_hang()
         chi_tiet_lo = f"{data.ton_kho} x {int(data.gia_nhap):,} đ".replace(",", ".") if data.ton_kho > 0 else ""
-        row = [
-            new_id,
-            ma_hang,
-            data.ten_hang,
-            data.danh_muc or "",
-            data.don_vi_tinh or "Cái",
-            float(data.gia_nhap),
-            float(data.gia_ban),
-            int(data.ton_kho),
-            chi_tiet_lo,
-            data.ghi_chu or "",
-        ]
-        row_num = sheets_service.append_row(SHEET_HANG_HOA, row)
+        item = {
+            "id": new_id,
+            "ma_hang": ma_hang,
+            "ten_hang": data.ten_hang,
+            "danh_muc": data.danh_muc or "",
+            "don_vi_tinh": data.don_vi_tinh or "Cái",
+            "gia_nhap": float(data.gia_nhap),
+            "gia_ban": float(data.gia_ban),
+            "ton_kho": int(data.ton_kho),
+            "chi_tiet_lo": chi_tiet_lo,
+            "ghi_chu": data.ghi_chu or "",
+        }
+        db_manager.insert_hang_hoa(item)
         return {
             "success": True,
             "message": "Thêm hàng hóa thành công",
-            "data": {
-                "id": new_id,
-                "ma_hang": ma_hang,
-                "ten_hang": data.ten_hang,
-                "danh_muc": data.danh_muc,
-                "don_vi_tinh": data.don_vi_tinh,
-                "gia_nhap": data.gia_nhap,
-                "gia_ban": data.gia_ban,
-                "ton_kho": data.ton_kho,
-                "chi_tiet_lo": chi_tiet_lo,
-                "ghi_chu": data.ghi_chu,
-                "row_num": row_num,
-            }
+            "data": item
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/hang-hoa/{record_id}")
+async def get_hang_hoa_detail(
+    record_id: str,
+    request: Request,
+    user: str = Depends(require_login)
+):
+    try:
+        item = db_manager.get_by_id("HangHoa", record_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Không tìm thấy hàng hóa")
+        return {"success": True, "data": item}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -161,30 +162,20 @@ async def update_hang_hoa(
     user: str = Depends(require_login)
 ):
     try:
-        row_num, rec = sheets_service.find_hang_hoa_by_id(record_id)
-        if row_num == -1:
+        rec = db_manager.get_by_id("HangHoa", record_id)
+        if not rec:
             raise HTTPException(status_code=404, detail="Không tìm thấy hàng hóa")
 
-        updated = {
-            "id": str(rec.get("id", "")),
-            "ma_hang": str(rec.get("ma_hang", "")),
-            "ten_hang": data.ten_hang if data.ten_hang is not None else str(rec.get("ten_hang", "")),
-            "danh_muc": data.danh_muc if data.danh_muc is not None else str(rec.get("danh_muc", "")),
-            "don_vi_tinh": data.don_vi_tinh if data.don_vi_tinh is not None else str(rec.get("don_vi_tinh", "")),
-            "gia_nhap": float(data.gia_nhap) if data.gia_nhap is not None else float(rec.get("gia_nhap", 0) or 0),
-            "gia_ban": float(data.gia_ban) if data.gia_ban is not None else float(rec.get("gia_ban", 0) or 0),
-            "ton_kho": int(data.ton_kho) if data.ton_kho is not None else int(rec.get("ton_kho", 0) or 0),
-            "chi_tiet_lo": str(rec.get("chi_tiet_lo", "") or ""),
-            "ghi_chu": data.ghi_chu if data.ghi_chu is not None else str(rec.get("ghi_chu", "")),
-        }
+        update_dict = {}
+        if data.ten_hang is not None: update_dict["ten_hang"] = data.ten_hang
+        if data.danh_muc is not None: update_dict["danh_muc"] = data.danh_muc
+        if data.don_vi_tinh is not None: update_dict["don_vi_tinh"] = data.don_vi_tinh
+        if data.gia_nhap is not None: update_dict["gia_nhap"] = float(data.gia_nhap)
+        if data.gia_ban is not None: update_dict["gia_ban"] = float(data.gia_ban)
+        if data.ton_kho is not None: update_dict["ton_kho"] = int(data.ton_kho)
+        if data.ghi_chu is not None: update_dict["ghi_chu"] = data.ghi_chu
 
-        row = [
-            updated["id"], updated["ma_hang"], updated["ten_hang"],
-            updated["danh_muc"], updated["don_vi_tinh"],
-            updated["gia_nhap"], updated["gia_ban"],
-            updated["ton_kho"], updated["chi_tiet_lo"], updated["ghi_chu"],
-        ]
-        sheets_service.update_row(SHEET_HANG_HOA, row_num, row)
+        updated = db_manager.update_hang_hoa(record_id, update_dict)
         return {"success": True, "message": "Cập nhật hàng hóa thành công", "data": updated}
     except HTTPException:
         raise
@@ -199,10 +190,10 @@ async def delete_hang_hoa(
     user: str = Depends(require_login)
 ):
     try:
-        row_num, rec = sheets_service.find_hang_hoa_by_id(record_id)
-        if row_num == -1:
+        rec = db_manager.get_by_id("HangHoa", record_id)
+        if not rec:
             raise HTTPException(status_code=404, detail="Không tìm thấy hàng hóa")
-        sheets_service.delete_row(SHEET_HANG_HOA, row_num)
+        db_manager.delete_hang_hoa(record_id)
         return {"success": True, "message": "Xóa hàng hóa thành công"}
     except HTTPException:
         raise
@@ -212,9 +203,9 @@ async def delete_hang_hoa(
 
 @router.get("/api/hang-hoa/danh-muc")
 async def get_danh_muc(request: Request, user: str = Depends(require_login)):
-    """Return unique danh_muc values."""
+    """Return unique danh_muc values from SQLite."""
     try:
-        records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        records = db_manager.get_all("HangHoa")
         danh_muc_set = sorted({str(r.get("danh_muc", "")) for r in records if r.get("danh_muc")})
         return {"success": True, "data": danh_muc_set}
     except Exception as e:

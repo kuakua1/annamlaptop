@@ -1,9 +1,13 @@
 import os
 import sqlite3
 import threading
+import queue
+import time
+from datetime import date
 from pathlib import Path
 from services.sheets_service import (
     sheets_service,
+    parse_batches_str, format_batches_str,
     SHEET_HANG_HOA, SHEET_NHAP_HANG, SHEET_XUAT_HANG,
     SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG, SHEET_CONFIG
 )
@@ -18,7 +22,6 @@ def _safe_float(val, default=0.0) -> float:
         return float(val)
     try:
         cleaned = str(val).replace("đ", "").replace("Đ", "").replace(",", "").replace(".", "").strip()
-        # Nếu có dấu chấm thập phân thực tế
         return float(cleaned) if cleaned else default
     except Exception:
         try:
@@ -39,18 +42,29 @@ def _safe_int(val, default=0) -> int:
     except Exception:
         return default
 
+
 class DatabaseManager:
-    """Quản lý CSDL SQLite cục bộ + Đồng bộ dữ liệu 2 chiều với Google Sheets."""
+    """
+    Quản lý CSDL SQLite cục bộ (Local-First) + Hàng đợi đồng bộ ngầm lên Google Sheets.
+    Mọi thao tác Đọc & Ghi phản hồi tức thì (< 5ms) từ SQLite.
+    Sau đó đồng bộ bất đồng bộ lên Google Sheets qua Background Worker Thread.
+    """
 
     _instance = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __new__(cls):
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
-                cls._instance._init_db()
+                cls._instance._init_queue_and_db()
             return cls._instance
+
+    def _init_queue_and_db(self):
+        self._sync_queue = queue.Queue()
+        self._worker_thread = None
+        self._init_db()
+        self._start_worker()
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=30.0)
@@ -110,9 +124,19 @@ class DatabaseManager:
                     khach_hang_id TEXT,
                     dia_chi TEXT,
                     dien_thoai TEXT,
-                    ghi_chu TEXT
+                    ghi_chu TEXT,
+                    gia_von REAL DEFAULT 0,
+                    loi_nhuan REAL DEFAULT 0
                 )
             """)
+
+            # Kiểm tra và thêm cột gia_von, loi_nhuan nếu bảng XuatHang cũ chưa có
+            cursor.execute("PRAGMA table_info(XuatHang)")
+            xuat_cols = [c["name"] for c in cursor.fetchall()]
+            if "gia_von" not in xuat_cols:
+                cursor.execute("ALTER TABLE XuatHang ADD COLUMN gia_von REAL DEFAULT 0")
+            if "loi_nhuan" not in xuat_cols:
+                cursor.execute("ALTER TABLE XuatHang ADD COLUMN loi_nhuan REAL DEFAULT 0")
 
             # 4. Bảng NhaCungCap
             cursor.execute("""
@@ -148,11 +172,540 @@ class DatabaseManager:
 
             conn.commit()
 
+    # ── Background Sync Worker ────────────────────────────────────────────────
+
+    def _start_worker(self):
+        if self._worker_thread is None or not self._worker_thread.is_alive():
+            self._worker_thread = threading.Thread(target=self._process_sync_queue, daemon=True)
+            self._worker_thread.start()
+
+    def _enqueue_task(self, task_type: str, sheet_name: str, payload: dict):
+        """Đưa tác vụ đồng bộ vào hàng đợi ngầm."""
+        self._sync_queue.put({
+            "type": task_type,
+            "sheet_name": sheet_name,
+            "payload": payload,
+            "time": time.time()
+        })
+
+    def _process_sync_queue(self):
+        """Worker thread xử lý tuần tự các tác vụ đồng bộ lên Google Sheets."""
+        while True:
+            try:
+                task = self._sync_queue.get()
+                t_type = task["type"]
+                sheet_name = task["sheet_name"]
+                payload = task["payload"]
+
+                # Thử đồng bộ với retry
+                for attempt in range(3):
+                    try:
+                        if t_type == "APPEND_ROW":
+                            sheets_service.append_row(sheet_name, payload["row"])
+                        elif t_type == "UPDATE_ROW":
+                            row_id = payload.get("id")
+                            row = payload.get("row")
+                            # Tìm vị trí dòng trên Google Sheet theo ID (cột A)
+                            found_idx = sheets_service.find_row(sheet_name, 1, str(row_id))
+                            if found_idx != -1:
+                                sheets_service.update_row(sheet_name, found_idx, row)
+                            else:
+                                # Nếu chưa có trên sheet, append
+                                sheets_service.append_row(sheet_name, row)
+                        elif t_type == "DELETE_ROW":
+                            row_id = payload.get("id")
+                            found_idx = sheets_service.find_row(sheet_name, 1, str(row_id))
+                            if found_idx != -1:
+                                sheets_service.delete_row(sheet_name, found_idx)
+                        elif t_type == "UPDATE_HANG_HOA_STOCK":
+                            # Cập nhật tồn kho hàng hóa trên sheet
+                            ma_hang = payload["ma_hang"]
+                            row_num, _ = sheets_service.find_hang_hoa_by_ma(ma_hang)
+                            if row_num != -1:
+                                if "gia_nhap" in payload:
+                                    sheets_service.update_cell(sheet_name, row_num, 6, payload["gia_nhap"])
+                                sheets_service.update_cell(sheet_name, row_num, 8, payload["ton_kho"])
+                                sheets_service.update_cell(sheet_name, row_num, 9, payload["chi_tiet_lo"])
+                        elif t_type == "SET_CONFIG":
+                            key = payload["key"]
+                            value = payload["value"]
+                            sheets_service.set_config(key, value)
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            print(f"[SYNC ERROR] Lỗi đồng bộ ngầm task {t_type} lên {sheet_name}: {e}")
+                        time.sleep(2.0)
+                self._sync_queue.task_done()
+            except Exception as outer_e:
+                time.sleep(1.0)
+
+    # ── CRUD Methods Trực Tiếp Trên SQLite + Enqueue Sheet ────────────────────
+
+    def get_all(self, table_name: str, where_clause: str = "", params: tuple = ()) -> list[dict]:
+        """Đọc tức thì từ SQLite (< 2ms)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = f"SELECT * FROM {table_name}"
+            if where_clause:
+                query += f" WHERE {where_clause}"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_by_id(self, table_name: str, record_id: str) -> dict | None:
+        """Lấy 1 bản ghi theo ID từ SQLite."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT * FROM {table_name} WHERE id = ?", (str(record_id),))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    # ── 1. Hàng Hóa CRUD ──────────────────────────────────────────────────────
+
+    def generate_ma_hang(self) -> str:
+        """Tạo mã hàng hóa kế tiếp (HH001, HH002...) dựa trên SQLite."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ma_hang FROM HangHoa WHERE ma_hang LIKE 'HH%'")
+            rows = cursor.fetchall()
+            max_num = 0
+            for r in rows:
+                ma = str(r["ma_hang"] or "")
+                num_part = ma[2:]
+                if num_part.isdigit():
+                    max_num = max(max_num, int(num_part))
+            return f"HH{max_num + 1:03d}"
+
+    def get_hang_hoa_by_ma(self, ma_hang: str) -> dict | None:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM HangHoa WHERE ma_hang = ?", (str(ma_hang),))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def insert_hang_hoa(self, item: dict) -> dict:
+        """Thêm hàng hóa vào SQLite và enqueue lên Google Sheet."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO HangHoa (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    item["id"], item["ma_hang"], item["ten_hang"], item.get("danh_muc", ""),
+                    item.get("don_vi_tinh", "Cái"), float(item.get("gia_nhap", 0)),
+                    float(item.get("gia_ban", 0)), int(item.get("ton_kho", 0)),
+                    item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
+                ))
+                conn.commit()
+
+        row = [
+            item["id"], item["ma_hang"], item["ten_hang"], item.get("danh_muc", ""),
+            item.get("don_vi_tinh", "Cái"), float(item.get("gia_nhap", 0)),
+            float(item.get("gia_ban", 0)), int(item.get("ton_kho", 0)),
+            item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
+        ]
+        self._enqueue_task("APPEND_ROW", SHEET_HANG_HOA, {"row": row})
+        return item
+
+    def update_hang_hoa(self, record_id: str, data: dict) -> dict | None:
+        """Cập nhật hàng hóa trong SQLite và enqueue lên Google Sheet."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM HangHoa WHERE id = ?", (str(record_id),))
+                cur = cursor.fetchone()
+                if not cur:
+                    return None
+                cur_dict = dict(cur)
+
+                updated = {
+                    "id": cur_dict["id"],
+                    "ma_hang": cur_dict["ma_hang"],
+                    "ten_hang": data.get("ten_hang", cur_dict["ten_hang"]),
+                    "danh_muc": data.get("danh_muc", cur_dict["danh_muc"]),
+                    "don_vi_tinh": data.get("don_vi_tinh", cur_dict["don_vi_tinh"]),
+                    "gia_nhap": float(data.get("gia_nhap", cur_dict["gia_nhap"])),
+                    "gia_ban": float(data.get("gia_ban", cur_dict["gia_ban"])),
+                    "ton_kho": int(data.get("ton_kho", cur_dict["ton_kho"])),
+                    "chi_tiet_lo": cur_dict.get("chi_tiet_lo", ""),
+                    "ghi_chu": data.get("ghi_chu", cur_dict["ghi_chu"]),
+                }
+
+                cursor.execute("""
+                    UPDATE HangHoa SET ten_hang = ?, danh_muc = ?, don_vi_tinh = ?, gia_nhap = ?,
+                        gia_ban = ?, ton_kho = ?, ghi_chu = ?
+                    WHERE id = ?
+                """, (
+                    updated["ten_hang"], updated["danh_muc"], updated["don_vi_tinh"],
+                    updated["gia_nhap"], updated["gia_ban"], updated["ton_kho"],
+                    updated["ghi_chu"], record_id
+                ))
+                conn.commit()
+
+        row = [
+            updated["id"], updated["ma_hang"], updated["ten_hang"], updated["danh_muc"],
+            updated["don_vi_tinh"], updated["gia_nhap"], updated["gia_ban"],
+            updated["ton_kho"], updated["chi_tiet_lo"], updated["ghi_chu"]
+        ]
+        self._enqueue_task("UPDATE_ROW", SHEET_HANG_HOA, {"id": record_id, "row": row})
+        return updated
+
+    def delete_hang_hoa(self, record_id: str) -> bool:
+        """Xóa hàng hóa khỏi SQLite và enqueue xóa trên Sheet."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM HangHoa WHERE id = ?", (str(record_id),))
+                conn.commit()
+        self._enqueue_task("DELETE_ROW", SHEET_HANG_HOA, {"id": record_id})
+        return True
+
+    # ── 2. Khách Hàng CRUD ────────────────────────────────────────────────────
+
+    def insert_khach_hang(self, item: dict) -> dict:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO KhachHang (id, ten_kh, dia_chi, dien_thoai, email, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    item["id"], item["ten_kh"], item.get("dia_chi", ""),
+                    item.get("dien_thoai", ""), item.get("email", ""), item.get("ghi_chu", "")
+                ))
+                conn.commit()
+        row = [item["id"], item["ten_kh"], item.get("dia_chi", ""), item.get("dien_thoai", ""), item.get("email", ""), item.get("ghi_chu", "")]
+        self._enqueue_task("APPEND_ROW", SHEET_KHACH_HANG, {"row": row})
+        return item
+
+    def update_khach_hang(self, record_id: str, data: dict) -> dict | None:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM KhachHang WHERE id = ?", (str(record_id),))
+                cur = cursor.fetchone()
+                if not cur:
+                    return None
+                cur_dict = dict(cur)
+                updated = {
+                    "id": record_id,
+                    "ten_kh": data.get("ten_kh", cur_dict["ten_kh"]),
+                    "dia_chi": data.get("dia_chi", cur_dict["dia_chi"]),
+                    "dien_thoai": data.get("dien_thoai", cur_dict["dien_thoai"]),
+                    "email": data.get("email", cur_dict["email"]),
+                    "ghi_chu": data.get("ghi_chu", cur_dict["ghi_chu"]),
+                }
+                cursor.execute("""
+                    UPDATE KhachHang SET ten_kh = ?, dia_chi = ?, dien_thoai = ?, email = ?, ghi_chu = ?
+                    WHERE id = ?
+                """, (updated["ten_kh"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"], record_id))
+                conn.commit()
+        row = [record_id, updated["ten_kh"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"]]
+        self._enqueue_task("UPDATE_ROW", SHEET_KHACH_HANG, {"id": record_id, "row": row})
+        return updated
+
+    def delete_khach_hang(self, record_id: str) -> bool:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM KhachHang WHERE id = ?", (str(record_id),))
+                conn.commit()
+        self._enqueue_task("DELETE_ROW", SHEET_KHACH_HANG, {"id": record_id})
+        return True
+
+    # ── 3. Nhà Cung Cấp CRUD ──────────────────────────────────────────────────
+
+    def insert_nha_cung_cap(self, item: dict) -> dict:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO NhaCungCap (id, ten_ncc, dia_chi, dien_thoai, email, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    item["id"], item["ten_ncc"], item.get("dia_chi", ""),
+                    item.get("dien_thoai", ""), item.get("email", ""), item.get("ghi_chu", "")
+                ))
+                conn.commit()
+        row = [item["id"], item["ten_ncc"], item.get("dia_chi", ""), item.get("dien_thoai", ""), item.get("email", ""), item.get("ghi_chu", "")]
+        self._enqueue_task("APPEND_ROW", SHEET_NHA_CUNG_CAP, {"row": row})
+        return item
+
+    def update_nha_cung_cap(self, record_id: str, data: dict) -> dict | None:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM NhaCungCap WHERE id = ?", (str(record_id),))
+                cur = cursor.fetchone()
+                if not cur:
+                    return None
+                cur_dict = dict(cur)
+                updated = {
+                    "id": record_id,
+                    "ten_ncc": data.get("ten_ncc", cur_dict["ten_ncc"]),
+                    "dia_chi": data.get("dia_chi", cur_dict["dia_chi"]),
+                    "dien_thoai": data.get("dien_thoai", cur_dict["dien_thoai"]),
+                    "email": data.get("email", cur_dict["email"]),
+                    "ghi_chu": data.get("ghi_chu", cur_dict["ghi_chu"]),
+                }
+                cursor.execute("""
+                    UPDATE NhaCungCap SET ten_ncc = ?, dia_chi = ?, dien_thoai = ?, email = ?, ghi_chu = ?
+                    WHERE id = ?
+                """, (updated["ten_ncc"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"], record_id))
+                conn.commit()
+        row = [record_id, updated["ten_ncc"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"]]
+        self._enqueue_task("UPDATE_ROW", SHEET_NHA_CUNG_CAP, {"id": record_id, "row": row})
+        return updated
+
+    def delete_nha_cung_cap(self, record_id: str) -> bool:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM NhaCungCap WHERE id = ?", (str(record_id),))
+                conn.commit()
+        self._enqueue_task("DELETE_ROW", SHEET_NHA_CUNG_CAP, {"id": record_id})
+        return True
+
+    def generate_so_phieu_nhap(self, date_str: str = "") -> str:
+        """Tạo số phiếu nhập NH{YYYYMMDD}{0001} tức thì từ SQLite."""
+        if not date_str:
+            date_str = date.today().isoformat()
+        date_compact = date_str.replace("-", "")
+        prefix = f"NH{date_compact}"
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT so_phieu FROM NhapHang WHERE so_phieu LIKE ?", (f"{prefix}%",))
+            rows = cursor.fetchall()
+            max_seq = 0
+            for r in rows:
+                sp = str(r["so_phieu"] or "")
+                num_part = sp[len(prefix):]
+                if num_part.isdigit():
+                    max_seq = max(max_seq, int(num_part))
+            return f"{prefix}{max_seq + 1:04d}"
+
+    def nhap_hang_batch_local(self, ma_hang: str, so_luong: int, gia_nhap: float) -> tuple[int, str]:
+        """Cập nhật tồn kho theo lô trong SQLite."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
+                row = cursor.fetchone()
+                if not row:
+                    raise ValueError(f"Không tìm thấy hàng hóa mã {ma_hang}")
+                cur_sl = int(row["ton_kho"] or 0)
+                cur_lo_str = str(row["chi_tiet_lo"] or "")
+                cur_gia = float(row["gia_nhap"] or 0)
+
+                batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
+                found = False
+                for b in batches:
+                    if abs(b["gia_nhap"] - gia_nhap) < 1.0:
+                        b["so_luong"] += so_luong
+                        found = True
+                        break
+                if not found:
+                    batches.append({"so_luong": so_luong, "gia_nhap": float(gia_nhap)})
+
+                new_total_sl = sum(b["so_luong"] for b in batches)
+                new_lo_str = format_batches_str(batches)
+
+                cursor.execute("""
+                    UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ?, gia_nhap = ? WHERE ma_hang = ?
+                """, (new_total_sl, new_lo_str, gia_nhap, ma_hang))
+                conn.commit()
+
+        # Enqueue cập nhật lô giá & tồn kho lên Sheet HangHoa
+        self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
+            "ma_hang": ma_hang,
+            "ton_kho": new_total_sl,
+            "chi_tiet_lo": new_lo_str,
+            "gia_nhap": gia_nhap
+        })
+        return new_total_sl, new_lo_str
+
+    def create_nhap_hang_transaction(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict]) -> list[dict]:
+        """Lưu toàn bộ dòng phiếu nhập vào SQLite và enqueue lên Sheet."""
+        created_rows = []
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for it in items:
+                    new_id = str(int(time.time() * 1000)) + str(len(created_rows))
+                    thanh_tien = it["so_luong"] * it["gia_nhap"]
+                    cursor.execute("""
+                        INSERT INTO NhapHang (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        new_id, so_phieu, ngay_nhap, it["ma_hang"], it["ten_hang"],
+                        it["so_luong"], it["gia_nhap"], thanh_tien, ncc_save_ref, ghi_chu
+                    ))
+
+                    created_rows.append({
+                        "id": new_id,
+                        "so_phieu": so_phieu,
+                        "ngay_nhap": ngay_nhap,
+                        "ma_hang": it["ma_hang"],
+                        "ten_hang": it["ten_hang"],
+                        "so_luong": it["so_luong"],
+                        "gia_nhap": it["gia_nhap"],
+                        "thanh_tien": thanh_tien,
+                        "nha_cung_cap_id": ncc_save_ref,
+                        "ghi_chu": ghi_chu
+                    })
+                conn.commit()
+
+        # Cập nhật tồn kho từng món & enqueue lên Google Sheet
+        for it in items:
+            self.nhap_hang_batch_local(it["ma_hang"], it["so_luong"], it["gia_nhap"])
+
+        for r in created_rows:
+            sheet_row = [
+                r["id"], r["so_phieu"], r["ngay_nhap"], r["ma_hang"], r["ten_hang"],
+                r["so_luong"], r["gia_nhap"], r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"]
+            ]
+            self._enqueue_task("APPEND_ROW", SHEET_NHAP_HANG, {"row": sheet_row})
+
+        return created_rows
+
+    def generate_so_phieu_xuat(self, date_str: str = "") -> str:
+        """Tạo số phiếu xuất XH{YYYYMMDD}{0001} tức thì từ SQLite."""
+        if not date_str:
+            date_str = date.today().isoformat()
+        date_compact = date_str.replace("-", "")
+        prefix = f"XH{date_compact}"
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT so_phieu FROM XuatHang WHERE so_phieu LIKE ?", (f"{prefix}%",))
+            rows = cursor.fetchall()
+            max_seq = 0
+            for r in rows:
+                sp = str(r["so_phieu"] or "")
+                num_part = sp[len(prefix):]
+                if num_part.isdigit():
+                    max_seq = max(max_seq, int(num_part))
+            return f"{prefix}{max_seq + 1:04d}"
+
+    def xuat_hang_batch_local(self, ma_hang: str, so_luong: int) -> tuple[int, str, float]:
+        """Trừ tồn kho FIFO trong SQLite và tính chính xác giá vốn (COGS)."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
+                row = cursor.fetchone()
+                if not row:
+                    raise ValueError(f"Không tìm thấy hàng hóa mã {ma_hang}")
+                cur_sl = int(row["ton_kho"] or 0)
+                if so_luong > cur_sl:
+                    raise ValueError(f"Hàng {ma_hang} không đủ tồn kho (còn {cur_sl}, yêu cầu xuất {so_luong})")
+
+                cur_lo_str = str(row["chi_tiet_lo"] or "")
+                cur_gia = float(row["gia_nhap"] or 0)
+                batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
+
+                remaining_need = so_luong
+                total_cost = 0.0
+                new_batches = []
+                for b in batches:
+                    if remaining_need <= 0:
+                        new_batches.append(b)
+                    elif b["so_luong"] <= remaining_need:
+                        total_cost += b["so_luong"] * b["gia_nhap"]
+                        remaining_need -= b["so_luong"]
+                    else:
+                        total_cost += remaining_need * b["gia_nhap"]
+                        b["so_luong"] -= remaining_need
+                        remaining_need = 0
+                        new_batches.append(b)
+
+                if remaining_need > 0:
+                    total_cost += remaining_need * cur_gia
+
+                new_total_sl = sum(b["so_luong"] for b in new_batches)
+                new_lo_str = format_batches_str(new_batches)
+
+                cursor.execute("""
+                    UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ? WHERE ma_hang = ?
+                """, (new_total_sl, new_lo_str, ma_hang))
+                conn.commit()
+
+        # Enqueue cập nhật lô giá & tồn kho lên Sheet HangHoa
+        self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
+            "ma_hang": ma_hang,
+            "ton_kho": new_total_sl,
+            "chi_tiet_lo": new_lo_str
+        })
+        return new_total_sl, new_lo_str, total_cost
+
+    def create_xuat_hang_transaction(self, so_phieu: str, ngay_xuat: str, kh_save_ref: str, ghi_chu: str, items: list[dict]) -> list[dict]:
+        """Tạo phiếu xuất hàng: trừ FIFO trong SQLite và enqueue lên Sheet."""
+        created_rows = []
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for it in items:
+                    new_id = str(int(time.time() * 1000)) + str(len(created_rows))
+                    thanh_tien = it["so_luong"] * it["gia_ban"]
+                    # Tính FIFO trực tiếp trong SQLite
+                    _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"])
+                    loi_nhuan = float(thanh_tien) - float(gia_von)
+
+                    cursor.execute("""
+                        INSERT INTO XuatHang (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        new_id, so_phieu, ngay_xuat, it["ma_hang"], it["ten_hang"],
+                        it["so_luong"], it["gia_ban"], thanh_tien, kh_save_ref, ghi_chu, gia_von, loi_nhuan
+                    ))
+
+                    created_rows.append({
+                        "id": new_id,
+                        "so_phieu": so_phieu,
+                        "ngay_xuat": ngay_xuat,
+                        "ma_hang": it["ma_hang"],
+                        "ten_hang": it["ten_hang"],
+                        "so_luong": it["so_luong"],
+                        "gia_ban": it["gia_ban"],
+                        "thanh_tien": thanh_tien,
+                        "khach_hang_id": kh_save_ref,
+                        "ghi_chu": ghi_chu,
+                        "gia_von": gia_von,
+                        "loi_nhuan": loi_nhuan
+                    })
+                conn.commit()
+
+        # Enqueue từng dòng phiếu xuất lên Google Sheet
+        for r in created_rows:
+            sheet_row = [
+                r["id"], r["so_phieu"], r["ngay_xuat"], r["ma_hang"], r["ten_hang"],
+                r["so_luong"], r["gia_ban"], r["thanh_tien"], r["khach_hang_id"],
+                r["ghi_chu"], r["gia_von"], r["loi_nhuan"]
+            ]
+            self._enqueue_task("APPEND_ROW", SHEET_XUAT_HANG, {"row": sheet_row})
+
+        return created_rows
+
+    # ── 6. Config CRUD ────────────────────────────────────────────────────────
+
+    def get_config(self, key: str) -> str:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM Config WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return str(row["value"]) if row else ""
+
+    def set_config(self, key: str, value: str):
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("INSERT OR REPLACE INTO Config (key, value) VALUES (?, ?)", (key, str(value)))
+                conn.commit()
+        self._enqueue_task("SET_CONFIG", SHEET_CONFIG, {"key": key, "value": value})
+
+    # ── 7. Bulk Sync 2 Chiều ──────────────────────────────────────────────────
+
     def sync_from_google_sheets(self) -> dict:
-        """
-        Kéo toàn bộ dữ liệu mới nhất từ Google Sheets đổ vào SQLite.
-        Dùng khi khởi động hoặc khi bấm nút 'Đồng bộ từ Google Sheets'.
-        """
+        """Kéo toàn bộ dữ liệu mới nhất từ Google Sheets đổ vào SQLite."""
         counts = {}
         with self._lock:
             with self._get_connection() as conn:
@@ -259,8 +812,8 @@ class DatabaseManager:
                     for r in records:
                         cursor.execute("""
                             INSERT OR REPLACE INTO XuatHang 
-                            (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, dia_chi, dien_thoai, ghi_chu)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, dia_chi, dien_thoai, ghi_chu, gia_von, loi_nhuan)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             str(r.get("id") or ""),
                             str(r.get("so_phieu") or ""),
@@ -273,11 +826,11 @@ class DatabaseManager:
                             str(r.get("khach_hang_id") or r.get("ten_kh") or ""),
                             str(r.get("dia_chi") or ""),
                             str(r.get("dien_thoai") or ""),
-                            str(r.get("ghi_chu") or "")
+                            str(r.get("ghi_chu") or ""),
+                            _safe_float(r.get("gia_von")),
+                            _safe_float(r.get("loi_nhuan"))
                         ))
                     counts["XuatHang"] = len(records)
-                except Exception as e:
-                    counts["XuatHang_err"] = str(e)
                 except Exception as e:
                     counts["XuatHang_err"] = str(e)
 
@@ -299,10 +852,7 @@ class DatabaseManager:
         return counts
 
     def sync_to_google_sheets(self) -> dict:
-        """
-        Đẩy toàn bộ dữ liệu từ CSDL SQLite cục bộ lên Google Sheets.
-        Dùng khi người dùng sửa thủ công trong database bằng DB Browser.
-        """
+        """Đẩy toàn bộ dữ liệu từ CSDL SQLite cục bộ lên Google Sheets."""
         counts = {}
         with self._lock:
             with self._get_connection() as conn:
@@ -313,21 +863,13 @@ class DatabaseManager:
                     cursor.execute("SELECT id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu FROM HangHoa")
                     rows = cursor.fetchall()
                     ws = sheets_service._sheet(SHEET_HANG_HOA)
-                    # Giữ nguyên dòng tiêu đề
                     header = ["ID", "Mã Hàng", "Tên Hàng Hóa", "Danh Mục", "ĐVT", "Giá Nhập (đ)", "Giá Bán (đ)", "SL", "Chi Tiết Lô Giá", "Ghi Chú"]
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
-                            r["id"],
-                            r["ma_hang"],
-                            r["ten_hang"],
-                            r["danh_muc"],
-                            r["don_vi_tinh"],
-                            r["gia_nhap"],
-                            r["gia_ban"],
-                            r["ton_kho"],
-                            r["chi_tiet_lo"],
-                            r["ghi_chu"]
+                            r["id"], r["ma_hang"], r["ten_hang"], r["danh_muc"],
+                            r["don_vi_tinh"], r["gia_nhap"], r["gia_ban"],
+                            r["ton_kho"], r["chi_tiet_lo"], r["ghi_chu"]
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)
@@ -345,12 +887,8 @@ class DatabaseManager:
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
-                            r["id"],
-                            r["ten_kh"],
-                            r["dia_chi"],
-                            r["dien_thoai"],
-                            r["email"],
-                            r["ghi_chu"]
+                            r["id"], r["ten_kh"], r["dia_chi"],
+                            r["dien_thoai"], r["email"], r["ghi_chu"]
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)
@@ -368,12 +906,8 @@ class DatabaseManager:
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
-                            r["id"],
-                            r["ten_ncc"],
-                            r["dia_chi"],
-                            r["dien_thoai"],
-                            r["email"],
-                            r["ghi_chu"]
+                            r["id"], r["ten_ncc"], r["dia_chi"],
+                            r["dien_thoai"], r["email"], r["ghi_chu"]
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)
@@ -391,16 +925,9 @@ class DatabaseManager:
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
-                            r["id"],
-                            r["so_phieu"],
-                            r["ngay_nhap"],
-                            r["ma_hang"],
-                            r["ten_hang"],
-                            r["so_luong"],
-                            r["gia_nhap"],
-                            r["thanh_tien"],
-                            r["nha_cung_cap_id"],
-                            r["ghi_chu"]
+                            r["id"], r["so_phieu"], r["ngay_nhap"], r["ma_hang"],
+                            r["ten_hang"], r["so_luong"], r["gia_nhap"],
+                            r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"]
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)
@@ -411,25 +938,17 @@ class DatabaseManager:
 
                 # 5. Đẩy XuatHang
                 try:
-                    cursor.execute("SELECT id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu FROM XuatHang")
+                    cursor.execute("SELECT id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan FROM XuatHang")
                     rows = cursor.fetchall()
                     ws = sheets_service._sheet(SHEET_XUAT_HANG)
                     header = ["ID", "Số Phiếu", "Ngày Xuất", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Bán (đ)", "Thành Tiền (đ)", "Khách Hàng", "Ghi Chú", "Giá Vốn (đ)", "Lợi Nhuận (đ)"]
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
-                            r["id"],
-                            r["so_phieu"],
-                            r["ngay_xuat"],
-                            r["ma_hang"],
-                            r["ten_hang"],
-                            r["so_luong"],
-                            r["gia_ban"],
-                            r["thanh_tien"],
-                            r["khach_hang_id"],
-                            r["ghi_chu"],
-                            0,
-                            0
+                            r["id"], r["so_phieu"], r["ngay_xuat"], r["ma_hang"],
+                            r["ten_hang"], r["so_luong"], r["gia_ban"],
+                            r["thanh_tien"], r["khach_hang_id"], r["ghi_chu"],
+                            r["gia_von"], r["loi_nhuan"]
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)
@@ -440,13 +959,5 @@ class DatabaseManager:
 
         return counts
 
-    def get_all(self, table_name: str) -> list[dict]:
-        """Truy vấn tức thì từ SQLite."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(f"SELECT * FROM {table_name}")
-            return [dict(row) for row in cursor.fetchall()]
-
 
 db_manager = DatabaseManager()
-

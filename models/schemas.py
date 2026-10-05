@@ -116,6 +116,8 @@ class NhapHangCreate(BaseModel):
     nha_cung_cap_ten: Optional[str] = ""
     nha_cung_cap_dia_chi: Optional[str] = ""
     nha_cung_cap_sdt: Optional[str] = ""
+    dia_chi: Optional[str] = ""
+    dien_thoai: Optional[str] = ""
     items: List[NhapHangItem]
     ghi_chu: Optional[str] = ""
 
@@ -149,6 +151,8 @@ class XuatHangCreate(BaseModel):
     khach_hang_ten: Optional[str] = ""
     khach_hang_dia_chi: Optional[str] = ""
     khach_hang_sdt: Optional[str] = ""
+    dia_chi: Optional[str] = ""
+    dien_thoai: Optional[str] = ""
     items: List[XuatHangItem]
     ghi_chu: Optional[str] = ""
 

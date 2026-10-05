@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+import time
 
 from routers.auth import get_current_user, require_login
 from models.schemas import XuatHangCreate
-from services.sheets_service import sheets_service
-from config import SHEET_XUAT_HANG, SHEET_HANG_HOA, SHEET_KHACH_HANG
+from services.db_service import db_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -39,9 +39,9 @@ async def get_xuat_hang(
     user: str = Depends(require_login)
 ):
     try:
-        records = sheets_service.get_all_records(SHEET_XUAT_HANG)
-        kh_records = sheets_service.get_all_records(SHEET_KHACH_HANG)
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        records = db_manager.get_all("XuatHang")
+        kh_records = db_manager.get_all("KhachHang")
+        hang_records = db_manager.get_all("HangHoa")
 
         kh_map = {}
         for k in kh_records:
@@ -114,17 +114,14 @@ async def get_xuat_hang(
         result.sort(key=lambda x: (x["ngay_xuat"], x["id"]), reverse=True)
         total_sl = sum(x["so_luong"] for x in result)
         total_tien = sum(x["thanh_tien"] for x in result)
-        total_von = sum(x["gia_von"] for x in result)
-        total_lai = sum(x["loi_nhuan"] for x in result)
-
+        total_profit = sum(x["loi_nhuan"] for x in result)
         return {
             "success": True,
             "data": result,
             "total": len(result),
             "tong_so_luong": total_sl,
-            "tong_thanh_tien": total_tien,
-            "tong_gia_von": total_von,
-            "tong_loi_nhuan": total_lai
+            "tong_tien": total_tien,
+            "tong_loi_nhuan": total_profit,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -140,11 +137,11 @@ async def create_xuat_hang(
         raise HTTPException(status_code=400, detail="Phiếu xuất phải có ít nhất 1 mặt hàng")
 
     kh_ten = (data.khach_hang_ten or "").strip()
-    kh_dia_chi = (data.khach_hang_dia_chi or "").strip()
-    kh_sdt = (data.khach_hang_sdt or "").strip()
     kh_id = (data.khach_hang_id or "").strip()
+    kh_dia_chi = (data.khach_hang_dia_chi or data.dia_chi or "").strip()
+    kh_sdt = (data.khach_hang_sdt or data.dien_thoai or "").strip()
 
-    if not kh_ten:
+    if not kh_ten and not kh_id:
         raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Khách Hàng")
     if not kh_dia_chi:
         raise HTTPException(status_code=400, detail="Vui lòng nhập Địa Chỉ Khách Hàng")
@@ -159,10 +156,10 @@ async def create_xuat_hang(
             )
 
     try:
-        # Check stock availability first
+        # 1. Kiểm tra tồn kho trước từ SQLite
         for item in data.items:
-            _, rec = sheets_service.find_hang_hoa_by_ma(item.ma_hang)
-            if rec is None:
+            rec = db_manager.get_hang_hoa_by_ma(item.ma_hang)
+            if not rec:
                 raise HTTPException(status_code=404, detail=f"Không tìm thấy hàng hóa mã {item.ma_hang}")
             ton_kho = int(rec.get("ton_kho", 0) or 0)
             if ton_kho < item.so_luong:
@@ -171,29 +168,23 @@ async def create_xuat_hang(
                     detail=f"Hàng {item.ten_hang} chỉ còn {ton_kho} {rec.get('don_vi_tinh','')}, không đủ {item.so_luong}"
                 )
 
-        so_phieu = sheets_service.generate_so_phieu_xuat(data.ngay_xuat)
+        so_phieu = db_manager.generate_so_phieu_xuat(data.ngay_xuat)
 
-        # ── Tự động lưu khách hàng vào database nếu chưa có ──────────────
+        # 2. Tự động lưu/khớp khách hàng
         if kh_ten or kh_id or kh_sdt:
-            kh_list = sheets_service.get_all_records(SHEET_KHACH_HANG)
+            kh_list = db_manager.get_all("KhachHang")
             matched = None
-
-            # 1. Khớp theo ID nếu chọn từ gợi ý khách hàng
             if kh_id:
                 for k in kh_list:
                     if str(k.get("id", "")).strip() == kh_id:
                         matched = k
                         break
-
-            # 2. Khớp theo Số Điện Thoại (SĐT là duy nhất, phân biệt khách trùng tên)
             if not matched and kh_sdt:
                 for k in kh_list:
                     k_sdt = str(k.get("dien_thoai", "")).strip()
                     if k_sdt and k_sdt == kh_sdt:
                         matched = k
                         break
-
-            # 3. Khớp theo Tên chỉ khi khách cũ chưa có SĐT hoặc trùng SĐT
             if not matched and kh_ten:
                 for k in kh_list:
                     k_ten = str(k.get("ten_kh", "")).strip().lower()
@@ -203,80 +194,43 @@ async def create_xuat_hang(
                             matched = k
                             break
 
-            # Nếu chưa có -> Tạo khách hàng mới với ID duy nhất
             if not matched:
-                new_kh_id = sheets_service.new_id()
-                kh_row = [
-                    new_kh_id,
-                    kh_ten,
-                    kh_dia_chi,
-                    kh_sdt,
-                    "",
-                    "Tự động lưu từ phiếu xuất",
-                ]
-                sheets_service.append_row(SHEET_KHACH_HANG, kh_row)
+                new_kh_id = str(int(time.time() * 1000))
+                db_manager.insert_khach_hang({
+                    "id": new_kh_id,
+                    "ten_kh": kh_ten,
+                    "dia_chi": kh_dia_chi,
+                    "dien_thoai": kh_sdt,
+                    "email": "",
+                    "ghi_chu": "Tự động lưu từ phiếu xuất",
+                })
                 kh_id = new_kh_id
             else:
                 kh_id = str(matched.get("id", "")).strip()
-                # Cập nhật SĐT hoặc Địa chỉ nếu khách cũ chưa có
                 if (not matched.get("dien_thoai") and kh_sdt) or (not matched.get("dia_chi") and kh_dia_chi):
-                    row_idx = None
-                    for idx, k in enumerate(kh_list):
-                        if str(k.get("id", "")).strip() == kh_id:
-                            row_idx = idx + 2
-                            break
-                    if row_idx:
-                        updated_row = [
-                            kh_id,
-                            str(matched.get("ten_kh", "")) or kh_ten,
-                            kh_dia_chi or str(matched.get("dia_chi", "")),
-                            kh_sdt or str(matched.get("dien_thoai", "")),
-                            str(matched.get("email", "")),
-                            str(matched.get("ghi_chu", "")),
-                        ]
-                        sheets_service.update_row(SHEET_KHACH_HANG, row_idx, updated_row)
+                    db_manager.update_khach_hang(kh_id, {
+                        "dia_chi": kh_dia_chi or matched.get("dia_chi", ""),
+                        "dien_thoai": kh_sdt or matched.get("dien_thoai", "")
+                    })
 
-        # Luôn lưu ID khách hàng vào phiếu xuất để định danh chuẩn xác 100%
         kh_save_ref = kh_id if kh_id else kh_ten
-        created_rows = []
-
+        items_payload = []
         for item in data.items:
-            new_id = sheets_service.new_id()
-            thanh_tien = item.so_luong * item.gia_ban
-            # Deduct stock using FIFO from price batches and get exact COGS
-            _, _, gia_von = sheets_service.xuat_hang_batch(item.ma_hang, item.so_luong)
-            loi_nhuan = float(thanh_tien) - float(gia_von)
-            row = [
-                new_id,
-                so_phieu,
-                data.ngay_xuat,
-                item.ma_hang,
-                item.ten_hang,
-                item.so_luong,
-                float(item.gia_ban),
-                float(thanh_tien),
-                kh_save_ref,
-                data.ghi_chu or "",
-                float(gia_von),
-                float(loi_nhuan),
-            ]
-            row_num = sheets_service.append_row(SHEET_XUAT_HANG, row)
-            created_rows.append({
-                "id": new_id,
-                "so_phieu": so_phieu,
-                "ngay_xuat": data.ngay_xuat,
+            items_payload.append({
                 "ma_hang": item.ma_hang,
                 "ten_hang": item.ten_hang,
                 "so_luong": item.so_luong,
-                "gia_ban": item.gia_ban,
-                "thanh_tien": thanh_tien,
-                "khach_hang_id": kh_id,
-                "khach_hang_ten": kh_ten,
-                "ghi_chu": data.ghi_chu,
-                "gia_von": gia_von,
-                "loi_nhuan": loi_nhuan,
-                "row_num": row_num,
+                "gia_ban": float(item.gia_ban)
             })
+
+        # 3. Tạo phiếu xuất và cập nhật tồn kho FIFO trong SQLite
+        created_rows = db_manager.create_xuat_hang_transaction(
+            so_phieu=so_phieu,
+            ngay_xuat=data.ngay_xuat,
+            kh_save_ref=kh_save_ref,
+            ghi_chu=data.ghi_chu or "",
+            items=items_payload
+        )
 
         return {
             "success": True,
@@ -297,9 +251,9 @@ async def get_xuat_hang_detail(
     user: str = Depends(require_login)
 ):
     try:
-        records = sheets_service.get_all_records(SHEET_XUAT_HANG)
-        kh_records = sheets_service.get_all_records(SHEET_KHACH_HANG)
-        hang_records = sheets_service.get_all_records(SHEET_HANG_HOA)
+        records = db_manager.get_all("XuatHang")
+        kh_records = db_manager.get_all("KhachHang")
+        hang_records = db_manager.get_all("HangHoa")
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
         items = []

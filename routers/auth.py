@@ -10,6 +10,7 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from config import SECRET_KEY, SESSION_COOKIE_NAME, SESSION_MAX_AGE
 from models.schemas import LoginRequest
 from services.sheets_service import sheets_service
+from services.db_service import db_manager
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -99,8 +100,8 @@ async def login(data: LoginRequest, request: Request, response: Response):
     _check_login_rate_limit(client_ip)
 
     try:
-        stored_username = sheets_service.get_config("admin_username")
-        stored_hash = sheets_service.get_config("admin_password_hash")
+        stored_username = db_manager.get_config("admin_username") or sheets_service.get_config("admin_username")
+        stored_hash = db_manager.get_config("admin_password_hash") or sheets_service.get_config("admin_password_hash")
 
         if not stored_username or not stored_hash:
             raise HTTPException(status_code=500, detail="Cấu hình tài khoản chưa được thiết lập")
