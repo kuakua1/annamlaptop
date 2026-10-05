@@ -11,41 +11,48 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body class="login-page">
+<div class="login-bg-glow login-bg-glow-1"></div>
+<div class="login-bg-glow login-bg-glow-2"></div>
+
 <div class="login-card">
     <div class="text-center mb-4">
-        <img src="/static/img/logo.png" alt="Logo" class="rounded-circle mb-3 shadow" style="width: 76px; height: 76px; object-fit: cover; border: 2px solid #0284c7;">
-        <h4 class="fw-bold mb-1">Kho Hàng An Nam</h4>
-        <p class="text-muted small">Hệ thống quản lý kho & bán hàng</p>
+        <div class="logo-wrapper mb-3">
+            <img src="/static/img/logo.png" alt="Logo" class="login-logo-img">
+        </div>
+        <h3 class="fw-bold mb-1 text-dark tracking-tight">Kho Hàng An Nam</h3>
+        <p class="text-muted small mb-0">Hệ thống quản lý kho &amp; kinh doanh</p>
     </div>
 
-    <div id="error-msg" class="alert alert-danger d-none" role="alert"></div>
+    <div id="error-msg" class="alert alert-danger d-none shadow-sm py-2 px-3 small border-0" role="alert"></div>
 
     <form id="login-form" onsubmit="doLogin(event)">
         <div class="mb-3">
-            <label class="form-label">Tên đăng nhập</label>
-            <div class="input-group">
+            <label class="form-label form-label-custom">Tên đăng nhập</label>
+            <div class="input-group input-group-custom">
                 <span class="input-group-text"><i class="bi bi-person"></i></span>
                 <input type="text" class="form-control" id="username" placeholder="Nhập tên đăng nhập" required autocomplete="username">
             </div>
         </div>
         <div class="mb-4">
-            <label class="form-label">Mật khẩu</label>
-            <div class="input-group">
+            <label class="form-label form-label-custom">Mật khẩu</label>
+            <div class="input-group input-group-custom">
                 <span class="input-group-text"><i class="bi bi-lock"></i></span>
                 <input type="password" class="form-control" id="password" placeholder="Nhập mật khẩu" required autocomplete="current-password">
-                <button class="btn btn-outline-secondary" type="button" id="toggle-pw" onclick="togglePassword()">
+                <button class="btn btn-toggle-pw" type="button" id="toggle-pw" onclick="togglePassword()">
                     <i class="bi bi-eye" id="pw-eye"></i>
                 </button>
             </div>
         </div>
-        <button type="submit" class="btn btn-primary w-100" id="login-btn">
+        <button type="submit" class="btn btn-login-submit w-100" id="login-btn">
             <i class="bi bi-box-arrow-in-right me-2"></i>Đăng Nhập
         </button>
     </form>
 
-    <p class="text-center text-muted small mt-4 mb-0">
-        <i class="bi bi-shield-lock me-1"></i>Hệ thống bảo mật &mdash; chỉ dành cho nhân viên
-    </p>
+    <div class="text-center mt-4 pt-2 border-top border-light-subtle">
+        <span class="badge-creator">
+            <i class="bi bi-stars text-warning me-1"></i>Made by <strong>Kiên</strong>
+        </span>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
