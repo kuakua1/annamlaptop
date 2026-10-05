@@ -1001,6 +1001,153 @@ window.currentReceiptDetail = null;
 window.receiptDetailOnUpdated = null;
 window.allReceiptProductsCache = null;
 
+/**
+ * Hiển thị chi tiết phiếu nhập / xuất kho với đầy đủ tính năng:
+ * - Giao diện thanh lịch, rõ ràng, tinh giản icon
+ * - Cho phép chỉnh sửa số lượng, đơn giá trực tiếp trên từng dòng
+ * - Thêm sản phẩm mới vào phiếu từ dropdown danh mục hàng
+ * - Xóa sản phẩm khỏi phiếu
+ * - Nút "Lưu thay đổi" động (sáng màu xanh khi có thay đổi)
+ * - Tự động tính toán tổng số lượng và tổng tiền
+ */
+async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detail-modal-body', onUpdated = null) {
+    if (!res) return;
+    const isXuat = (type === 'xuat') || (res.so_phieu && res.so_phieu.startsWith('XH'));
+    const items = res.items || [];
+    window.currentReceiptDetail = { ...res, type: isXuat ? 'xuat' : 'nhap' };
+    window.receiptDetailOnUpdated = onUpdated;
+    window.isReceiptDetailDirty = false;
+
+    const modalBody = document.getElementById(targetModalBodyId);
+    if (!modalBody) return;
+
+    const partner = isXuat ? (res.khach_hang || {}) : (res.nha_cung_cap || {});
+    const partnerName = isXuat ? (partner.ten_kh || 'Khách lẻ') : (partner.ten_ncc || 'Không xác định');
+    const partnerPhone = partner.dien_thoai || '';
+    const partnerAddress = partner.dia_chi || '';
+    const ngay = isXuat ? res.ngay_xuat : res.ngay_nhap;
+
+    // Tải danh sách tất cả sản phẩm cho dropdown "Thêm hàng"
+    const allProducts = await fetchAllProductsForReceipt();
+
+    // Render HTML
+    modalBody.innerHTML = `
+        <div class="card bg-light border-0 mb-3 shadow-none">
+            <div class="card-body p-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-2 border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge ${isXuat ? 'bg-danger' : 'bg-primary'} fs-6 px-3 py-1 font-monospace">${escapeHtml(res.so_phieu)}</span>
+                        <div class="d-inline-flex align-items-center gap-1 ms-2">
+                            <span class="text-secondary small">Ngày:</span>
+                            <input type="date" id="receipt-edit-ngay" class="form-control form-control-sm py-0 px-2 fw-semibold border-secondary-subtle" style="width: 140px;" value="${ngay || ''}" onchange="markReceiptDetailDirty()">
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <span class="text-muted small me-2">Tổng tiền:</span>
+                        <span class="fs-4 fw-bold ${isXuat ? 'text-danger' : 'text-primary'} font-monospace" id="receipt-detail-grand-total">${formatVND(res.total)}</span>
+                    </div>
+                </div>
+                <div class="row g-2 small">
+                    <div class="col-md-7">
+                        <div class="fw-bold text-dark fs-6">${escapeHtml(partnerName)}</div>
+                        ${partnerPhone ? `<div class="text-muted">SĐT: <strong class="text-dark font-monospace">${escapeHtml(partnerPhone)}</strong></div>` : ''}
+                        ${partnerAddress ? `<div class="text-muted">Địa chỉ: <span class="text-dark">${escapeHtml(partnerAddress)}</span></div>` : ''}
+                    </div>
+                    <div class="col-md-5">
+                        <div class="mb-1">
+                            <span class="text-muted small">Ghi chú:</span>
+                            <input type="text" id="receipt-edit-ghi-chu" class="form-control form-control-sm py-0 px-2 border-secondary-subtle mt-1" value="${escapeHtml(res.ghi_chu || '')}" placeholder="Ghi chú phiếu..." oninput="markReceiptDetailDirty()">
+                        </div>
+                        <div class="text-muted small mt-1">
+                            Quy mô: <strong id="receipt-detail-item-count">${items.length}</strong> mặt hàng &middot; Tổng SL: <strong class="${isXuat ? 'text-danger' : 'text-primary'} font-monospace" id="receipt-detail-grand-qty">${formatNumber(res.tong_so_luong)}</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bảng danh sách mặt hàng có thể chỉnh sửa -->
+        <div class="table-responsive border rounded mb-3">
+            <table class="table table-hover align-middle mb-0">
+                <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                    <tr style="background-color: #1e293b !important;">
+                        <th class="text-center" style="width: 40px; background-color: #1e293b !important; color: #ffffff !important;">#</th>
+                        <th style="width: 110px; background-color: #1e293b !important; color: #ffffff !important;">Mã hàng</th>
+                        <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên hàng hóa</th>
+                        <th class="text-center" style="width: 65px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
+                        <th class="text-center" style="width: 90px; background-color: #1e293b !important; color: #ffffff !important;">Số lượng</th>
+                        <th class="text-end" style="width: 145px; background-color: #1e293b !important; color: #ffffff !important;">${isXuat ? 'Đơn giá xuất' : 'Đơn giá nhập'}</th>
+                        <th class="text-end" style="min-width: 140px; width: 155px; background-color: #1e293b !important; color: #ffffff !important;">Thành tiền</th>
+                        <th class="text-center" style="width: 50px; background-color: #1e293b !important; color: #ffffff !important;">Xóa</th>
+                    </tr>
+                </thead>
+                <tbody id="receipt-detail-tbody">
+                    ${items.map((it, idx) => {
+                        const gia = isXuat ? (it.gia_ban || 0) : (it.gia_nhap || 0);
+                        const thanhTien = it.thanh_tien || (it.so_luong * gia);
+                        return `
+                            <tr data-ma="${escapeHtml(it.ma_hang)}" data-ten="${escapeHtml(it.ten_hang)}" data-dvt="${escapeHtml(it.don_vi_tinh || 'Cái')}">
+                                <td class="text-center text-muted small row-stt">${idx + 1}</td>
+                                <td><span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang)}</span></td>
+                                <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
+                                <td class="text-center text-muted small">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
+                                <td class="text-center">
+                                    <input type="number" min="1" class="form-control form-control-sm text-center fw-bold receipt-row-sl ${isXuat ? 'text-danger' : 'text-primary'}" value="${it.so_luong}" oninput="onReceiptDetailRowInput(this)">
+                                </td>
+                                <td class="text-end">
+                                    <input type="number" min="0" step="1000" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
+                                </td>
+                                <td class="text-end fw-bold text-dark font-monospace text-nowrap receipt-row-total">${formatVND(thanhTien)}</td>
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-outline-danger btn-xs p-1" onclick="removeReceiptDetailRow(this)" title="Xóa mặt hàng này">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Thanh thêm mặt hàng mới vào phiếu -->
+        <div class="card border border-dashed bg-white mb-2">
+            <div class="card-body p-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="small fw-bold text-secondary text-nowrap"><i class="bi bi-plus-circle me-1"></i>Thêm hàng:</span>
+                    <select id="detail-add-prod-select" class="form-select form-select-sm" style="flex: 2; min-width: 220px;" onchange="onDetailSelectProduct(this)">
+                        <option value="">-- Chọn mặt hàng muốn thêm --</option>
+                        ${allProducts.map(p => `
+                            <option value="${escapeHtml(p.ma_hang)}" data-ten="${escapeHtml(p.ten_hang)}" data-dvt="${escapeHtml(p.don_vi_tinh || 'Cái')}" data-gianhap="${p.gia_nhap || 0}" data-giaban="${p.gia_ban || 0}" data-ton="${p.ton_kho || 0}">
+                                [${escapeHtml(p.ma_hang)}] ${escapeHtml(p.ten_hang)} (Tồn: ${p.ton_kho || 0})
+                            </option>
+                        `).join('')}
+                    </select>
+                    <div style="width: 90px;">
+                        <input type="number" id="detail-add-sl" min="1" value="1" class="form-control form-control-sm text-center" placeholder="SL">
+                    </div>
+                    <div style="width: 140px;">
+                        <input type="number" id="detail-add-gia" min="0" step="1000" value="0" class="form-control form-control-sm text-end" placeholder="Đơn giá">
+                    </div>
+                    <button type="button" class="btn btn-primary btn-sm px-3" onclick="submitAddProductToReceiptDetail()">
+                        <i class="bi bi-plus-lg me-1"></i>Thêm
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Cài đặt các nút footer và xử lý cảnh báo thay đổi chưa lưu
+    setupReceiptDetailModalFooter(targetModalBodyId, res, isXuat);
+
+    const parentModal = modalBody.closest('.modal');
+    if (parentModal) {
+        setupModalUnsavedWarning(parentModal.id);
+        openModal(parentModal.id);
+    }
+}
+window.renderEditableReceiptDetail = renderEditableReceiptDetail;
+
 async function fetchAllProductsForReceipt() {
     if (window.allReceiptProductsCache && window.allReceiptProductsCache.length) {
         return window.allReceiptProductsCache;
