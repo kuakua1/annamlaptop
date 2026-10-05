@@ -126,7 +126,6 @@ async function viewReceipt(so_phieu) {
         showToast(e.message, 'error');
     }
 }
-}
 
 function clearMonthFilter() {
     const input = document.getElementById('filter-month');
