@@ -95,12 +95,6 @@ function renderExportTable(apiRes) {
                 <td class="text-center fw-bold fs-6 text-danger font-monospace">${formatNumber(sl)}</td>
                 <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(giaBan)}</td>
                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
-                <td>
-                    <div class="fw-bold text-dark"><i class="bi bi-person me-1 text-danger"></i>${escapeHtml(khTen)}</div>
-                    ${khSdt ? `<div class="text-muted small"><i class="bi bi-telephone me-1 text-success"></i>${escapeHtml(khSdt)}</div>` : ''}
-                    ${khDiaChi ? `<div class="text-muted small text-truncate" style="max-width: 260px;"><i class="bi bi-geo-alt me-1 text-secondary"></i>${escapeHtml(khDiaChi)}</div>` : ''}
-                </td>
-                <td>${r.ghi_chu ? `<small class="text-muted text-truncate d-block" style="max-width: 180px;">${escapeHtml(r.ghi_chu)}</small>` : '<span class="text-muted small">-</span>'}</td>
                 <td class="text-center no-print">
                     <div class="d-flex justify-content-center gap-1">
                         <button class="btn btn-xs btn-outline-danger btn-sm" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu xuất">
