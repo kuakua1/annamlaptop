@@ -157,10 +157,10 @@ function renderTable() {
         return `
             <tr>
                 <td class="text-center text-muted small">${i + 1}</td>
-                <td class="text-center font-monospace small"><span class="badge bg-light text-dark border">${escapeHtml(p.ma_hang)}</span></td>
-                <td>
-                    <strong class="text-dark">${escapeHtml(p.ten_hang)}</strong>
-                    ${p.danh_muc ? `<span class="badge bg-light text-secondary border ms-1 small">${escapeHtml(p.danh_muc)}</span>` : ''}
+                <td class="text-center font-monospace small"><span class="badge bg-light text-dark border badge-sku">${escapeHtml(p.ma_hang)}</span></td>
+                <td class="col-ten-hang">
+                    <span class="nxt-ten-hang-text">${escapeHtml(p.ten_hang)}</span>
+                    ${p.danh_muc ? `<span class="badge bg-light text-secondary border nxt-badge-cat mt-1">${escapeHtml(p.danh_muc)}</span>` : ''}
                 </td>
                 <td class="text-center small">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
                 <td class="text-end">${p.luong_dau > 0 ? formatNumber(p.luong_dau) : '0'}</td>
