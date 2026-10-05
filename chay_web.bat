@@ -22,7 +22,8 @@ echo [..] Dang tao link cong khai. Tim dong https://....trycloudflare.com ben du
 echo      (Gui link do cho nguoi khac. Dong cua so nay = tat link.)
 echo.
 
-set CF="C:\Program Files (x86)\cloudflared\cloudflared.exe"
+set CF="%~dp0cloudflared.exe"
+if not exist %CF% set CF="C:\Program Files (x86)\cloudflared\cloudflared.exe"
 if not exist %CF% set CF=cloudflared
 %CF% tunnel --url http://127.0.0.1:8000
 
