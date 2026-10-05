@@ -266,6 +266,164 @@ async def ton_kho_report(request: Request, user: str = Depends(require_login)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/bao-cao/nhap-xuat-ton")
+async def nhap_xuat_ton_report(
+    request: Request,
+    from_date: str = "",
+    to_date: str = "",
+    danh_muc: str = "",
+    search: str = "",
+    user: str = Depends(require_login)
+):
+    try:
+        today = date.today().isoformat()
+        if not from_date:
+            from_date = _month_start()
+        if not to_date:
+            to_date = today
+
+        hang_records = db_manager.get_all("HangHoa")
+        nhap_records = db_manager.get_all("NhapHang")
+        xuat_records = db_manager.get_all("XuatHang")
+
+        nhap_by_ma = {}
+        for r in nhap_records:
+            ma = str(r.get("ma_hang", "")).strip()
+            if not ma:
+                continue
+            if ma not in nhap_by_ma:
+                nhap_by_ma[ma] = []
+            nhap_by_ma[ma].append({
+                "ngay": str(r.get("ngay_nhap", "")).strip(),
+                "sl": _safe_int(r.get("so_luong", 0)),
+                "thanh_tien": _safe_float(r.get("thanh_tien", 0)),
+                "gia_nhap": _safe_float(r.get("gia_nhap", 0)),
+            })
+
+        xuat_by_ma = {}
+        for r in xuat_records:
+            ma = str(r.get("ma_hang", "")).strip()
+            if not ma:
+                continue
+            if ma not in xuat_by_ma:
+                xuat_by_ma[ma] = []
+            xuat_by_ma[ma].append({
+                "ngay": str(r.get("ngay_xuat", "")).strip(),
+                "sl": _safe_int(r.get("so_luong", 0)),
+                "gia_von": _safe_float(r.get("gia_von", 0)),
+                "gia_ban": _safe_float(r.get("gia_ban", 0)),
+                "thanh_tien": _safe_float(r.get("thanh_tien", 0)),
+            })
+
+        result_items = []
+        tot_luong_dau = 0
+        tot_tien_dau = 0.0
+        tot_luong_nhap = 0
+        tot_tien_nhap = 0.0
+        tot_luong_xuat = 0
+        tot_tien_xuat = 0.0
+        tot_luong_ton = 0
+        tot_tien_ton = 0.0
+
+        for h in hang_records:
+            ma = str(h.get("ma_hang", "")).strip()
+            ten = str(h.get("ten_hang", "")).strip()
+            dm = str(h.get("danh_muc", "")).strip()
+            dvt = str(h.get("don_vi_tinh", "Cái")).strip() or "Cái"
+            current_ton = _safe_int(h.get("ton_kho", 0))
+            gia_nhap = _safe_float(h.get("gia_nhap", 0))
+
+            if danh_muc and dm != danh_muc:
+                continue
+            if search:
+                s_lower = search.lower()
+                if s_lower not in ma.lower() and s_lower not in ten.lower():
+                    continue
+
+            nhaps = nhap_by_ma.get(ma, [])
+            xuats = xuat_by_ma.get(ma, [])
+
+            sl_nhap_after = sum(item["sl"] for item in nhaps if to_date and item["ngay"] > to_date)
+            sl_xuat_after = sum(item["sl"] for item in xuats if to_date and item["ngay"] > to_date)
+
+            luong_ton = current_ton + sl_xuat_after - sl_nhap_after
+
+            nhap_in = [item for item in nhaps if (not from_date or item["ngay"] >= from_date) and (not to_date or item["ngay"] <= to_date)]
+            xuat_in = [item for item in xuats if (not from_date or item["ngay"] >= from_date) and (not to_date or item["ngay"] <= to_date)]
+
+            luong_nhap = sum(item["sl"] for item in nhap_in)
+            tien_nhap = sum(item["thanh_tien"] for item in nhap_in)
+            if tien_nhap == 0 and luong_nhap > 0:
+                tien_nhap = luong_nhap * gia_nhap
+
+            luong_xuat = sum(item["sl"] for item in xuat_in)
+            tien_xuat = 0.0
+            for item in xuat_in:
+                if item["gia_von"] > 0:
+                    tien_xuat += item["gia_von"]
+                else:
+                    tien_xuat += item["sl"] * gia_nhap
+            if tien_xuat == 0 and luong_xuat > 0:
+                tien_xuat = luong_xuat * gia_nhap
+
+            luong_dau = luong_ton - luong_nhap + luong_xuat
+            if luong_dau < 0:
+                luong_dau = 0
+
+            don_gia = gia_nhap
+            if don_gia <= 0 and luong_nhap > 0 and tien_nhap > 0:
+                don_gia = round(tien_nhap / luong_nhap)
+
+            tien_dau = luong_dau * don_gia
+            tien_ton = luong_ton * don_gia
+
+            tot_luong_dau += luong_dau
+            tot_tien_dau += tien_dau
+            tot_luong_nhap += luong_nhap
+            tot_tien_nhap += tien_nhap
+            tot_luong_xuat += luong_xuat
+            tot_tien_xuat += tien_xuat
+            tot_luong_ton += luong_ton
+            tot_tien_ton += tien_ton
+
+            result_items.append({
+                "ma_hang": ma,
+                "ten_hang": ten,
+                "danh_muc": dm,
+                "don_vi_tinh": dvt,
+                "luong_dau": luong_dau,
+                "tien_dau": tien_dau,
+                "luong_nhap": luong_nhap,
+                "tien_nhap": tien_nhap,
+                "luong_xuat": luong_xuat,
+                "tien_xuat": tien_xuat,
+                "don_gia": don_gia,
+                "luong_ton": luong_ton,
+                "tien_ton": tien_ton,
+            })
+
+        result_items.sort(key=lambda x: x["ma_hang"])
+
+        return {
+            "success": True,
+            "from_date": from_date,
+            "to_date": to_date,
+            "data": result_items,
+            "summary": {
+                "tong_luong_dau": tot_luong_dau,
+                "tong_tien_dau": tot_tien_dau,
+                "tong_luong_nhap": tot_luong_nhap,
+                "tong_tien_nhap": tot_tien_nhap,
+                "tong_luong_xuat": tot_luong_xuat,
+                "tong_tien_xuat": tot_tien_xuat,
+                "tong_luong_ton": tot_luong_ton,
+                "tong_tien_ton": tot_tien_ton,
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/api/dashboard/stats")
 async def dashboard_stats(request: Request, month: str = "", user: str = Depends(require_login)):
     try:

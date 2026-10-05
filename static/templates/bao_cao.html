@@ -3,7 +3,7 @@
 {% block page_title %}Báo Cáo & Thống Kê{% endblock %}
 
 {% block content %}
-<!-- Period Selector & Action Buttons -->
+<!-- Period Selector & Quick Filters -->
 <div class="card mb-3 shadow-sm border-0">
     <div class="card-body py-2">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -32,129 +32,294 @@
                     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickPeriod('year')">Năm nay</button>
                 </div>
             </div>
-
-            <!-- Các nút Xuất Excel & In Báo Cáo S16-DNN -->
-            <div class="d-flex align-items-center gap-2">
-                <button class="btn btn-sm btn-outline-success" onclick="exportFinancialReportToExcel()">
-                    <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel (S16-DNN)
-                </button>
-                <button class="btn btn-sm btn-outline-secondary" onclick="printFinancialReport()">
-                    <i class="bi bi-printer me-1"></i>In Báo Cáo
-                </button>
+            
+            <div class="d-flex align-items-center gap-2 text-muted small">
+                <i class="bi bi-clock-history me-1"></i>Dữ liệu đồng bộ tức thì
             </div>
         </div>
     </div>
 </div>
 
-<!-- Summary Row -->
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <div class="text-muted small mb-1"><i class="bi bi-graph-up-arrow text-primary me-1"></i>Doanh Thu</div>
-                <div class="fs-4 fw-bold text-primary" id="stat-doanh-thu">-</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <div class="text-muted small mb-1"><i class="bi bi-coin text-danger me-1"></i>Giá Vốn</div>
-                <div class="fs-4 fw-bold text-danger" id="stat-gia-von">-</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <div class="text-muted small mb-1"><i class="bi bi-piggy-bank text-success me-1"></i>Lợi Nhuận</div>
-                <div class="fs-4 fw-bold text-success" id="stat-loi-nhuan">-</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-md-3">
-        <div class="card text-center h-100">
-            <div class="card-body">
-                <div class="text-muted small mb-1"><i class="bi bi-percent text-warning me-1"></i>Biên Lợi Nhuận</div>
-                <div class="fs-4 fw-bold text-warning" id="stat-bien">-</div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Tabs Navigation -->
+<ul class="nav nav-pills mb-3 bg-white p-2 rounded shadow-sm border gap-2" id="reportTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active fw-bold px-3 py-2" id="tab-nxt-link" data-bs-toggle="pill" data-bs-target="#tab-nxt" type="button" role="tab">
+            <i class="bi bi-table me-2"></i>01. Tổng Hợp Nhập Xuất Tồn
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold px-3 py-2" id="tab-banhang-link" data-bs-toggle="pill" data-bs-target="#tab-banhang" type="button" role="tab">
+            <i class="bi bi-file-earmark-spreadsheet me-2"></i>02. Sổ Chi Tiết Bán Hàng (S16-DNN)
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold px-3 py-2" id="tab-analytics-link" data-bs-toggle="pill" data-bs-target="#tab-analytics" type="button" role="tab">
+            <i class="bi bi-graph-up me-2"></i>03. Biểu Đồ & Thống Kê Doanh Thu
+        </button>
+    </li>
+</ul>
 
-<!-- Revenue Chart -->
-<div class="card mb-4">
-    <div class="card-header">
-        <i class="bi bi-graph-up me-2 text-primary"></i>Doanh Thu 30 Ngày Gần Nhất
-    </div>
-    <div class="card-body">
-        <canvas id="revenue-chart" height="80"></canvas>
-    </div>
-</div>
+<!-- Tab Content -->
+<div class="tab-content" id="reportTabContent">
 
-<!-- Top Products -->
-<div class="row g-3 mb-4">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-trophy me-2 text-warning"></i>Top 10 Bán Chạy (Theo Số Lượng)
+    <!-- TAB 1: BẢNG TỔNG HỢP NHẬP XUẤT TỒN (GIỐNG ẢNH ĐÍNH KÈM) -->
+    <div class="tab-pane fade show active" id="tab-nxt" role="tabpanel">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <h5 class="mb-0 fw-bold text-dark">
+                            <i class="bi bi-boxes text-primary me-2"></i>Bảng Tổng Hợp Nhập - Xuất - Tồn
+                        </h5>
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle" id="nxt-period-badge">Tháng này</span>
+                    </div>
+
+                    <!-- Nút Xuất Excel & In Bảng Nhập Xuất Tồn -->
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-sm btn-success px-3 fw-semibold shadow-sm" onclick="exportNhapXuatTonToExcel()">
+                            <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel (NXT)
+                        </button>
+                        <button class="btn btn-sm btn-primary px-3 fw-semibold shadow-sm" onclick="printNhapXuatTonReport()">
+                            <i class="bi bi-printer me-1"></i>In Báo Cáo
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Thanh lọc nội bộ bảng NXT -->
+                <div class="row g-2 mt-2 align-items-center">
+                    <div class="col-md-4 col-sm-6">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="nxt-search-input" placeholder="Tìm tên hàng, mã hàng..." oninput="onNxtFilterChanged()">
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6">
+                        <select class="form-select form-select-sm" id="nxt-filter-category" onchange="onNxtFilterChanged()">
+                            <option value="">-- Tất cả nhóm hàng --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-5 col-sm-12 d-flex align-items-center justify-content-md-end gap-3">
+                        <div class="form-check form-switch small mb-0">
+                            <input class="form-check-input" type="checkbox" id="nxt-toggle-zero" checked onchange="onNxtFilterChanged()">
+                            <label class="form-check-label text-muted" for="nxt-toggle-zero">Chỉ hiện hàng có số lượng &gt; 0</label>
+                        </div>
+                        <span class="small text-muted" id="nxt-row-count">Hiển thị: 0 mặt hàng</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 700px;">
+                    <table class="table table-bordered table-sm table-hover align-middle mb-0 text-nowrap nxt-table">
+                        <thead class="table-light sticky-top text-center" style="z-index: 5;">
+                            <tr>
+                                <th rowspan="2" style="width: 45px; vertical-align: middle;">STT</th>
+                                <th rowspan="2" style="min-width: 260px; vertical-align: middle; text-align: left;">Mặt hàng</th>
+                                <th rowspan="2" style="width: 65px; vertical-align: middle;">ĐVT</th>
+                                <th colspan="2" class="bg-info bg-opacity-10 text-primary">Tồn đầu kỳ</th>
+                                <th colspan="2" class="bg-success bg-opacity-10 text-success">Nhập trong kỳ</th>
+                                <th colspan="2" class="bg-danger bg-opacity-10 text-danger">Xuất trong kỳ</th>
+                                <th rowspan="2" style="width: 110px; vertical-align: middle;">Đơn giá</th>
+                                <th colspan="2" class="bg-primary bg-opacity-10 text-primary">Tồn cuối kỳ</th>
+                            </tr>
+                            <tr class="small text-muted">
+                                <th style="width: 80px;">Lượng đầu</th>
+                                <th style="width: 120px;">Tiền đầu</th>
+                                <th style="width: 80px;">Lượng nhập</th>
+                                <th style="width: 120px;">Tiền nhập</th>
+                                <th style="width: 80px;">Lượng xuất</th>
+                                <th style="width: 120px;">Tiền xuất</th>
+                                <th style="width: 85px;">Lượng tồn</th>
+                                <th style="width: 125px;">Tiền tồn</th>
+                            </tr>
+                        </thead>
+                        <tbody id="nxt-table-body">
+                            <tr>
+                                <td colspan="12" class="text-center text-muted py-5">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu nhập xuất tồn...
+                                </td>
+                            </tr>
+                        </tbody>
+                        <tfoot class="sticky-bottom fw-bold" style="background-color: #dbeafe; color: #1e3a8a; border-top: 2px solid #3b82f6;" id="nxt-table-footer">
+                            <tr>
+                                <td class="text-center">#</td>
+                                <td colspan="2" class="text-uppercase ps-3">Tổng cộng</td>
+                                <td class="text-end" id="nxt-tot-luong-dau">0</td>
+                                <td class="text-end" id="nxt-tot-tien-dau">0</td>
+                                <td class="text-end text-success" id="nxt-tot-luong-nhap">0</td>
+                                <td class="text-end text-success" id="nxt-tot-tien-nhap">0</td>
+                                <td class="text-end text-danger" id="nxt-tot-luong-xuat">0</td>
+                                <td class="text-end text-danger" id="nxt-tot-tien-xuat">0</td>
+                                <td class="text-center text-muted">-</td>
+                                <td class="text-end text-primary" id="nxt-tot-luong-ton">0</td>
+                                <td class="text-end text-primary" id="nxt-tot-tien-ton">0</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 2: SỔ CHI TIẾT BÁN HÀNG (S16-DNN) -->
+    <div class="tab-pane fade" id="tab-banhang" role="tabpanel">
+        <div class="card shadow-sm border-0 mb-4">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h5 class="mb-0 fw-bold text-dark">
+                        <i class="bi bi-file-earmark-text text-success me-2"></i>Sổ Chi Tiết Bán Hàng (Mẫu số S16-DNN)
+                    </h5>
+                    <small class="text-muted">Theo Thông tư 133/2016/TT-BTC - Tài khoản 511</small>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-success" onclick="exportFinancialReportToExcel()">
+                        <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel (S16-DNN)
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="printFinancialReport()">
+                        <i class="bi bi-printer me-1"></i>In Báo Cáo
+                    </button>
+                </div>
             </div>
             <div class="card-body p-0">
-                <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Số Lượng</th></tr></thead>
-                    <tbody id="top-qty-body">
-                        <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
-                    </tbody>
-                </table>
+                <div class="table-responsive" style="max-height: 600px;">
+                    <table class="table table-sm table-hover align-middle mb-0 text-nowrap">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th class="text-center" style="width: 45px;">STT</th>
+                                <th class="text-center">Số Hiệu</th>
+                                <th class="text-center">Ngày Tháng</th>
+                                <th>Tên Hàng Hóa</th>
+                                <th class="text-center">TK ĐƯ</th>
+                                <th class="text-end">Số Lượng</th>
+                                <th class="text-end">Đơn Giá</th>
+                                <th class="text-end">Doanh Thu</th>
+                                <th class="text-end">Giá Vốn</th>
+                                <th class="text-end">Lợi Nhuận</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ban-hang-detail-body">
+                            <tr><td colspan="10" class="text-center text-muted py-4">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="card">
+
+    <!-- TAB 3: BIỂU ĐỒ & THỐNG KÊ DOANH THU -->
+    <div class="tab-pane fade" id="tab-analytics" role="tabpanel">
+        <!-- Summary Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <div class="text-muted small mb-1"><i class="bi bi-graph-up-arrow text-primary me-1"></i>Doanh Thu</div>
+                        <div class="fs-4 fw-bold text-primary" id="stat-doanh-thu">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <div class="text-muted small mb-1"><i class="bi bi-coin text-danger me-1"></i>Giá Vốn</div>
+                        <div class="fs-4 fw-bold text-danger" id="stat-gia-von">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <div class="text-muted small mb-1"><i class="bi bi-piggy-bank text-success me-1"></i>Lợi Nhuận</div>
+                        <div class="fs-4 fw-bold text-success" id="stat-loi-nhuan">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center h-100">
+                    <div class="card-body">
+                        <div class="text-muted small mb-1"><i class="bi bi-percent text-warning me-1"></i>Biên Lợi Nhuận</div>
+                        <div class="fs-4 fw-bold text-warning" id="stat-bien">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Revenue Chart -->
+        <div class="card mb-4">
             <div class="card-header">
-                <i class="bi bi-currency-dollar me-2 text-success"></i>Top 10 Doanh Thu Cao Nhất
+                <i class="bi bi-graph-up me-2 text-primary"></i>Doanh Thu 30 Ngày Gần Nhất
+            </div>
+            <div class="card-body">
+                <canvas id="revenue-chart" height="80"></canvas>
+            </div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-trophy me-2 text-warning"></i>Top 10 Bán Chạy (Theo Số Lượng)
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Số Lượng</th></tr></thead>
+                            <tbody id="top-qty-body">
+                                <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-currency-dollar me-2 text-success"></i>Top 10 Doanh Thu Cao Nhất
+                    </div>
+                    <div class="card-body p-0">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Doanh Thu</th></tr></thead>
+                            <tbody id="top-rev-body">
+                                <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inventory Value -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-boxes me-2 text-primary"></i>Bảng Giá Trị Tồn Kho Hiện Tại</span>
+                <span class="badge bg-success fs-6" id="total-ton-kho-value">-</span>
             </div>
             <div class="card-body p-0">
-                <table class="table table-sm table-hover mb-0">
-                    <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Doanh Thu</th></tr></thead>
-                    <tbody id="top-rev-body">
-                        <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th class="ps-3">#</th>
+                                <th>Mã Hàng</th>
+                                <th>Tên Hàng</th>
+                                <th>Danh Mục</th>
+                                <th class="text-center">Tồn Kho</th>
+                                <th class="text-end">Giá Nhập</th>
+                                <th class="text-end pe-3">Giá Trị</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ton-kho-body">
+                            <tr><td colspan="7" class="text-center text-muted py-4">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
-    </div>
-</div>
-
-<!-- Inventory Value -->
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-boxes me-2 text-primary"></i>Bảng Giá Trị Tồn Kho</span>
-        <span class="badge bg-success fs-6" id="total-ton-kho-value">-</span>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-sm table-hover mb-0">
-                <thead>
-                    <tr>
-                        <th class="ps-3">#</th>
-                        <th>Mã Hàng</th>
-                        <th>Tên Hàng</th>
-                        <th>Danh Mục</th>
-                        <th class="text-center">Tồn Kho</th>
-                        <th class="text-end">Giá Nhập</th>
-                        <th class="text-end pe-3">Giá Trị</th>
-                    </tr>
-                </thead>
-                <tbody id="ton-kho-body">
-                    <tr><td colspan="7" class="text-center text-muted py-4">Đang tải...</td></tr>
-                </tbody>
-            </table>
         </div>
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/bao_cao.js?v=20261005_v11"></script>
+<script src="/static/js/bao_cao.js?v=20261005_v12"></script>
 {% endblock %}
