@@ -170,6 +170,9 @@ class SheetsService:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._instance._initialized = False
+                cls._instance._sheet_cache = {}
+                cls._instance._records_cache = {}
+                cls._instance._CACHE_TTL_SECONDS = 15
             return cls._instance
 
     def initialize(self):
@@ -191,6 +194,9 @@ class SheetsService:
         self._client = gspread.authorize(creds)
         self._spreadsheet = self._client.open_by_key(SPREADSHEET_ID)
         self._sheet_cache: dict[str, gspread.Worksheet] = {}
+        # Bộ đệm dữ liệu thông minh TTL (Time-To-Live) chống vượt hạn ngạch 429 Google Sheets API
+        self._records_cache: dict[str, tuple[float, list[dict]]] = {}
+        self._CACHE_TTL_SECONDS = 15  # Tái sử dụng dữ liệu trong 15s nếu không có thay đổi
         self._initialized = True
 
     def _sheet(self, name: str) -> gspread.Worksheet:
@@ -200,59 +206,89 @@ class SheetsService:
 
     def _invalidate_cache(self, name: str):
         self._sheet_cache.pop(name, None)
+        self.invalidate_records_cache(name)
+
+    def invalidate_records_cache(self, sheet_name: str | None = None):
+        """Xóa cache bộ nhớ khi có thao tác ghi mới vào Google Sheet."""
+        if sheet_name:
+            self._records_cache.pop(sheet_name, None)
+        else:
+            self._records_cache.clear()
 
     # ── Core CRUD ────────────────────────────────────────────────────────────
 
-    def get_all_records(self, sheet_name: str) -> list[dict]:
-        """Return all rows as list of dicts with normalized keys."""
-        try:
-            ws = self._sheet(sheet_name)
-            raw_records = ws.get_all_records(empty2zero=False, default_blank="", value_render_option="UNFORMATTED_VALUE")
-            normalized = []
-            for r in raw_records:
-                item = {}
-                for k, v in r.items():
-                    item[k] = v
-                    clean_k = str(k).strip().lower()
-                    target_k = COLUMN_ALIAS_MAP.get(clean_k)
-                    if target_k:
-                        item[target_k] = v
+    def get_all_records(self, sheet_name: str, force_refresh: bool = False) -> list[dict]:
+        """Return all rows as list of dicts with normalized keys with smart TTL caching and 429 backoff."""
+        now = time.time()
+        if not force_refresh and sheet_name in self._records_cache:
+            cache_time, cached_data = self._records_cache[sheet_name]
+            if now - cache_time < self._CACHE_TTL_SECONDS:
+                return [dict(d) for d in cached_data]
 
-                # Đồng bộ số lượng & tồn kho
-                if "ton_kho" in item and "so_luong" not in item:
-                    item["so_luong"] = item["ton_kho"]
-                elif "so_luong" in item and "ton_kho" not in item:
-                    item["ton_kho"] = item["so_luong"]
+        max_retries = 3
+        delay = 1.5
+        for attempt in range(max_retries):
+            try:
+                ws = self._sheet(sheet_name)
+                raw_records = ws.get_all_records(empty2zero=False, default_blank="", value_render_option="UNFORMATTED_VALUE")
+                normalized = []
+                for r in raw_records:
+                    item = {}
+                    for k, v in r.items():
+                        item[k] = v
+                        clean_k = str(k).strip().lower()
+                        target_k = COLUMN_ALIAS_MAP.get(clean_k)
+                        if target_k:
+                            item[target_k] = v
 
-                # Đồng bộ tên nhà cung cấp / đối tác
-                if "nha_cung_cap_id" in item:
-                    val = item["nha_cung_cap_id"]
-                    item["ten_ncc"] = val
-                    item["nha_cung_cap"] = val
-                elif "ten_ncc" in item:
-                    val = item["ten_ncc"]
-                    item["nha_cung_cap_id"] = val
-                    item["nha_cung_cap"] = val
+                    # Đồng bộ số lượng & tồn kho
+                    if "ton_kho" in item and "so_luong" not in item:
+                        item["so_luong"] = item["ton_kho"]
+                    elif "so_luong" in item and "ton_kho" not in item:
+                        item["ton_kho"] = item["so_luong"]
 
-                # Đồng bộ tên khách hàng / đối tác
-                if "khach_hang_id" in item:
-                    val = item["khach_hang_id"]
-                    item["ten_kh"] = val
-                    item["khach_hang"] = val
-                elif "ten_kh" in item:
-                    val = item["ten_kh"]
-                    item["khach_hang_id"] = val
-                    item["khach_hang"] = val
+                    # Đồng bộ tên nhà cung cấp / đối tác
+                    if "nha_cung_cap_id" in item:
+                        val = item["nha_cung_cap_id"]
+                        item["ten_ncc"] = val
+                        item["nha_cung_cap"] = val
+                    elif "ten_ncc" in item:
+                        val = item["ten_ncc"]
+                        item["nha_cung_cap_id"] = val
+                        item["nha_cung_cap"] = val
 
-                # Chuẩn hóa ngày nếu là số serial Excel/Sheets (như 46298 -> '2026-10-03')
-                for dk in ("ngay_nhap", "ngay_xuat", "ngay", "Ngày Nhập", "Ngày Xuất", "Ngày"):
-                    if dk in item:
-                        item[dk] = normalize_date_val(item[dk])
+                    # Đồng bộ tên khách hàng / đối tác
+                    if "khach_hang_id" in item:
+                        val = item["khach_hang_id"]
+                        item["ten_kh"] = val
+                        item["khach_hang"] = val
+                    elif "ten_kh" in item:
+                        val = item["ten_kh"]
+                        item["khach_hang_id"] = val
+                        item["khach_hang"] = val
 
-                normalized.append(item)
-            return normalized
-        except Exception as e:
-            raise RuntimeError(f"Lỗi khi đọc sheet {sheet_name}: {str(e)}")
+                    # Chuẩn hóa ngày nếu là số serial Excel/Sheets (như 46298 -> '2026-10-03')
+                    for dk in ("ngay_nhap", "ngay_xuat", "ngay", "Ngày Nhập", "Ngày Xuất", "Ngày"):
+                        if dk in item:
+                            item[dk] = normalize_date_val(item[dk])
+
+                    normalized.append(item)
+
+                # Lưu vào cache TTL
+                self._records_cache[sheet_name] = (time.time(), normalized)
+                return [dict(d) for d in normalized]
+
+            except Exception as e:
+                err_msg = str(e)
+                # Tự động chờ và thử lại nếu chạm hạn ngạch 429 của Google API
+                if ("429" in err_msg or "Quota exceeded" in err_msg) and attempt < max_retries - 1:
+                    time.sleep(delay)
+                    delay *= 2
+                    continue
+                # Nếu có cache cũ và gặp lỗi, trả về cache cũ dự phòng thay vì crash ứng dụng
+                if sheet_name in self._records_cache:
+                    return [dict(d) for d in self._records_cache[sheet_name][1]]
+                raise RuntimeError(f"Lỗi khi đọc sheet {sheet_name}: {err_msg}")
 
     def get_all_values(self, sheet_name: str) -> list[list]:
         """Return all rows as list of lists including header."""
@@ -268,6 +304,7 @@ class SheetsService:
             ws = self._sheet(sheet_name)
             clean_row = [sanitize_cell_value(c) for c in row]
             result = ws.append_row(clean_row, value_input_option="USER_ENTERED")
+            self.invalidate_records_cache(sheet_name)
             # Parse updated range to get row number
             updated_range = result.get("updates", {}).get("updatedRange", "")
             if updated_range:
@@ -291,6 +328,7 @@ class SheetsService:
             end_col_letter = self._col_letter(num_cols)
             cell_range = f"A{row_num}:{end_col_letter}{row_num}"
             ws.update(cell_range, [clean_row], value_input_option="USER_ENTERED")
+            self.invalidate_records_cache(sheet_name)
         except Exception as e:
             raise RuntimeError(f"Lỗi khi cập nhật dòng {row_num} trong sheet {sheet_name}: {str(e)}")
 
@@ -299,6 +337,7 @@ class SheetsService:
         try:
             ws = self._sheet(sheet_name)
             ws.delete_rows(row_num)
+            self.invalidate_records_cache(sheet_name)
         except Exception as e:
             raise RuntimeError(f"Lỗi khi xóa dòng {row_num} trong sheet {sheet_name}: {str(e)}")
 
@@ -322,6 +361,7 @@ class SheetsService:
         try:
             ws = self._sheet(sheet_name)
             ws.update_cell(row, col, sanitize_cell_value(value))
+            self.invalidate_records_cache(sheet_name)
         except Exception as e:
             raise RuntimeError(f"Lỗi khi cập nhật ô ({row},{col}) trong sheet {sheet_name}: {str(e)}")
 
