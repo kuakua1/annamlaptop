@@ -298,6 +298,148 @@ class DatabaseManager:
 
         return counts
 
+    def sync_to_google_sheets(self) -> dict:
+        """
+        Đẩy toàn bộ dữ liệu từ CSDL SQLite cục bộ lên Google Sheets.
+        Dùng khi người dùng sửa thủ công trong database bằng DB Browser.
+        """
+        counts = {}
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # 1. Đẩy HangHoa
+                try:
+                    cursor.execute("SELECT id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu FROM HangHoa")
+                    rows = cursor.fetchall()
+                    ws = sheets_service._sheet(SHEET_HANG_HOA)
+                    # Giữ nguyên dòng tiêu đề
+                    header = ["ID", "Mã Hàng", "Tên Hàng Hóa", "Danh Mục", "ĐVT", "Giá Nhập (đ)", "Giá Bán (đ)", "SL", "Chi Tiết Lô Giá", "Ghi Chú"]
+                    sheet_data = [header]
+                    for r in rows:
+                        sheet_data.append([
+                            r["id"],
+                            r["ma_hang"],
+                            r["ten_hang"],
+                            r["danh_muc"],
+                            r["don_vi_tinh"],
+                            r["gia_nhap"],
+                            r["gia_ban"],
+                            r["ton_kho"],
+                            r["chi_tiet_lo"],
+                            r["ghi_chu"]
+                        ])
+                    ws.clear()
+                    ws.update("A1", sheet_data)
+                    sheets_service.invalidate_records_cache(SHEET_HANG_HOA)
+                    counts["HangHoa"] = len(rows)
+                except Exception as e:
+                    counts["HangHoa_err"] = str(e)
+
+                # 2. Đẩy KhachHang
+                try:
+                    cursor.execute("SELECT id, ten_kh, dia_chi, dien_thoai, email, ghi_chu FROM KhachHang")
+                    rows = cursor.fetchall()
+                    ws = sheets_service._sheet(SHEET_KHACH_HANG)
+                    header = ["ID", "Tên Khách Hàng", "Địa Chỉ", "Số Điện Thoại", "Email", "Ghi Chú"]
+                    sheet_data = [header]
+                    for r in rows:
+                        sheet_data.append([
+                            r["id"],
+                            r["ten_kh"],
+                            r["dia_chi"],
+                            r["dien_thoai"],
+                            r["email"],
+                            r["ghi_chu"]
+                        ])
+                    ws.clear()
+                    ws.update("A1", sheet_data)
+                    sheets_service.invalidate_records_cache(SHEET_KHACH_HANG)
+                    counts["KhachHang"] = len(rows)
+                except Exception as e:
+                    counts["KhachHang_err"] = str(e)
+
+                # 3. Đẩy NhaCungCap
+                try:
+                    cursor.execute("SELECT id, ten_ncc, dia_chi, dien_thoai, email, ghi_chu FROM NhaCungCap")
+                    rows = cursor.fetchall()
+                    ws = sheets_service._sheet(SHEET_NHA_CUNG_CAP)
+                    header = ["ID", "Tên Nhà Cung Cấp", "Địa Chỉ", "Số Điện Thoại", "Email", "Ghi Chú"]
+                    sheet_data = [header]
+                    for r in rows:
+                        sheet_data.append([
+                            r["id"],
+                            r["ten_ncc"],
+                            r["dia_chi"],
+                            r["dien_thoai"],
+                            r["email"],
+                            r["ghi_chu"]
+                        ])
+                    ws.clear()
+                    ws.update("A1", sheet_data)
+                    sheets_service.invalidate_records_cache(SHEET_NHA_CUNG_CAP)
+                    counts["NhaCungCap"] = len(rows)
+                except Exception as e:
+                    counts["NhaCungCap_err"] = str(e)
+
+                # 4. Đẩy NhapHang
+                try:
+                    cursor.execute("SELECT id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu FROM NhapHang")
+                    rows = cursor.fetchall()
+                    ws = sheets_service._sheet(SHEET_NHAP_HANG)
+                    header = ["ID", "Số Phiếu", "Ngày Nhập", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Nhập (đ)", "Thành Tiền (đ)", "Nhà Cung Cấp", "Ghi Chú"]
+                    sheet_data = [header]
+                    for r in rows:
+                        sheet_data.append([
+                            r["id"],
+                            r["so_phieu"],
+                            r["ngay_nhap"],
+                            r["ma_hang"],
+                            r["ten_hang"],
+                            r["so_luong"],
+                            r["gia_nhap"],
+                            r["thanh_tien"],
+                            r["nha_cung_cap_id"],
+                            r["ghi_chu"]
+                        ])
+                    ws.clear()
+                    ws.update("A1", sheet_data)
+                    sheets_service.invalidate_records_cache(SHEET_NHAP_HANG)
+                    counts["NhapHang"] = len(rows)
+                except Exception as e:
+                    counts["NhapHang_err"] = str(e)
+
+                # 5. Đẩy XuatHang
+                try:
+                    cursor.execute("SELECT id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu FROM XuatHang")
+                    rows = cursor.fetchall()
+                    ws = sheets_service._sheet(SHEET_XUAT_HANG)
+                    header = ["ID", "Số Phiếu", "Ngày Xuất", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Bán (đ)", "Thành Tiền (đ)", "Khách Hàng", "Ghi Chú", "Giá Vốn (đ)", "Lợi Nhuận (đ)"]
+                    sheet_data = [header]
+                    for r in rows:
+                        sheet_data.append([
+                            r["id"],
+                            r["so_phieu"],
+                            r["ngay_xuat"],
+                            r["ma_hang"],
+                            r["ten_hang"],
+                            r["so_luong"],
+                            r["gia_ban"],
+                            r["thanh_tien"],
+                            r["khach_hang_id"],
+                            r["ghi_chu"],
+                            0,
+                            0
+                        ])
+                    ws.clear()
+                    ws.update("A1", sheet_data)
+                    sheets_service.invalidate_records_cache(SHEET_XUAT_HANG)
+                    counts["XuatHang"] = len(rows)
+                except Exception as e:
+                    counts["XuatHang_err"] = str(e)
+
+        return counts
+
     def get_all(self, table_name: str) -> list[dict]:
         """Truy vấn tức thì từ SQLite."""
         with self._get_connection() as conn:
@@ -307,3 +449,4 @@ class DatabaseManager:
 
 
 db_manager = DatabaseManager()
+
