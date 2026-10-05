@@ -125,6 +125,9 @@ function selectKh(cOrId) {
 
 // ── Autocomplete Tìm Kiếm Hàng Hóa ──────────────────────────────────────────
 
+let lastLoadTime = 0;
+let isRefreshingProducts = false;
+
 function onProductSearchInput(id, input) {
     const query = input.value.trim().toLowerCase();
     const box = document.getElementById(`prod-sug-${id}`);
@@ -133,8 +136,42 @@ function onProductSearchInput(id, input) {
     document.getElementById(`prod-ma-${id}`).value = '';
     if (infoEl) infoEl.textContent = '';
 
-    if (!query || !products.length) {
+    if (!query) {
         box.classList.add('d-none');
+        return;
+    }
+
+    renderProductSuggestions(id, query);
+
+    // Tự động kiểm tra và làm mới tồn kho ngầm nếu dữ liệu đã quá 2 giây
+    if (Date.now() - lastLoadTime > 2000 && !isRefreshingProducts) {
+        isRefreshingProducts = true;
+        loadData().then(() => {
+            isRefreshingProducts = false;
+            const currentVal = document.getElementById(`prod-input-${id}`)?.value.trim().toLowerCase();
+            if (currentVal && currentVal === query) {
+                renderProductSuggestions(id, query);
+            }
+        }).catch(() => { isRefreshingProducts = false; });
+    }
+}
+
+function onProductInputFocus(id, input) {
+    // Tải lại tồn kho mới nhất tức thì khi người dùng click vào ô chọn hàng
+    loadData();
+    const query = input.value.trim().toLowerCase();
+    if (query) {
+        renderProductSuggestions(id, query);
+    }
+}
+
+function renderProductSuggestions(id, query) {
+    const box = document.getElementById(`prod-sug-${id}`);
+    if (!box) return;
+
+    if (!products.length) {
+        box.innerHTML = `<div class="p-2 text-muted small text-center">Đang tải danh sách hàng hóa...</div>`;
+        box.classList.remove('d-none');
         return;
     }
 
@@ -215,7 +252,7 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ── Load data ─────────────────────────────────────────────────────────────────
+// ── Load data & Auto Sync ─────────────────────────────────────────────────────
 
 async function loadData() {
     try {
@@ -225,10 +262,32 @@ async function loadData() {
         ]);
         products = pRes.data || [];
         customers = cRes.data || [];
+        lastLoadTime = Date.now();
     } catch (e) {
-        showToast('Lỗi tải dữ liệu: ' + e.message, 'error');
+        console.warn('Lỗi tải dữ liệu tồn kho:', e);
     }
 }
+
+// Tự động lắng nghe cập nhật từ các tab khác và khi tab được active
+try {
+    const syncChannel = new BroadcastChannel('inventory_sync');
+    syncChannel.onmessage = (e) => {
+        if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+            loadData();
+        }
+    };
+} catch(e) {}
+
+window.addEventListener('message', (e) => {
+    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+        loadData();
+    }
+});
+
+window.addEventListener('focus', () => { loadData(); });
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) loadData();
+});
 
 // ── Line items ────────────────────────────────────────────────────────────────
 
@@ -296,6 +355,7 @@ function _appendRow(id, ma_hang, so_luong, gia_ban) {
                     value="${prodName}"
                     placeholder="Gõ mã hoặc tên hàng..."
                     autocomplete="off"
+                    onfocus="onProductInputFocus(${id}, this)"
                     onkeydown="onProductInputKeydown(${id}, event)"
                     oninput="onProductSearchInput(${id}, this)">
                 <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearProductRow(${id})" title="Xóa chọn">
@@ -462,6 +522,14 @@ async function saveReceipt() {
         resetForm();
         await loadReceipts();
         await loadData(); // Làm mới tồn kho và danh sách KH
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                new BroadcastChannel('inventory_sync').postMessage({ type: 'PRODUCTS_UPDATED' });
+            }
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+            }
+        } catch (err) {}
     } catch (e) {
         showToast(e.message, 'error');
     } finally {

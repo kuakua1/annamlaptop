@@ -337,6 +337,9 @@ const TabManager = {
             if (f.id === `tab-iframe-${tabId}`) {
                 f.classList.add('active');
                 f.style.display = 'block';
+                try {
+                    f.contentWindow.postMessage({ type: 'TAB_ACTIVATED', tabId: tabId }, '*');
+                } catch(err) {}
             } else {
                 f.classList.remove('active');
                 f.style.display = 'none';
@@ -1098,3 +1101,14 @@ async function syncFromGoogleSheets() {
         }
     }
 }
+
+// Chuyển tiếp tín hiệu đồng bộ giữa các tab iframe
+window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+        document.querySelectorAll('.tab-frame').forEach(f => {
+            try {
+                f.contentWindow.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+            } catch (err) {}
+        });
+    }
+});

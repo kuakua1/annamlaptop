@@ -459,6 +459,14 @@ async function saveReceipt() {
         resetForm();
         await loadReceipts();
         await loadData(); // Làm mới lại danh sách NCC và tồn kho
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                new BroadcastChannel('inventory_sync').postMessage({ type: 'PRODUCTS_UPDATED' });
+            }
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+            }
+        } catch (err) {}
     } catch (e) {
         showToast(e.message, 'error');
     } finally {
