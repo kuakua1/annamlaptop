@@ -519,6 +519,22 @@ const TabManager = {
     }
 };
 
+window.TabManager = TabManager;
+
+/**
+ * Hàm tiện ích mở tab an toàn từ bất kỳ đâu (parent hoặc bên trong iframe con)
+ */
+function openAppTab(tabType, customUrl = null, forceNew = false) {
+    if (window.parent && window.parent.TabManager) {
+        window.parent.TabManager.openTab(tabType, customUrl, forceNew);
+    } else if (window.TabManager) {
+        window.TabManager.openTab(tabType, customUrl, forceNew);
+    } else {
+        window.location.href = customUrl || (tabType === 'xuat-hang' ? '/xuat-hang' : tabType === 'nhap-hang' ? '/nhap-hang' : `/${tabType}`);
+    }
+}
+window.openAppTab = openAppTab;
+
 // Khởi chạy khi DOM sẵn sàng
 document.addEventListener('DOMContentLoaded', () => {
     TabManager.init();
