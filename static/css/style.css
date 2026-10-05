@@ -683,6 +683,136 @@ body:not(.is-embedded-tab) .tab-direct-content {
   font-weight: 700;
 }
 
+/* ── Minion Mascot Peeker Animation ────────────────────── */
+.minion-peeker {
+  position: absolute;
+  bottom: -4px;
+  right: -105px;
+  width: 155px;
+  height: 210px;
+  pointer-events: none;
+  z-index: 25;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: bottom center;
+}
+
+.minion-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 15px 25px rgba(0, 0, 0, 0.25));
+}
+
+.minion-body-img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Eye Sockets calibrated on original minion dimensions (351x468) */
+/* Left eye center: 41.8% X, 30.1% Y */
+.minion-eye {
+  position: absolute;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.minion-eye-left {
+  left: 37%;
+  top: 26%;
+}
+
+/* Right eye center: 67.5% X, 31.6% Y */
+.minion-eye-right {
+  left: 62.5%;
+  top: 27.5%;
+}
+
+.minion-pupil {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  top: 5px;
+  left: 5px;
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
+  pointer-events: none;
+}
+
+.minion-pupil img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* Hands covering eyes */
+.minion-hand {
+  position: absolute;
+  width: 65px;
+  height: 65px;
+  z-index: 30;
+  opacity: 0;
+  transform: translateY(45px) scale(0.6);
+  transition: all 0.35s cubic-bezier(0.34, 1.4, 0.64, 1);
+  pointer-events: none;
+}
+
+.minion-hand img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.minion-hand-left {
+  left: 20%;
+  top: 18%;
+  transform-origin: bottom left;
+}
+
+.minion-hand-right {
+  right: 6%;
+  top: 20%;
+  transform-origin: bottom right;
+}
+
+/* State: Hands covering eyes (when password hidden / active) */
+.minion-peeker.covering-eyes .minion-hand-left {
+  opacity: 1;
+  transform: translateY(0) scale(1) rotate(-5deg);
+}
+
+.minion-peeker.covering-eyes .minion-hand-right {
+  opacity: 1;
+  transform: translateY(0) scale(1) rotate(5deg);
+}
+
+.minion-peeker.covering-eyes .minion-pupil {
+  transform: translate(0, 4px) scale(0.8) !important;
+}
+
+/* Minion peeking bouncy idle animation */
+@keyframes minionBreathe {
+  0% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-5px) rotate(1.5deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+.minion-peeker {
+  animation: minionBreathe 4s ease-in-out infinite;
+}
+
+/* On smaller screens keep minion visible or adapt position */
+@media (max-width: 640px) {
+  .minion-peeker {
+    right: -25px;
+    bottom: -80px;
+    width: 110px;
+    opacity: 0.9;
+  }
+}
+
 /* ── Loading spinner ───────────────────────────────────── */
 .spinner-overlay {
   display: none;
