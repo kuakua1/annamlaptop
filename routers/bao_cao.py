@@ -95,6 +95,7 @@ async def tong_quan(
         total_revenue = 0.0
         total_cost_of_goods = 0.0
 
+        chi_tiet_ban_hang = []
         for rec in xuat_records:
             ngay = str(rec.get("ngay_xuat", ""))
             if from_date and ngay < from_date:
@@ -104,6 +105,7 @@ async def tong_quan(
             rev = _safe_float(rec.get("thanh_tien", 0))
             sl = _safe_int(rec.get("so_luong", 0))
             ma = str(rec.get("ma_hang", ""))
+            gia_ban = _safe_float(rec.get("gia_ban", 0))
 
             stored_cogs = rec.get("gia_von")
             if stored_cogs is not None and str(stored_cogs).strip() != "" and float(stored_cogs or 0) > 0:
@@ -113,6 +115,22 @@ async def tong_quan(
 
             total_revenue += rev
             total_cost_of_goods += cost
+
+            chi_tiet_ban_hang.append({
+                "so_phieu": str(rec.get("so_phieu", "")),
+                "ngay_xuat": ngay,
+                "ma_hang": ma,
+                "ten_hang": str(rec.get("ten_hang", "")),
+                "so_luong": sl,
+                "don_gia": gia_ban,
+                "thanh_tien": rev,
+                "gia_von": cost,
+                "loi_nhuan": rev - cost,
+                "tk_du": "131"
+            })
+
+        # Sắp xếp theo ngày xuất và số phiếu tăng dần
+        chi_tiet_ban_hang.sort(key=lambda x: (x["ngay_xuat"], x["so_phieu"]))
 
         total_nhap = 0.0
         for rec in nhap_records:
@@ -137,6 +155,7 @@ async def tong_quan(
                 "loi_nhuan": gross_profit,
                 "bien_loi_nhuan": round(margin, 2),
                 "tong_nhap_hang": total_nhap,
+                "chi_tiet_ban_hang": chi_tiet_ban_hang,
             }
         }
     except Exception as e:

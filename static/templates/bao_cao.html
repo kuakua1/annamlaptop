@@ -3,21 +3,44 @@
 {% block page_title %}Báo Cáo & Thống Kê{% endblock %}
 
 {% block content %}
-<!-- Period Selector -->
-<div class="card mb-3">
+<!-- Period Selector & Action Buttons -->
+<div class="card mb-3 shadow-sm border-0">
     <div class="card-body py-2">
-        <div class="d-flex align-items-center gap-2 flex-wrap">
-            <span class="text-muted small me-1">Kỳ báo cáo:</span>
-            <button class="btn btn-sm period-btn active" data-period="today" onclick="selectPeriod('today')">Hôm nay</button>
-            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="week" onclick="selectPeriod('week')">Tuần này</button>
-            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="month" onclick="selectPeriod('month')">Tháng này</button>
-            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="year" onclick="selectPeriod('year')">Năm nay</button>
-            <button class="btn btn-sm btn-outline-secondary period-btn" data-period="custom" onclick="selectPeriod('custom')">Tùy chọn</button>
-            <div id="custom-range" class="d-none gap-2 align-items-center" style="display:none!important">
-                <input type="date" class="form-control form-control-sm" id="custom-from" style="width:150px">
-                <span>-</span>
-                <input type="date" class="form-control form-control-sm" id="custom-to" style="width:150px">
-                <button class="btn btn-sm btn-primary" onclick="applyCustomRange()">Xem</button>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <!-- Bộ lọc ngày đầu và ngày cuối -->
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-semibold text-dark small me-1"><i class="bi bi-calendar-range me-1 text-primary"></i>Kỳ báo cáo:</span>
+                
+                <div class="input-group input-group-sm" style="width: auto;">
+                    <span class="input-group-text bg-light text-muted">Từ ngày</span>
+                    <input type="date" class="form-control" id="report-from-date" style="max-width: 145px;" onchange="onDateRangeChanged()">
+                </div>
+                <div class="input-group input-group-sm" style="width: auto;">
+                    <span class="input-group-text bg-light text-muted">Đến ngày</span>
+                    <input type="date" class="form-control" id="report-to-date" style="max-width: 145px;" onchange="onDateRangeChanged()">
+                </div>
+                
+                <button class="btn btn-sm btn-primary px-3" onclick="applyCustomRange()">
+                    <i class="bi bi-funnel-fill me-1"></i>Lọc
+                </button>
+
+                <!-- Phím tắt nhanh -->
+                <div class="btn-group btn-group-sm ms-md-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickPeriod('today')">Hôm nay</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickPeriod('week')">Tuần này</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm active" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setQuickPeriod('year')">Năm nay</button>
+                </div>
+            </div>
+
+            <!-- Các nút Xuất Excel & In Báo Cáo S16-DNN -->
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-outline-success" onclick="exportFinancialReportToExcel()">
+                    <i class="bi bi-file-earmark-excel me-1"></i>Xuất Excel (S16-DNN)
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="printFinancialReport()">
+                    <i class="bi bi-printer me-1"></i>In Báo Cáo
+                </button>
             </div>
         </div>
     </div>
@@ -133,5 +156,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/bao_cao.js?v=20261003_v3"></script>
+<script src="/static/js/bao_cao.js?v=20261005_v9"></script>
 {% endblock %}
