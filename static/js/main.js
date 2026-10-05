@@ -133,20 +133,317 @@ function confirmDelete(message = 'Bạn có chắc muốn xóa?') {
     return window.confirm(message);
 }
 
-// ── Active Sidebar Link ───────────────────────────────────────────────────────
+// ── TabManager & Chrome Multi-Tab System ───────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', () => {
-    const path = window.location.pathname;
-    let matched = false;
-    document.querySelectorAll('.sidebar-link').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href === path || (path === '/' && href === '/dashboard')) {
-            link.classList.add('active');
-            matched = true;
-        } else {
-            link.classList.remove('active');
+const TAB_DEFINITIONS = {
+    'dashboard': {
+        title: 'Dashboard',
+        icon: 'bi-speedometer2 text-primary',
+        url: '/dashboard?embed=1',
+        closable: false
+    },
+    'hang-hoa': {
+        title: 'Tất Cả Hàng Hóa',
+        icon: 'bi-box-seam text-info',
+        url: '/hang-hoa?embed=1',
+        closable: true
+    },
+    'ton-kho': {
+        title: 'Hàng Hóa Tồn Kho',
+        icon: 'bi-boxes text-success',
+        url: '/ton-kho?embed=1',
+        closable: true
+    },
+    'bang-nhap-kho': {
+        title: 'Bảng Nhập Kho',
+        icon: 'bi-journal-arrow-down text-primary',
+        url: '/bang-nhap-kho?embed=1',
+        closable: true
+    },
+    'bang-xuat-kho': {
+        title: 'Bảng Xuất Kho',
+        icon: 'bi-journal-arrow-up text-danger',
+        url: '/bang-xuat-kho?embed=1',
+        closable: true
+    },
+    'nhap-hang': {
+        title: 'Tạo Phiếu Nhập',
+        icon: 'bi-download text-primary',
+        url: '/nhap-hang?embed=1',
+        closable: true
+    },
+    'xuat-hang': {
+        title: 'Tạo Phiếu Xuất',
+        icon: 'bi-upload text-danger',
+        url: '/xuat-hang?embed=1',
+        closable: true
+    },
+    'lich-su': {
+        title: 'Lịch Sử Chung',
+        icon: 'bi-clock-history text-secondary',
+        url: '/lich-su?embed=1',
+        closable: true
+    },
+    'bao-cao': {
+        title: 'Báo Cáo',
+        icon: 'bi-bar-chart-line text-purple',
+        url: '/bao-cao?embed=1',
+        closable: true
+    },
+    'danh-muc': {
+        title: 'NCC & Khách Hàng',
+        icon: 'bi-people text-info',
+        url: '/danh-muc?embed=1',
+        closable: true
+    }
+};
+
+const TabManager = {
+    tabs: [], // Array of tab keys: ['dashboard', 'xuat-hang', ...]
+    activeTab: 'dashboard',
+
+    isParent() {
+        return window.self === window.top;
+    },
+
+    toggleSidebar() {
+        if (!this.isParent()) {
+            if (window.parent && window.parent.TabManager) {
+                window.parent.TabManager.toggleSidebar();
+            }
+            return;
         }
-    });
+        document.body.classList.toggle('sidebar-collapsed');
+        const isCollapsed = document.body.classList.contains('sidebar-collapsed');
+        try {
+            localStorage.setItem('inventory_sidebar_collapsed', isCollapsed ? '1' : '0');
+        } catch (e) {}
+    },
+
+    initSidebar() {
+        try {
+            const saved = localStorage.getItem('inventory_sidebar_collapsed');
+            if (saved === '1') {
+                document.body.classList.add('sidebar-collapsed');
+            }
+        } catch (e) {}
+    },
+
+    init() {
+        if (!this.isParent()) {
+            // Đang nằm trong iframe con -> cấu hình link interceptor để mở tab ở parent
+            this.setupChildLinkInterceptor();
+            return;
+        }
+
+        this.initSidebar();
+
+        // Mở Dashboard làm tab mặc định đầu tiên
+        this.openTab('dashboard');
+    },
+
+    openTab(tabKey, customUrl = null) {
+        if (!this.isParent()) {
+            if (window.parent && window.parent.TabManager) {
+                window.parent.TabManager.openTab(tabKey, customUrl);
+            }
+            return;
+        }
+
+        const tabDef = TAB_DEFINITIONS[tabKey];
+        if (!tabDef) return;
+
+        // Nếu tab chưa mở -> khởi tạo tab mới
+        if (!this.tabs.includes(tabKey)) {
+            this.tabs.push(tabKey);
+            this.createTabIframe(tabKey, customUrl || tabDef.url);
+        } else if (customUrl) {
+            // Nếu tab đã mở nhưng có query parameter mới (ví dụ filter tồn kho)
+            const frame = document.getElementById(`tab-iframe-${tabKey}`);
+            if (frame && frame.src !== customUrl) {
+                frame.src = customUrl;
+            }
+        }
+
+        this.switchTab(tabKey);
+        this.renderTabBar();
+    },
+
+    createTabIframe(tabKey, url) {
+        const viewport = document.getElementById('chrome-tab-viewport');
+        if (!viewport) return;
+
+        let frame = document.getElementById(`tab-iframe-${tabKey}`);
+        if (!frame) {
+            frame = document.createElement('iframe');
+            frame.id = `tab-iframe-${tabKey}`;
+            frame.className = 'tab-frame';
+            // Thêm query embed=1 nếu chưa có
+            const finalUrl = url.includes('?') ? (url.includes('embed=1') ? url : `${url}&embed=1`) : `${url}?embed=1`;
+            frame.src = finalUrl;
+            viewport.appendChild(frame);
+        }
+    },
+
+    switchTab(tabKey) {
+        if (!this.isParent()) {
+            if (window.parent && window.parent.TabManager) {
+                window.parent.TabManager.switchTab(tabKey);
+            }
+            return;
+        }
+
+        this.activeTab = tabKey;
+
+        // Kích hoạt iframe tương ứng, ẩn các iframe khác
+        document.querySelectorAll('.tab-frame').forEach(f => {
+            if (f.id === `tab-iframe-${tabKey}`) {
+                f.classList.add('active');
+            } else {
+                f.classList.remove('active');
+            }
+        });
+
+        // Cập nhật trạng thái active trên sidebar
+        document.querySelectorAll('.sidebar-link').forEach(link => {
+            const linkTab = link.getAttribute('data-tab');
+            if (linkTab === tabKey) {
+                link.classList.add('active');
+            } else {
+                link.classList.remove('active');
+            }
+        });
+
+        this.renderTabBar();
+    },
+
+    closeTab(tabKey, event) {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+
+        if (!this.isParent()) {
+            if (window.parent && window.parent.TabManager) {
+                window.parent.TabManager.closeTab(tabKey, event);
+            }
+            return;
+        }
+
+        const tabDef = TAB_DEFINITIONS[tabKey];
+        if (tabDef && !tabDef.closable) return; // Tab không thể đóng (như Dashboard)
+
+        const index = this.tabs.indexOf(tabKey);
+        if (index === -1) return;
+
+        // Xóa hoàn toàn iframe khỏi DOM (xóa sạch dữ liệu tạm thời như user yêu cầu)
+        const frame = document.getElementById(`tab-iframe-${tabKey}`);
+        if (frame) {
+            frame.remove();
+        }
+
+        // Bỏ khỏi danh sách tab
+        this.tabs.splice(index, 1);
+
+        // Nếu đóng tab đang active -> chuyển sang tab trước đó hoặc tab đầu
+        if (this.activeTab === tabKey) {
+            const nextTab = this.tabs[Math.max(0, index - 1)] || 'dashboard';
+            this.switchTab(nextTab);
+        } else {
+            this.renderTabBar();
+        }
+    },
+
+    renderTabBar() {
+        const tabBar = document.getElementById('chrome-tab-bar');
+        if (!tabBar) return;
+
+        tabBar.innerHTML = '';
+        this.tabs.forEach(key => {
+            const tabDef = TAB_DEFINITIONS[key];
+            if (!tabDef) return;
+
+            const isActive = this.activeTab === key;
+            const tabEl = document.createElement('div');
+            tabEl.className = `chrome-tab${isActive ? ' active' : ''}`;
+            tabEl.title = tabDef.title;
+            tabEl.onclick = () => this.switchTab(key);
+
+            let closeHtml = '';
+            if (tabDef.closable) {
+                closeHtml = `
+                    <span class="chrome-tab-close" onclick="TabManager.closeTab('${key}', event)" title="Đóng tab (xóa dữ liệu tạm)">
+                        <i class="bi bi-x"></i>
+                    </span>
+                `;
+            }
+
+            tabEl.innerHTML = `
+                <i class="bi ${tabDef.icon || 'bi-window'}"></i>
+                <span class="chrome-tab-title">${escapeHtml(tabDef.title)}</span>
+                ${closeHtml}
+            `;
+
+            tabBar.appendChild(tabEl);
+        });
+
+        // Tự động cuộn đến tab đang active
+        const activeEl = tabBar.querySelector('.chrome-tab.active');
+        if (activeEl) {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        }
+    },
+
+    openTabFromUrl(url) {
+        if (!url) return;
+        try {
+            const parsed = new URL(url, window.location.origin);
+            const pathname = parsed.pathname;
+
+            for (const [key, def] of Object.entries(TAB_DEFINITIONS)) {
+                const defPath = def.url.split('?')[0];
+                if (pathname === defPath) {
+                    const fullUrl = pathname + parsed.search;
+                    this.openTab(key, fullUrl);
+                    return;
+                }
+            }
+        } catch (e) {}
+    },
+
+    setupChildLinkInterceptor() {
+        // Lắng nghe click các thẻ a trong child frame để mở tab trên parent nếu khớp route nội bộ
+        document.addEventListener('click', (e) => {
+            const a = e.target.closest('a');
+            if (!a || !a.href) return;
+
+            const href = a.getAttribute('href');
+            if (!href || href.startsWith('javascript:') || href.startsWith('#')) return;
+
+            // Kiểm tra xem link có dẫn tới một trong các route nội bộ của app không
+            try {
+                const targetUrl = new URL(a.href, window.location.origin);
+                if (targetUrl.origin === window.location.origin) {
+                    const pathname = targetUrl.pathname;
+                    for (const [key, def] of Object.entries(TAB_DEFINITIONS)) {
+                        const defPath = def.url.split('?')[0];
+                        if (pathname === defPath) {
+                            e.preventDefault();
+                            if (window.parent && window.parent.TabManager) {
+                                window.parent.TabManager.openTab(key, targetUrl.pathname + targetUrl.search);
+                            }
+                            return;
+                        }
+                    }
+                }
+            } catch (err) {}
+        });
+    }
+};
+
+// Khởi chạy khi DOM sẵn sàng
+document.addEventListener('DOMContentLoaded', () => {
+    TabManager.init();
 });
 
 // ── Logout ────────────────────────────────────────────────────────────────────
