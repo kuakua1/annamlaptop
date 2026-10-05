@@ -98,6 +98,10 @@
             <span class="topbar-title ms-1">{% block page_title %}{% endblock %}</span>
         </div>
         <div class="topbar-right">
+            <!-- Nút đồng bộ từ Google Sheets về Database SQLite -->
+            <button class="btn btn-sm btn-outline-success d-flex align-items-center gap-1" id="btn-sync-sheets" onclick="syncFromGoogleSheets()" title="Đồng bộ dữ liệu mới nhất từ Google Sheets vào Database">
+                <i class="bi bi-arrow-repeat"></i> <span class="d-none d-md-inline">Đồng bộ Google Sheets</span>
+            </button>
             <div class="user-badge">
                 <div class="user-avatar">{{ username[0].upper() if username else 'A' }}</div>
                 <span class="d-none d-md-inline">{{ username }}</span>

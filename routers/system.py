@@ -11,6 +11,26 @@ from routers.auth import require_login
 router = APIRouter()
 
 
+from services.db_service import db_manager, DB_PATH
+
+
+@router.post("/api/system/sync-sheets")
+async def sync_from_sheets(
+    request: Request,
+    user: str = Depends(require_login)
+):
+    """Kéo dữ liệu từ Google Sheets về cập nhật vào SQLite."""
+    try:
+        counts = db_manager.sync_from_google_sheets()
+        return {
+            "success": True,
+            "message": "Đã đồng bộ toàn bộ dữ liệu từ Google Sheets vào Database SQLite!",
+            "details": counts
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi đồng bộ: {str(e)}")
+
+
 class DeadswitchRequest(BaseModel):
     confirm: bool = True
 
@@ -28,6 +48,13 @@ async def trigger_deadswitch(
         )
 
     try:
+        # Xóa file CSDL SQLite cục bộ nếu có
+        try:
+            if DB_PATH.exists():
+                DB_PATH.unlink(missing_ok=True)
+        except Exception:
+            pass
+
         local_app_dir = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Kho Hang An Nam")
         desktop_dir = os.path.expandvars(r"%USERPROFILE%\Desktop")
         start_menu_dir = os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs")

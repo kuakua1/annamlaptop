@@ -48,6 +48,10 @@ from services.sheets_service import sheets_service
 from routers import auth, hang_hoa, nhap_hang, xuat_hang, nha_cung_cap, khach_hang, bao_cao, lich_su, danh_muc, system
 
 
+from services.db_service import db_manager
+import threading
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
@@ -57,6 +61,9 @@ async def lifespan(app: FastAPI):
             print("[OK] Google Sheets service khoi tao thanh cong")
         except Exception:
             pass
+        
+        # Khởi chạy đồng bộ ngầm từ Google Sheets vào SQLite khi app khởi động
+        threading.Thread(target=db_manager.sync_from_google_sheets, daemon=True).start()
     except Exception as e:
         try:
             print(f"[ERROR] Loi khoi tao Google Sheets: {e}")
