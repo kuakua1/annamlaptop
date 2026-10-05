@@ -324,6 +324,11 @@ body.is-embedded-tab .content-area {
   padding: 16px 20px 30px 20px !important;
 }
 
+/* In parent shell window, hide the direct content block completely (rendered inside iframe tabs instead) */
+body:not(.is-embedded-tab) .tab-direct-content {
+  display: none !important;
+}
+
 .topbar {
   height: var(--header-height);
   background: #fff;

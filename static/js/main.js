@@ -199,8 +199,9 @@ const TAB_DEFINITIONS = {
 };
 
 const TabManager = {
-    tabs: [], // Array of tab keys: ['dashboard', 'xuat-hang', ...]
-    activeTab: 'dashboard',
+    tabs: [], // Array of tab objects: [{ id: 'dashboard', type: 'dashboard', title: 'Dashboard', icon: '...', closable: false }]
+    activeTabId: 'dashboard',
+    tabCounter: {}, // Tracks count per type: { 'xuat-hang': 2, ... }
 
     isParent() {
         return window.self === window.top;
@@ -242,72 +243,108 @@ const TabManager = {
         this.openTab('dashboard');
     },
 
-    openTab(tabKey, customUrl = null) {
+    /**
+     * Mở tab.
+     * @param {string} tabType - 'dashboard', 'xuat-hang', 'nhap-hang', etc.
+     * @param {string|null} customUrl - URL tùy chỉnh nếu có
+     * @param {boolean} forceNew - Bắt buộc mở thêm 1 tab mới (true cho các thao tác giao dịch nhiều tab)
+     */
+    openTab(tabType, customUrl = null, forceNew = false) {
         if (!this.isParent()) {
             if (window.parent && window.parent.TabManager) {
-                window.parent.TabManager.openTab(tabKey, customUrl);
+                window.parent.TabManager.openTab(tabType, customUrl, forceNew);
             }
             return;
         }
 
-        const tabDef = TAB_DEFINITIONS[tabKey];
+        const tabDef = TAB_DEFINITIONS[tabType];
         if (!tabDef) return;
 
-        // Nếu tab chưa mở -> khởi tạo tab mới
-        if (!this.tabs.includes(tabKey)) {
-            this.tabs.push(tabKey);
-            this.createTabIframe(tabKey, customUrl || tabDef.url);
-        } else if (customUrl) {
-            // Nếu tab đã mở nhưng có query parameter mới (ví dụ filter tồn kho)
-            const frame = document.getElementById(`tab-iframe-${tabKey}`);
-            if (frame && frame.src !== customUrl) {
-                frame.src = customUrl;
+        // Nếu là Dashboard -> luôn chỉ có duy nhất 1 tab dashboard
+        if (tabType === 'dashboard') {
+            const existing = this.tabs.find(t => t.id === 'dashboard');
+            if (!existing) {
+                this.tabs.push({
+                    id: 'dashboard',
+                    type: 'dashboard',
+                    title: 'Dashboard',
+                    icon: tabDef.icon,
+                    closable: false
+                });
+                this.createTabIframe('dashboard', customUrl || tabDef.url);
             }
+            this.switchTab('dashboard');
+            this.renderTabBar();
+            return;
         }
 
-        this.switchTab(tabKey);
+        // Đếm số lượng tab cùng loại hiện tại đang mở
+        const existingTabs = this.tabs.filter(t => t.type === tabType);
+
+        // Với các nghiệp vụ giao dịch như Xuất Hàng, Nhập Hàng: Cho phép mở nhiều tab song song
+        // Tự động gán số thứ tự nếu đã có tab đang mở
+        this.tabCounter[tabType] = (this.tabCounter[tabType] || 0) + 1;
+        const count = this.tabCounter[tabType];
+        
+        let tabId = `${tabType}_${count}`;
+        let tabTitle = existingTabs.length === 0 ? tabDef.title : `${tabDef.title} (${existingTabs.length + 1})`;
+
+        const newTab = {
+            id: tabId,
+            type: tabType,
+            title: tabTitle,
+            icon: tabDef.icon,
+            closable: true
+        };
+
+        this.tabs.push(newTab);
+        this.createTabIframe(tabId, customUrl || tabDef.url);
+        this.switchTab(tabId);
         this.renderTabBar();
     },
 
-    createTabIframe(tabKey, url) {
+    createTabIframe(tabId, url) {
         const viewport = document.getElementById('chrome-tab-viewport');
         if (!viewport) return;
 
-        let frame = document.getElementById(`tab-iframe-${tabKey}`);
+        let frame = document.getElementById(`tab-iframe-${tabId}`);
         if (!frame) {
             frame = document.createElement('iframe');
-            frame.id = `tab-iframe-${tabKey}`;
+            frame.id = `tab-iframe-${tabId}`;
             frame.className = 'tab-frame';
-            // Thêm query embed=1 nếu chưa có
+            // Thêm query embed=1 nếu chưa có để iframe con chỉ render nội dung trực tiếp
             const finalUrl = url.includes('?') ? (url.includes('embed=1') ? url : `${url}&embed=1`) : `${url}?embed=1`;
             frame.src = finalUrl;
             viewport.appendChild(frame);
         }
     },
 
-    switchTab(tabKey) {
+    switchTab(tabId) {
         if (!this.isParent()) {
             if (window.parent && window.parent.TabManager) {
-                window.parent.TabManager.switchTab(tabKey);
+                window.parent.TabManager.switchTab(tabId);
             }
             return;
         }
 
-        this.activeTab = tabKey;
+        const tab = this.tabs.find(t => t.id === tabId);
+        if (!tab) return;
+
+        this.activeTabId = tabId;
 
         // Kích hoạt iframe tương ứng, ẩn các iframe khác
         document.querySelectorAll('.tab-frame').forEach(f => {
-            if (f.id === `tab-iframe-${tabKey}`) {
+            if (f.id === `tab-iframe-${tabId}`) {
                 f.classList.add('active');
             } else {
                 f.classList.remove('active');
             }
         });
 
-        // Cập nhật trạng thái active trên sidebar
+        // Cập nhật trạng thái active trên sidebar dựa vào tab.type
         document.querySelectorAll('.sidebar-link').forEach(link => {
             const linkTab = link.getAttribute('data-tab');
-            if (linkTab === tabKey) {
+            if (linkTab === tab.type) {
                 link.classList.add('active');
             } else {
                 link.classList.remove('active');
@@ -317,7 +354,7 @@ const TabManager = {
         this.renderTabBar();
     },
 
-    closeTab(tabKey, event) {
+    closeTab(tabId, event) {
         if (event) {
             event.stopPropagation();
             event.preventDefault();
@@ -325,19 +362,19 @@ const TabManager = {
 
         if (!this.isParent()) {
             if (window.parent && window.parent.TabManager) {
-                window.parent.TabManager.closeTab(tabKey, event);
+                window.parent.TabManager.closeTab(tabId, event);
             }
             return;
         }
 
-        const tabDef = TAB_DEFINITIONS[tabKey];
-        if (tabDef && !tabDef.closable) return; // Tab không thể đóng (như Dashboard)
+        const tab = this.tabs.find(t => t.id === tabId);
+        if (!tab || !tab.closable) return; // Tab không thể đóng (như Dashboard)
 
-        const index = this.tabs.indexOf(tabKey);
+        const index = this.tabs.findIndex(t => t.id === tabId);
         if (index === -1) return;
 
         // Xóa hoàn toàn iframe khỏi DOM (xóa sạch dữ liệu tạm thời như user yêu cầu)
-        const frame = document.getElementById(`tab-iframe-${tabKey}`);
+        const frame = document.getElementById(`tab-iframe-${tabId}`);
         if (frame) {
             frame.remove();
         }
@@ -345,10 +382,12 @@ const TabManager = {
         // Bỏ khỏi danh sách tab
         this.tabs.splice(index, 1);
 
-        // Nếu đóng tab đang active -> chuyển sang tab trước đó hoặc tab đầu
-        if (this.activeTab === tabKey) {
-            const nextTab = this.tabs[Math.max(0, index - 1)] || 'dashboard';
-            this.switchTab(nextTab);
+        // Nếu đóng tab đang active -> chuyển sang tab liền kề hoặc tab Dashboard
+        if (this.activeTabId === tabId) {
+            const nextTab = this.tabs[Math.max(0, index - 1)] || this.tabs[0];
+            if (nextTab) {
+                this.switchTab(nextTab.id);
+            }
         } else {
             this.renderTabBar();
         }
@@ -359,28 +398,25 @@ const TabManager = {
         if (!tabBar) return;
 
         tabBar.innerHTML = '';
-        this.tabs.forEach(key => {
-            const tabDef = TAB_DEFINITIONS[key];
-            if (!tabDef) return;
-
-            const isActive = this.activeTab === key;
+        this.tabs.forEach(tab => {
+            const isActive = this.activeTabId === tab.id;
             const tabEl = document.createElement('div');
             tabEl.className = `chrome-tab${isActive ? ' active' : ''}`;
-            tabEl.title = tabDef.title;
-            tabEl.onclick = () => this.switchTab(key);
+            tabEl.title = tab.title;
+            tabEl.onclick = () => this.switchTab(tab.id);
 
             let closeHtml = '';
-            if (tabDef.closable) {
+            if (tab.closable) {
                 closeHtml = `
-                    <span class="chrome-tab-close" onclick="TabManager.closeTab('${key}', event)" title="Đóng tab (xóa dữ liệu tạm)">
+                    <span class="chrome-tab-close" onclick="TabManager.closeTab('${tab.id}', event)" title="Đóng tab (xóa dữ liệu tạm)">
                         <i class="bi bi-x"></i>
                     </span>
                 `;
             }
 
             tabEl.innerHTML = `
-                <i class="bi ${tabDef.icon || 'bi-window'}"></i>
-                <span class="chrome-tab-title">${escapeHtml(tabDef.title)}</span>
+                <i class="bi ${tab.icon || 'bi-window'}"></i>
+                <span class="chrome-tab-title">${escapeHtml(tab.title)}</span>
                 ${closeHtml}
             `;
 
