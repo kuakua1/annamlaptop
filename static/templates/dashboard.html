@@ -260,6 +260,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('dash-month').value = getCurrentMonthStr();
     loadDashboard();
     loadChart();
+
+    window.addEventListener('message', (e) => {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+            loadDashboard();
+            loadChart();
+        }
+    });
+
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.onmessage = (e) => {
+                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                    loadDashboard();
+                    loadChart();
+                }
+            };
+        }
+    } catch (err) {}
 });
 </script>
 {% endblock %}

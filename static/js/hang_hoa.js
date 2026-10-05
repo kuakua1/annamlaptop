@@ -29,20 +29,21 @@ function populateDanhMucDropdowns() {
     }
 }
 
-async function loadProducts() {
+async function loadProducts(silent = false) {
     try {
-        showLoading();
-        const search = document.getElementById('search-input').value;
-        const danhMuc = document.getElementById('filter-danh-muc').value;
+        if (!silent) showLoading();
+        const search = document.getElementById('search-input')?.value || '';
+        const danhMuc = document.getElementById('filter-danh-muc')?.value || '';
         let url = `/api/hang-hoa?search=${encodeURIComponent(search)}&danh_muc=${encodeURIComponent(danhMuc)}`;
         const res = await apiRequest(url);
         allProducts = res.data || [];
         renderTable(allProducts);
-        document.getElementById('total-count').textContent = allProducts.length;
+        const countEl = document.getElementById('total-count');
+        if (countEl) countEl.textContent = allProducts.length;
     } catch (e) {
-        showToast(e.message, 'error');
+        if (!silent) showToast(e.message, 'error');
     } finally {
-        hideLoading();
+        if (!silent) hideLoading();
     }
 }
 
@@ -250,4 +251,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         debounceTimer = setTimeout(loadProducts, 300);
     });
     document.getElementById('filter-danh-muc')?.addEventListener('change', loadProducts);
+
+    // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
+    window.addEventListener('message', (e) => {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+            loadProducts(true);
+        }
+    });
+
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.onmessage = (e) => {
+                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                    loadProducts(true);
+                }
+            };
+        }
+    } catch (err) {}
 });

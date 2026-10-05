@@ -4,16 +4,20 @@
 
 let allProducts = [];
 
-async function loadStockData() {
+async function loadStockData(silent = false) {
     try {
         const tbody = document.getElementById('stock-tbody');
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu tồn kho...</td></tr>';
+        if (!silent && tbody) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu tồn kho...</td></tr>';
+        }
 
         const res = await apiRequest('/api/hang-hoa');
         allProducts = res.data || [];
         renderStockTable();
     } catch (e) {
-        showToast('Lỗi khi tải dữ liệu tồn kho: ' + e.message, 'error');
+        if (!silent) {
+            showToast('Lỗi khi tải dữ liệu tồn kho: ' + e.message, 'error');
+        }
     }
 }
 
@@ -432,4 +436,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('search-input')?.addEventListener('input', renderStockTable);
     document.getElementById('filter-danh-muc')?.addEventListener('change', renderStockTable);
     document.getElementById('filter-stock-status')?.addEventListener('change', renderStockTable);
+
+    // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
+    window.addEventListener('message', (e) => {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+            loadStockData(true);
+        }
+    });
+
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.onmessage = (e) => {
+                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                    loadStockData(true);
+                }
+            };
+        }
+    } catch (err) {}
 });

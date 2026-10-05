@@ -10,9 +10,9 @@ let currentTo = '';
 
 let currentRecords = [];
 
-async function loadHistory() {
+async function loadHistory(silent = false) {
     try {
-        showLoading();
+        if (!silent) showLoading();
         const params = new URLSearchParams({
             loai: currentLoai,
             from_date: currentFrom,
@@ -68,9 +68,9 @@ async function loadHistory() {
             loadHistory();
         });
     } catch (e) {
-        showToast(e.message, 'error');
+        if (!silent) showToast(e.message, 'error');
     } finally {
-        hideLoading();
+        if (!silent) hideLoading();
     }
 }
 
@@ -165,6 +165,24 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('filter-search')?.addEventListener('keyup', (e) => {
         if (e.key === 'Enter') applyFilters();
     });
+
+    // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
+    window.addEventListener('message', (e) => {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+            loadHistory(true);
+        }
+    });
+
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.onmessage = (e) => {
+                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                    loadHistory(true);
+                }
+            };
+        }
+    } catch (err) {}
 });
 
 async function viewHistoryReceipt(loai, so_phieu) {

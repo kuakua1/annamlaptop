@@ -44,9 +44,9 @@ function getPeriodDisplayText() {
 /**
  * Tải số liệu từ máy chủ
  */
-async function loadData(from_date = '', to_date = '') {
+async function loadData(from_date = '', to_date = '', silent = false) {
     const tableBody = document.getElementById('table-body');
-    if (tableBody) {
+    if (!silent && tableBody) {
         tableBody.innerHTML = `
             <tr>
                 <td colspan="13" class="text-center text-muted py-5">
@@ -883,6 +883,24 @@ function initBangNhapXuatTon() {
     currentToDate = toISO;
 
     loadData(currentFromDate, currentToDate);
+
+    // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
+    window.addEventListener('message', (e) => {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+            loadData(currentFromDate, currentToDate, true);
+        }
+    });
+
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.onmessage = (e) => {
+                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                    loadData(currentFromDate, currentToDate, true);
+                }
+            };
+        }
+    } catch (err) {}
 }
 
 if (document.readyState === 'loading') {

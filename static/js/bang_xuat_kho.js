@@ -11,7 +11,7 @@ function getCurrentMonthStr() {
     return `${y}-${m}`;
 }
 
-async function loadExportData() {
+async function loadExportData(silent = false) {
     try {
         const monthInput = document.getElementById('filter-month');
         const month = monthInput ? monthInput.value : '';
@@ -19,7 +19,9 @@ async function loadExportData() {
         const search = searchInput ? searchInput.value.trim() : '';
 
         const tbody = document.getElementById('export-tbody');
-        tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-danger me-2"></div>Đang tải dữ liệu xuất kho...</td></tr>';
+        if (!silent && tbody) {
+            tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-danger me-2"></div>Đang tải dữ liệu xuất kho...</td></tr>';
+        }
 
         let url = '/api/xuat-hang?';
         if (month) url += `month=${encodeURIComponent(month)}&`;
@@ -30,7 +32,9 @@ async function loadExportData() {
 
         renderExportTable(res);
     } catch (e) {
-        showToast('Lỗi khi tải dữ liệu xuất kho: ' + e.message, 'error');
+        if (!silent) {
+            showToast('Lỗi khi tải dữ liệu xuất kho: ' + e.message, 'error');
+        }
     }
 }
 
@@ -219,4 +223,22 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(loadExportData, 300);
     });
+
+    // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
+    window.addEventListener('message', (e) => {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+            loadExportData(true);
+        }
+    });
+
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.onmessage = (e) => {
+                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                    loadExportData(true);
+                }
+            };
+        }
+    } catch (err) {}
 });

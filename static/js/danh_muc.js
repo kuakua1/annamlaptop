@@ -10,18 +10,18 @@ let rawKHList = [];
 
 // ── Nhà Cung Cấp ─────────────────────────────────────────────────────────────
 
-async function loadNCC() {
+async function loadNCC(silent = false) {
     try {
-        showLoading();
+        if (!silent) showLoading();
         const res = await apiRequest('/api/nha-cung-cap');
         rawNCCList = res.data || [];
         const badge = document.getElementById('ncc-badge-count');
         if (badge) badge.textContent = rawNCCList.length;
         filterNCC();
     } catch (e) {
-        showToast(e.message, 'error');
+        if (!silent) showToast(e.message, 'error');
     } finally {
-        hideLoading();
+        if (!silent) hideLoading();
     }
 }
 
@@ -190,18 +190,18 @@ async function deleteNCC(id) {
 
 // ── Khách Hàng ────────────────────────────────────────────────────────────────
 
-async function loadKH() {
+async function loadKH(silent = false) {
     try {
-        showLoading();
+        if (!silent) showLoading();
         const res = await apiRequest('/api/khach-hang');
         rawKHList = res.data || [];
         const badge = document.getElementById('kh-badge-count');
         if (badge) badge.textContent = rawKHList.length;
         filterKH();
     } catch (e) {
-        showToast(e.message, 'error');
+        if (!silent) showToast(e.message, 'error');
     } finally {
-        hideLoading();
+        if (!silent) hideLoading();
     }
 }
 
@@ -802,3 +802,22 @@ document.addEventListener('DOMContentLoaded', () => {
     loadNCC();
     loadKH();
 });
+
+// Lắng nghe sự kiện kích hoạt tab hoặc cập nhật dữ liệu để đồng bộ tự động
+window.addEventListener('message', (e) => {
+    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+        loadNCC(true);
+        loadKH(true);
+    }
+});
+
+try {
+    const syncChannel = new BroadcastChannel('inventory_sync');
+    syncChannel.onmessage = (e) => {
+        if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+            loadNCC(true);
+            loadKH(true);
+        }
+    };
+} catch (err) {}
+

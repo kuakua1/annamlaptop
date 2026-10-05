@@ -1620,4 +1620,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadTopProducts(),
         loadTonKho(),
     ]);
+
+    const refreshReports = () => {
+        Promise.all([
+            loadStats(currentFromDate, currentToDate),
+            loadChart(),
+            loadTopProducts(),
+            loadTonKho(),
+        ]);
+    };
+
+    window.addEventListener('message', (e) => {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+            refreshReports();
+        }
+    });
+
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.onmessage = (e) => {
+                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                    refreshReports();
+                }
+            };
+        }
+    } catch (err) {}
 });
