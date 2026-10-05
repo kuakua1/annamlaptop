@@ -12,6 +12,7 @@ router = APIRouter()
 
 
 from services.db_service import db_manager, DB_PATH
+from config import SECRET_KEY
 
 
 @router.post("/api/system/sync-sheets")
@@ -19,12 +20,35 @@ async def sync_from_sheets(
     request: Request,
     user: str = Depends(require_login)
 ):
-    """Kéo dữ liệu từ Google Sheets về cập nhật vào SQLite."""
+    """Kéo dữ liệu từ Google Sheets về cập nhật vào SQLite (Gọi từ Web Admin)."""
     try:
         counts = db_manager.sync_from_google_sheets()
         return {
             "success": True,
             "message": "Đã đồng bộ toàn bộ dữ liệu từ Google Sheets vào Database SQLite!",
+            "details": counts
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi đồng bộ: {str(e)}")
+
+
+@router.post("/api/system/sync-sheets-webhook")
+async def sync_from_sheets_webhook(
+    request: Request
+):
+    """Webhook cho phép Google Apps Script gọi trực tiếp bằng token bảo mật."""
+    token = request.headers.get("X-Sync-Token") or request.query_params.get("token")
+    if not token or token != SECRET_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Token bảo mật không hợp lệ hoặc thiếu X-Sync-Token."
+        )
+
+    try:
+        counts = db_manager.sync_from_google_sheets()
+        return {
+            "success": True,
+            "message": "Đã nhận lệnh từ Google Sheet và cập nhật thành công vào Database SQLite!",
             "details": counts
         }
     except Exception as e:
