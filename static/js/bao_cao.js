@@ -134,34 +134,42 @@ async function loadTonKho() {
     } catch (e) {}
 }
 
+function formatISODate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
 /**
  * Xử lý khi người dùng chọn nút lọc nhanh
  */
 function setQuickPeriod(type) {
     const today = new Date();
     let fromDate = new Date();
-    let toDate = today;
+    let toDate = new Date();
 
     // Bỏ active tất cả nút quick
     document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
 
     if (type === 'today') {
         fromDate = today;
+        toDate = today;
     } else if (type === 'week') {
         const day = today.getDay();
         const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Thứ 2 đầu tuần
-        fromDate = new Date(today.setDate(diff));
+        fromDate = new Date(today.getFullYear(), today.getMonth(), diff);
+        toDate = new Date(today.getFullYear(), today.getMonth(), diff + 6);
     } else if (type === 'month') {
         fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
-        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        toDate = lastDay;
+        toDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     } else if (type === 'year') {
         fromDate = new Date(today.getFullYear(), 0, 1);
         toDate = new Date(today.getFullYear(), 11, 31);
     }
 
-    const fromISO = fromDate.toISOString().split('T')[0];
-    const toISO = toDate.toISOString().split('T')[0];
+    const fromISO = formatISODate(fromDate);
+    const toISO = formatISODate(toDate);
 
     document.getElementById('report-from-date').value = fromISO;
     document.getElementById('report-to-date').value = toISO;
@@ -180,6 +188,11 @@ function setQuickPeriod(type) {
 function onDateRangeChanged() {
     // Bỏ active của các nút quick
     document.querySelectorAll('.btn-group .btn').forEach(b => b.classList.remove('active'));
+    currentFromDate = document.getElementById('report-from-date')?.value || '';
+    currentToDate = document.getElementById('report-to-date')?.value || '';
+    if (currentFromDate && currentToDate && currentFromDate <= currentToDate) {
+        loadStats(currentFromDate, currentToDate);
+    }
 }
 
 function applyCustomRange() {
@@ -223,13 +236,18 @@ async function exportFinancialReportToExcel() {
         return;
     }
 
-    if (!currentReportData) {
+    const fromInput = document.getElementById('report-from-date')?.value;
+    const toInput = document.getElementById('report-to-date')?.value;
+    if (fromInput) currentFromDate = fromInput;
+    if (toInput) currentToDate = toInput;
+
+    if (!currentReportData || !currentReportData.chi_tiet_ban_hang) {
         await loadStats(currentFromDate, currentToDate);
     }
 
     const items = currentReportData?.chi_tiet_ban_hang || [];
     if (!items.length) {
-        showToast('Không có dữ liệu bán hàng trong kỳ báo cáo đã chọn để xuất Excel!', 'warning');
+        showToast('Không có dữ liệu bán hàng trong khoảng thời gian này để xuất Excel!', 'warning');
         return;
     }
 
@@ -544,7 +562,12 @@ async function exportFinancialReportToExcel() {
  * In Báo Cáo Tài Chính / Sổ Chi Tiết Bán Hàng chuẩn Thông tư 133
  */
 async function printFinancialReport() {
-    if (!currentReportData) {
+    const fromInput = document.getElementById('report-from-date')?.value;
+    const toInput = document.getElementById('report-to-date')?.value;
+    if (fromInput) currentFromDate = fromInput;
+    if (toInput) currentToDate = toInput;
+
+    if (!currentReportData || !currentReportData.chi_tiet_ban_hang) {
         await loadStats(currentFromDate, currentToDate);
     }
     const items = currentReportData?.chi_tiet_ban_hang || [];
@@ -750,13 +773,13 @@ async function printFinancialReport() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    // Mặc định chọn cả tháng hiện tại
+    // Mặc định chọn cả tháng hiện tại theo ngày địa phương
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-    const fromISO = firstDay.toISOString().split('T')[0];
-    const toISO = lastDay.toISOString().split('T')[0];
+    const fromISO = formatISODate(firstDay);
+    const toISO = formatISODate(lastDay);
 
     document.getElementById('report-from-date').value = fromISO;
     document.getElementById('report-to-date').value = toISO;
