@@ -8,7 +8,7 @@ let summaryData = null;
 let currentFromDate = '';
 let currentToDate = '';
 
-const COMPANY_INFO = window.COMPANY_INFO || {
+const COMPANY_REPORT_INFO = window.COMPANY_INFO || {
     name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',
     address: '454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam',
     brand: 'KHO HÀNG AN NAM',
@@ -224,8 +224,10 @@ function setQuickPeriod(type) {
     const fromISO = formatISODate(fromDate);
     const toISO = formatISODate(toDate);
 
-    document.getElementById('filter-from-date').value = fromISO;
-    document.getElementById('filter-to-date').value = toISO;
+    const fromInput = document.getElementById('filter-from-date');
+    const toInput = document.getElementById('filter-to-date');
+    if (fromInput) fromInput.value = fromISO;
+    if (toInput) toInput.value = toISO;
     currentFromDate = fromISO;
     currentToDate = toISO;
 
@@ -301,8 +303,8 @@ async function exportNhapXuatTonToExcel() {
 
     const periodText = getPeriodDisplayText();
     const wb = new window.ExcelJS.Workbook();
-    wb.creator = COMPANY_INFO.name;
-    wb.lastModifiedBy = COMPANY_INFO.name;
+    wb.creator = COMPANY_REPORT_INFO.name;
+    wb.lastModifiedBy = COMPANY_REPORT_INFO.name;
     wb.created = new Date();
 
     const ws = wb.addWorksheet('TongHopNhapXuatTon', { views: [{ showGridLines: true }] });
@@ -336,9 +338,9 @@ async function exportNhapXuatTonToExcel() {
     };
 
     // Header góc trái
-    ws.getCell('A1').value = `Đơn vị: ${COMPANY_INFO.name}`;
+    ws.getCell('A1').value = `Đơn vị: ${COMPANY_REPORT_INFO.name}`;
     ws.getCell('A1').font = fontBold;
-    ws.getCell('A2').value = `Địa chỉ: ${COMPANY_INFO.address}`;
+    ws.getCell('A2').value = `Địa chỉ: ${COMPANY_REPORT_INFO.address}`;
     ws.getCell('A2').font = fontBold;
 
     // Header góc phải
@@ -771,8 +773,8 @@ async function printNhapXuatTonReport() {
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                     <div style="font-size: 9.5pt; line-height: 1.4;">
-                        <strong>Đơn vị:</strong> ${COMPANY_INFO.name}<br>
-                        <strong>Địa chỉ:</strong> ${COMPANY_INFO.address}
+                        <strong>Đơn vị:</strong> ${COMPANY_REPORT_INFO.name}<br>
+                        <strong>Địa chỉ:</strong> ${COMPANY_REPORT_INFO.address}
                     </div>
                     <div style="text-align: center; font-size: 9.5pt; line-height: 1.3;">
                         <strong>Mẫu số 01 - VT</strong><br>
@@ -865,7 +867,7 @@ async function printNhapXuatTonReport() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+function initBangNhapXuatTon() {
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -880,5 +882,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentFromDate = fromISO;
     currentToDate = toISO;
 
-    await loadData(currentFromDate, currentToDate);
-});
+    loadData(currentFromDate, currentToDate);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initBangNhapXuatTon);
+} else {
+    initBangNhapXuatTon();
+}
