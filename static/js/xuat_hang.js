@@ -40,21 +40,32 @@ function saveState() {
 
 function restoreState(state) {
     if (!state) return false;
-    document.getElementById('f-ngay').value = state.ngay || todayISO();
-    document.getElementById('f-kh-id').value = state.kh_id || '';
-    document.getElementById('f-kh-ten').value = state.kh_ten || '';
-    document.getElementById('f-kh-dia-chi').value = state.kh_dia_chi || '';
-    document.getElementById('f-kh-sdt').value = state.kh_sdt || '';
-    document.getElementById('f-ghi-chu').value = state.ghi_chu || '';
+    try {
+        const ngayEl = document.getElementById('f-ngay');
+        if (ngayEl) ngayEl.value = state.ngay || todayISO();
+        const khIdEl = document.getElementById('f-kh-id');
+        if (khIdEl) khIdEl.value = state.kh_id || '';
+        const khTenEl = document.getElementById('f-kh-ten');
+        if (khTenEl) khTenEl.value = state.kh_ten || '';
+        const khDiaChiEl = document.getElementById('f-kh-dia-chi');
+        if (khDiaChiEl) khDiaChiEl.value = state.kh_dia_chi || '';
+        const khSdtEl = document.getElementById('f-kh-sdt');
+        if (khSdtEl) khSdtEl.value = state.kh_sdt || '';
+        const ghiChuEl = document.getElementById('f-ghi-chu');
+        if (ghiChuEl) ghiChuEl.value = state.ghi_chu || '';
 
-    if (state.items && state.items.length > 0) {
-        document.getElementById('items-tbody').innerHTML = '';
-        itemCount = parseInt(state.itemCount) || 0;
-        state.items.forEach(item => {
-            addItemWithData(item.rowId, item.ma_hang, item.so_luong, item.gia_ban);
-        });
-        calcTotal();
-        return true;
+        if (state.items && Array.isArray(state.items) && state.items.length > 0) {
+            const tbody = document.getElementById('items-tbody');
+            if (tbody) tbody.innerHTML = '';
+            itemCount = parseInt(state.itemCount) || 0;
+            state.items.forEach(item => {
+                addItemWithData(item.rowId, item.ma_hang, item.so_luong, item.gia_ban);
+            });
+            calcTotal();
+            return true;
+        }
+    } catch (e) {
+        console.warn('Lỗi phục hồi trạng thái phiếu xuất:', e);
     }
     return false;
 }
@@ -701,31 +712,60 @@ function cloneCurrentReceiptToForm() {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
-    document.getElementById('f-ngay').value = todayISO();
-    await loadData();
+    try {
+        const ngayEl = document.getElementById('f-ngay');
+        if (ngayEl) ngayEl.value = todayISO();
+    } catch (e) {}
 
-    const savedState = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
-    const restored = restoreState(savedState);
-    if (!restored) {
-        addItem();
+    try {
+        await loadData();
+    } catch (e) {
+        console.error('Lỗi loadData:', e);
     }
 
-    // Kiểm tra URL param ?ma_hang=...
-    const urlParams = new URLSearchParams(window.location.search);
-    const prefillMa = urlParams.get('ma_hang');
-    if (prefillMa) {
-        const p = products.find(x => x.ma_hang.toLowerCase() === prefillMa.toLowerCase());
-        if (p) {
-            selectProductForRow(1, p.ma_hang);
-            const slInput = document.getElementById('sl-1');
-            if (slInput) {
-                slInput.focus();
-                slInput.select();
-            }
-            showToast(`Đã tự động chọn: ${p.ten_hang}`, 'info');
+    try {
+        let savedState = null;
+        try {
+            savedState = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
+        } catch (e) {}
+
+        const restored = restoreState(savedState);
+        const currentRows = document.querySelectorAll('#items-tbody tr');
+        if (!restored || currentRows.length === 0) {
+            addItem();
+        }
+    } catch (e) {
+        console.error('Lỗi khởi tạo items:', e);
+        if (document.querySelectorAll('#items-tbody tr').length === 0) {
+            addItem();
         }
     }
 
-    bindAutoSave();
-    await loadReceipts();
+    // Kiểm tra URL param ?ma_hang=...
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const prefillMa = urlParams.get('ma_hang');
+        if (prefillMa && products.length) {
+            const p = products.find(x => x.ma_hang.toLowerCase() === prefillMa.toLowerCase());
+            if (p) {
+                selectProductForRow(1, p.ma_hang);
+                const slInput = document.getElementById('sl-1');
+                if (slInput) {
+                    slInput.focus();
+                    slInput.select();
+                }
+                showToast(`Đã tự động chọn: ${p.ten_hang}`, 'info');
+            }
+        }
+    } catch (e) {}
+
+    try {
+        bindAutoSave();
+    } catch (e) {}
+
+    try {
+        await loadReceipts();
+    } catch (e) {
+        console.error('Lỗi loadReceipts:', e);
+    }
 });

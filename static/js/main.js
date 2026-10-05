@@ -336,8 +336,10 @@ const TabManager = {
         document.querySelectorAll('.tab-frame').forEach(f => {
             if (f.id === `tab-iframe-${tabId}`) {
                 f.classList.add('active');
+                f.style.display = 'block';
             } else {
                 f.classList.remove('active');
+                f.style.display = 'none';
             }
         });
 

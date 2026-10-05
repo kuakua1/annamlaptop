@@ -318,7 +318,9 @@ body.is-embedded-tab .chrome-tab-container,
 html.is-embedded-tab #deadswitch-modal,
 body.is-embedded-tab #deadswitch-modal,
 html.is-embedded-tab #chrome-tab-viewport,
-body.is-embedded-tab #chrome-tab-viewport {
+body.is-embedded-tab #chrome-tab-viewport,
+html.is-embedded-tab .spinner-overlay,
+body.is-embedded-tab .spinner-overlay {
   display: none !important;
 }
 
@@ -333,8 +335,13 @@ body.is-embedded-tab .content-area {
   padding: 12px 20px 24px 20px !important;
 }
 
+html.is-embedded-tab .tab-direct-content,
+body.is-embedded-tab .tab-direct-content {
+  display: block !important;
+}
+
 /* In parent shell window, hide the direct content block completely (rendered inside iframe tabs instead) */
-body:not(.is-embedded-tab) .tab-direct-content {
+html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
   display: none !important;
 }
 
