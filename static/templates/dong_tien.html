@@ -244,6 +244,10 @@ async function deleteReceipt(id, maPhieu) {
         if (res.success) {
             showToast(`Đã xóa phiếu ${maPhieu}`, 'success');
             await loadSoQuy();
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('BALANCE_UPDATED');
+                broadcastDataUpdate('DEBT_UPDATED');
+            }
         }
     } catch (e) {
         showToast('Lỗi: ' + e.message, 'error');
@@ -389,6 +393,7 @@ async function saveQuyConfig() {
 
             // Tải lại số dư trang
             await loadSoQuy();
+            if (typeof broadcastDataUpdate === 'function') broadcastDataUpdate('BALANCE_UPDATED');
         }
     } catch (e) {
         showToast('Lỗi lưu số tiền quỹ: ' + e.message, 'error');

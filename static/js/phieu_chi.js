@@ -77,8 +77,15 @@ document.addEventListener('DOMContentLoaded', async function () {
 async function loadCompanyBalances() {
     try {
         const res = await apiRequest('/api/so-quy/balances');
-        if (res && res.success && res.data) {
-            companyBalances = res.data;
+        if (res && res.success) {
+            const src = (res.data && res.data.tien_mat !== undefined) ? res.data
+                : (res.balances && res.balances.tien_mat !== undefined) ? res.balances
+                : res;
+            companyBalances = {
+                tien_mat: parseFloat(src.tien_mat) || 0,
+                tien_gui: parseFloat(src.tien_gui) || 0,
+                tong_quy: parseFloat(src.tong_quy) || 0
+            };
         }
     } catch (e) {
         console.warn('Lỗi lấy số dư công ty:', e);
@@ -528,12 +535,7 @@ async function savePhieuChi() {
             await loadRecentChi();
             
             // Cập nhật lại số dư công ty tức thì
-            if (res.data && res.data.balances) {
-                companyBalances = res.data.balances;
-            } else {
-                await loadCompanyBalances();
-            }
-            updateBalanceUI();
+            await loadCompanyBalances();
 
             if (typeof broadcastDataUpdate === 'function') {
                 broadcastDataUpdate('DEBT_UPDATED');
