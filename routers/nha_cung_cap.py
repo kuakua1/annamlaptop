@@ -26,7 +26,11 @@ def _parse_record(rec: dict, row_num: int) -> dict:
 @router.get("/api/nha-cung-cap")
 async def get_nha_cung_cap(request: Request, user: str = Depends(require_login)):
     try:
-        records = db_manager.get_all("NhaCungCap")
+        dt_records = db_manager.get_all("DoiTuong")
+        if dt_records:
+            records = [{"id": r["id"], "ten_ncc": r["ten"], "dia_chi": r.get("dia_chi",""), "dien_thoai": r.get("dien_thoai",""), "email": r.get("email",""), "ghi_chu": r.get("ghi_chu","")} for r in dt_records]
+        else:
+            records = db_manager.get_all("NhaCungCap")
         nhap_records = db_manager.get_all("NhapHang")
 
         # Đếm số lượng NCC trùng tên để tránh gộp nhầm

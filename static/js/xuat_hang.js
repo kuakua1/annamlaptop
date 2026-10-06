@@ -101,29 +101,42 @@ function onKhInput(input) {
 
     if (!query || !customers.length) { box.classList.add('d-none'); return; }
 
-    const matches = customers.filter(c =>
-        (c.ten_kh || '').toLowerCase().includes(query) ||
-        (c.dien_thoai || '').includes(query)
-    ).slice(0, 8);
+    const matches = customers.filter(c => {
+        const name = (c.ten || c.ten_kh || c.ten_ncc || '').toLowerCase();
+        const phone = (c.dien_thoai || '').toLowerCase();
+        return name.includes(query) || phone.includes(query);
+    }).slice(0, 8);
 
     if (!matches.length) { box.classList.add('d-none'); return; }
 
-    box.innerHTML = matches.map(c => `
-        <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectKh('${c.id}')">
-            <div class="fw-semibold text-danger">${escapeHtml(c.ten_kh)}</div>
-            <div class="small text-muted">
-                ${c.dien_thoai ? '📞 ' + escapeHtml(c.dien_thoai) : ''}
-                ${c.dia_chi ? ' · ' + escapeHtml(c.dia_chi) : ''}
+    box.innerHTML = matches.map(c => {
+        const name = c.ten || c.ten_kh || c.ten_ncc || '';
+        const type = (c.phan_loai || '').toUpperCase();
+        let badge = '<span class="badge bg-secondary-subtle text-secondary border small ms-1">Đối tác</span>';
+        if (type === 'KHACH_HANG') badge = '<span class="badge bg-success-subtle text-success border small ms-1">Khách Hàng</span>';
+        else if (type === 'NHA_CUNG_CAP') badge = '<span class="badge bg-info-subtle text-info border small ms-1">Nhà Cung Cấp</span>';
+
+        return `
+            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectKh('${c.id}')">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold text-danger">${escapeHtml(name)}</span>
+                    ${badge}
+                </div>
+                <div class="small text-muted mt-1">
+                    ${c.dien_thoai ? '📞 ' + escapeHtml(c.dien_thoai) : ''}
+                    ${c.dia_chi ? ' · ' + escapeHtml(c.dia_chi) : ''}
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
     box.classList.remove('d-none');
 }
 
 function selectKh(cOrId) {
     const c = typeof cOrId === 'object' ? cOrId : customers.find(x => x.id === cOrId);
     if (!c) return;
-    document.getElementById('f-kh-ten').value = c.ten_kh || '';
+    const name = c.ten || c.ten_kh || c.ten_ncc || '';
+    document.getElementById('f-kh-ten').value = name;
     document.getElementById('f-kh-id').value = c.id || '';
     document.getElementById('f-kh-dia-chi').value = c.dia_chi || '';
     document.getElementById('f-kh-sdt').value = c.dien_thoai || '';
@@ -266,7 +279,7 @@ async function loadData() {
     try {
         const [pRes, cRes] = await Promise.all([
             apiRequest('/api/hang-hoa'),
-            apiRequest('/api/khach-hang'),
+            apiRequest('/api/doi-tuong'),
         ]);
         products = pRes.data || [];
         customers = cRes.data || [];

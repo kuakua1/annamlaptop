@@ -11,7 +11,7 @@ from config import (
     SPREADSHEET_ID,
     SHEET_HANG_HOA, SHEET_NHAP_HANG, SHEET_XUAT_HANG,
     SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG, SHEET_CONFIG,
-    SHEET_SO_QUY,
+    SHEET_SO_QUY, SHEET_DOI_TUONG,
 )
 
 SCOPES = [
@@ -144,13 +144,20 @@ COLUMN_ALIAS_MAP = {
     "tiền khách nợ (đ)": "tien_khach_no",
     "tien_khach_no": "tien_khach_no",
     "khách nợ": "tien_khach_no",
-    # NhaCungCap & KhachHang
+    # NhaCungCap & KhachHang & DoiTuong
     "tên nhà cung cấp": "ten_ncc",
     "tên ncc": "ten_ncc",
     "ten_ncc": "ten_ncc",
     "tên khách hàng": "ten_kh",
     "tên kh": "ten_kh",
     "ten_kh": "ten_kh",
+    "tên đối tượng": "ten",
+    "tên đối tác": "ten",
+    "ten_doi_tuong": "ten",
+    "ten": "ten",
+    "phân loại": "phan_loai",
+    "loại đối tượng": "phan_loai",
+    "phan_loai": "phan_loai",
     "địa chỉ": "dia_chi",
     "dia_chi": "dia_chi",
     "số điện thoại": "dien_thoai",
@@ -162,7 +169,6 @@ COLUMN_ALIAS_MAP = {
     "ngày": "ngay",
     "ngày thu/chi": "ngay",
     "loại phiếu": "loai_phieu",
-    "loai_phieu": "loai_phieu",
     "loại quỹ": "loai_quy",
     "loai_quy": "loai_quy",
     "đối tượng": "doi_tuong",

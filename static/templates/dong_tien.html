@@ -141,6 +141,12 @@ document.addEventListener('DOMContentLoaded', function () {
     loadSoQuy();
 });
 
+window.addEventListener('message', function (e) {
+    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
+        loadSoQuy();
+    }
+});
+
 async function loadSoQuy() {
     try {
         const res = await apiRequest('/api/dong-tien/tong-quan');
@@ -385,14 +391,6 @@ async function saveQuyConfig() {
             await loadSoQuy();
         }
     } catch (e) {
-        showToast('Lỗi lưu số tiền quỹ: ' + e.message, 'error');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = origHtml;
-        }
-    }
-}
         showToast('Lỗi lưu số tiền quỹ: ' + e.message, 'error');
     } finally {
         if (btn) {

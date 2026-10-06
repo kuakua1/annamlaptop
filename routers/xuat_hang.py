@@ -40,12 +40,12 @@ async def get_xuat_hang(
 ):
     try:
         records = db_manager.get_all("XuatHang")
-        kh_records = db_manager.get_all("KhachHang")
+        kh_records = db_manager.get_all("DoiTuong") or db_manager.get_all("KhachHang")
         hang_records = db_manager.get_all("HangHoa")
 
         kh_map = {}
         for k in kh_records:
-            ten = str(k.get("ten_kh", "")).strip()
+            ten = str(k.get("ten") or k.get("ten_kh") or k.get("ten_ncc") or "").strip()
             kid = str(k.get("id", "")).strip()
             kh_data = {
                 "ten_kh": ten,
@@ -173,45 +173,56 @@ async def create_xuat_hang(
 
         so_phieu = db_manager.generate_so_phieu_xuat(data.ngay_xuat)
 
-        # 2. Tự động lưu/khớp khách hàng
+        # 2. Tự động lưu/khớp Đối Tượng / Khách Hàng
         if kh_ten or kh_id or kh_sdt:
-            kh_list = db_manager.get_all("KhachHang")
+            dt_list = db_manager.get_all("DoiTuong")
             matched = None
             if kh_id:
-                for k in kh_list:
-                    if str(k.get("id", "")).strip() == kh_id:
-                        matched = k
+                for d in dt_list:
+                    if str(d.get("id", "")).strip() == kh_id:
+                        matched = d
                         break
             if not matched and kh_sdt:
-                for k in kh_list:
-                    k_sdt = str(k.get("dien_thoai", "")).strip()
-                    if k_sdt and k_sdt == kh_sdt:
-                        matched = k
+                for d in dt_list:
+                    d_sdt = str(d.get("dien_thoai", "")).strip()
+                    if d_sdt and d_sdt == kh_sdt:
+                        matched = d
                         break
             if not matched and kh_ten:
-                for k in kh_list:
-                    k_ten = str(k.get("ten_kh", "")).strip().lower()
-                    k_sdt = str(k.get("dien_thoai", "")).strip()
-                    if k_ten == kh_ten.lower():
-                        if not k_sdt or not kh_sdt or k_sdt == kh_sdt:
-                            matched = k
-                            break
+                for d in dt_list:
+                    d_ten = str(d.get("ten", "")).strip().lower()
+                    if d_ten == kh_ten.lower():
+                        matched = d
+                        break
 
             if not matched:
                 new_kh_id = str(int(time.time() * 1000))
-                db_manager.insert_khach_hang({
+                db_manager.insert_doi_tuong({
                     "id": new_kh_id,
-                    "ten_kh": kh_ten,
+                    "ten": kh_ten,
+                    "phan_loai": "CA_HAI",
                     "dia_chi": kh_dia_chi,
                     "dien_thoai": kh_sdt,
                     "email": "",
                     "ghi_chu": "Tự động lưu từ phiếu xuất",
                 })
+                # Lưu đồng thời vào KhachHang để tương thích
+                try:
+                    db_manager.insert_khach_hang({
+                        "id": new_kh_id,
+                        "ten_kh": kh_ten,
+                        "dia_chi": kh_dia_chi,
+                        "dien_thoai": kh_sdt,
+                        "email": "",
+                        "ghi_chu": "Tự động lưu từ phiếu xuất",
+                    })
+                except Exception:
+                    pass
                 kh_id = new_kh_id
             else:
                 kh_id = str(matched.get("id", "")).strip()
                 if (not matched.get("dien_thoai") and kh_sdt) or (not matched.get("dia_chi") and kh_dia_chi):
-                    db_manager.update_khach_hang(kh_id, {
+                    db_manager.update_doi_tuong(kh_id, {
                         "dia_chi": kh_dia_chi or matched.get("dia_chi", ""),
                         "dien_thoai": kh_sdt or matched.get("dien_thoai", "")
                     })

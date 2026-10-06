@@ -9,7 +9,7 @@ from services.sheets_service import (
     sheets_service,
     parse_batches_str, format_batches_str,
     SHEET_HANG_HOA, SHEET_NHAP_HANG, SHEET_XUAT_HANG,
-    SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG, SHEET_CONFIG, SHEET_SO_QUY
+    SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG, SHEET_CONFIG, SHEET_SO_QUY, SHEET_DOI_TUONG
 )
 
 # Đường dẫn database SQLite nội bộ
@@ -209,6 +209,69 @@ class DatabaseManager:
                     ghi_chu TEXT
                 )
             """)
+
+            # 8. Bảng DoiTuong (Danh Mục Đối Tượng: Gộp Khách Hàng & Nhà Cung Cấp)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS DoiTuong (
+                    id TEXT PRIMARY KEY,
+                    ten TEXT NOT NULL,
+                    phan_loai TEXT DEFAULT 'CA_HAI',
+                    dia_chi TEXT,
+                    dien_thoai TEXT,
+                    email TEXT,
+                    ghi_chu TEXT
+                )
+            """)
+
+            # Tự động gộp dữ liệu từ NhaCungCap và KhachHang vào DoiTuong nếu DoiTuong còn trống
+            try:
+                cursor.execute("SELECT COUNT(*) as cnt FROM DoiTuong")
+                dt_count = cursor.fetchone()["cnt"]
+                if dt_count == 0:
+                    cursor.execute("SELECT id, ten_ncc, dia_chi, dien_thoai, email, ghi_chu FROM NhaCungCap")
+                    ncc_rows = [dict(r) for r in cursor.fetchall()]
+                    cursor.execute("SELECT id, ten_kh, dia_chi, dien_thoai, email, ghi_chu FROM KhachHang")
+                    kh_rows = [dict(r) for r in cursor.fetchall()]
+
+                    phone_map = {}
+                    name_map = {}
+
+                    for n in ncc_rows:
+                        nid = str(n["id"])
+                        nten = str(n.get("ten_ncc", "") or "").strip()
+                        nsdt = str(n.get("dien_thoai", "") or "").strip()
+                        cursor.execute("""
+                            INSERT INTO DoiTuong (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (nid, nten, "NHA_CUNG_CAP", str(n.get("dia_chi", "") or ""), nsdt, str(n.get("email", "") or ""), str(n.get("ghi_chu", "") or "")))
+                        if nsdt:
+                            phone_map[nsdt] = nid
+                        if nten:
+                            name_map[nten.lower()] = nid
+
+                    for k in kh_rows:
+                        kid = str(k["id"])
+                        kten = str(k.get("ten_kh", "") or "").strip()
+                        ksdt = str(k.get("dien_thoai", "") or "").strip()
+                        matched_id = None
+                        if ksdt and ksdt in phone_map:
+                            matched_id = phone_map[ksdt]
+                        elif kten and kten.lower() in name_map:
+                            matched_id = name_map[kten.lower()]
+
+                        if matched_id:
+                            cursor.execute("UPDATE DoiTuong SET phan_loai = 'CA_HAI' WHERE id = ?", (matched_id,))
+                        else:
+                            cursor.execute("""
+                                INSERT INTO DoiTuong (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (kid, kten, "KHACH_HANG", str(k.get("dia_chi", "") or ""), ksdt, str(k.get("email", "") or ""), str(k.get("ghi_chu", "") or "")))
+                            if ksdt:
+                                phone_map[ksdt] = kid
+                            if kten:
+                                name_map[kten.lower()] = kid
+            except Exception as mig_e:
+                print(f"[INIT DB] Lỗi khởi tạo/gộp DoiTuong: {mig_e}")
 
             conn.commit()
 
@@ -506,6 +569,213 @@ class DatabaseManager:
                 conn.commit()
         self._enqueue_task("DELETE_ROW", SHEET_NHA_CUNG_CAP, {"id": record_id})
         return True
+
+    # ── 4. Danh Mục Đối Tượng CRUD (Hợp Nhất NCC & Khách Hàng) ─────────────────
+
+    def insert_doi_tuong(self, item: dict) -> dict:
+        dt_id = str(item.get("id") or int(time.time() * 1000))
+        item["id"] = dt_id
+        ten = str(item.get("ten") or "").strip()
+        phan_loai = str(item.get("phan_loai") or "CA_HAI").strip().upper()
+        dia_chi = str(item.get("dia_chi") or "").strip()
+        dien_thoai = str(item.get("dien_thoai") or "").strip()
+        email = str(item.get("email") or "").strip()
+        ghi_chu = str(item.get("ghi_chu") or "").strip()
+
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO DoiTuong (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (dt_id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu))
+                conn.commit()
+
+        row = [dt_id, ten, phan_loai, dien_thoai, dia_chi, email, ghi_chu]
+        self._enqueue_task("APPEND_ROW", SHEET_DOI_TUONG, {"row": row})
+        return item
+
+    def update_doi_tuong(self, record_id: str, data: dict) -> dict | None:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM DoiTuong WHERE id = ?", (str(record_id),))
+                cur = cursor.fetchone()
+                if not cur:
+                    return None
+                cur_dict = dict(cur)
+                updated = {
+                    "id": record_id,
+                    "ten": str(data.get("ten", cur_dict["ten"]) or "").strip(),
+                    "phan_loai": str(data.get("phan_loai", cur_dict["phan_loai"]) or "CA_HAI").strip().upper(),
+                    "dia_chi": str(data.get("dia_chi", cur_dict["dia_chi"]) or "").strip(),
+                    "dien_thoai": str(data.get("dien_thoai", cur_dict["dien_thoai"]) or "").strip(),
+                    "email": str(data.get("email", cur_dict["email"]) or "").strip(),
+                    "ghi_chu": str(data.get("ghi_chu", cur_dict["ghi_chu"]) or "").strip(),
+                }
+                cursor.execute("""
+                    UPDATE DoiTuong SET ten = ?, phan_loai = ?, dia_chi = ?, dien_thoai = ?, email = ?, ghi_chu = ?
+                    WHERE id = ?
+                """, (updated["ten"], updated["phan_loai"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"], record_id))
+                conn.commit()
+
+        row = [record_id, updated["ten"], updated["phan_loai"], updated["dien_thoai"], updated["dia_chi"], updated["email"], updated["ghi_chu"]]
+        self._enqueue_task("UPDATE_ROW", SHEET_DOI_TUONG, {"id": record_id, "row": row})
+        return updated
+
+    def delete_doi_tuong(self, record_id: str) -> bool:
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM DoiTuong WHERE id = ?", (str(record_id),))
+                conn.commit()
+        self._enqueue_task("DELETE_ROW", SHEET_DOI_TUONG, {"id": record_id})
+        return True
+
+    def find_or_create_doi_tuong(self, ten: str, sdt: str = "", dia_chi: str = "", default_type: str = "CA_HAI") -> str:
+        """Tìm đối tượng theo SĐT hoặc Tên trong DoiTuong. Nếu chưa có, tự động tạo mới."""
+        ten_clean = (ten or "").strip()
+        sdt_clean = (sdt or "").strip()
+        dia_chi_clean = (dia_chi or "").strip()
+
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                matched = None
+                if sdt_clean:
+                    cursor.execute("SELECT id, ten FROM DoiTuong WHERE dien_thoai = ? LIMIT 1", (sdt_clean,))
+                    matched = cursor.fetchone()
+                if not matched and ten_clean:
+                    cursor.execute("SELECT id, ten FROM DoiTuong WHERE LOWER(TRIM(ten)) = LOWER(?) LIMIT 1", (ten_clean,))
+                    matched = cursor.fetchone()
+
+                if matched:
+                    return str(matched["id"])
+
+                # Tạo mới
+                new_id = str(int(time.time() * 1000))
+                cursor.execute("""
+                    INSERT INTO DoiTuong (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, '', 'Tự động lưu từ phiếu')
+                """, (new_id, ten_clean or f"Đối tác {new_id}", default_type, dia_chi_clean, sdt_clean))
+                conn.commit()
+
+        row = [new_id, ten_clean, default_type, sdt_clean, dia_chi_clean, "", "Tự động lưu từ phiếu"]
+        self._enqueue_task("APPEND_ROW", SHEET_DOI_TUONG, {"row": row})
+        return new_id
+
+    def get_doi_tuong_history(self, record_id: str) -> dict:
+        """Lấy toàn bộ lịch sử giao dịch 2 chiều (Cả Nhập hàng & Xuất hàng) của một đối tượng."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM DoiTuong WHERE id = ?", (str(record_id),))
+            dt_cur = cursor.fetchone()
+            if not dt_cur:
+                return {}
+            dt = dict(dt_cur)
+
+            target_id = str(dt["id"]).strip()
+            target_name = str(dt["ten"] or "").strip().lower()
+            target_phone = str(dt.get("dien_thoai") or "").strip()
+
+            # 1. Phiếu Nhập
+            cursor.execute("SELECT * FROM NhapHang")
+            nhap_all = [dict(r) for r in cursor.fetchall()]
+            nhap_matched = []
+            for n in nhap_all:
+                ref = str(n.get("nha_cung_cap_id") or "").strip()
+                sdt = str(n.get("dien_thoai") or "").strip()
+                if (ref == target_id) or (target_name and ref.lower() == target_name) or (target_phone and sdt == target_phone):
+                    nhap_matched.append(n)
+
+            # 2. Phiếu Xuất
+            cursor.execute("SELECT * FROM XuatHang")
+            xuat_all = [dict(r) for r in cursor.fetchall()]
+            xuat_matched = []
+            for x in xuat_all:
+                ref = str(x.get("khach_hang_id") or "").strip()
+                sdt = str(x.get("dien_thoai") or "").strip()
+                if (ref == target_id) or (target_name and ref.lower() == target_name) or (target_phone and sdt == target_phone):
+                    xuat_matched.append(x)
+
+        # Gom nhóm phiếu nhập theo so_phieu
+        nhap_by_so_phieu = {}
+        for row in nhap_matched:
+            sp = str(row.get("so_phieu") or "").strip()
+            if sp not in nhap_by_so_phieu:
+                nhap_by_so_phieu[sp] = {
+                    "so_phieu": sp,
+                    "ngay": str(row.get("ngay_nhap") or "").strip(),
+                    "loai": "NHAP",
+                    "items": [],
+                    "tong_sl": 0,
+                    "tong_tien": 0.0,
+                    "ghi_chu": str(row.get("ghi_chu") or "").strip(),
+                }
+            sl = int(row.get("so_luong") or 0)
+            tien = float(row.get("thanh_tien") or 0)
+            nhap_by_so_phieu[sp]["items"].append(row)
+            nhap_by_so_phieu[sp]["tong_sl"] += sl
+            nhap_by_so_phieu[sp]["tong_tien"] += tien
+
+        # Gom nhóm phiếu xuất theo so_phieu
+        xuat_by_so_phieu = {}
+        for row in xuat_matched:
+            sp = str(row.get("so_phieu") or "").strip()
+            if sp not in xuat_by_so_phieu:
+                xuat_by_so_phieu[sp] = {
+                    "so_phieu": sp,
+                    "ngay": str(row.get("ngay_xuat") or "").strip(),
+                    "loai": "XUAT",
+                    "items": [],
+                    "tong_sl": 0,
+                    "tong_tien": 0.0,
+                    "ghi_chu": str(row.get("ghi_chu") or "").strip(),
+                }
+            sl = int(row.get("so_luong") or 0)
+            tien = float(row.get("thanh_tien") or 0)
+            xuat_by_so_phieu[sp]["items"].append(row)
+            xuat_by_so_phieu[sp]["tong_sl"] += sl
+            xuat_by_so_phieu[sp]["tong_tien"] += tien
+
+        receipts_nhap = list(nhap_by_so_phieu.values())
+        receipts_nhap.sort(key=lambda x: (x["ngay"], x["so_phieu"]), reverse=True)
+
+        receipts_xuat = list(xuat_by_so_phieu.values())
+        receipts_xuat.sort(key=lambda x: (x["ngay"], x["so_phieu"]), reverse=True)
+
+        all_receipts = receipts_nhap + receipts_xuat
+        all_receipts.sort(key=lambda x: (x["ngay"], x["so_phieu"]), reverse=True)
+
+        all_items = []
+        for n in nhap_matched:
+            item_copy = dict(n)
+            item_copy["loai"] = "NHAP"
+            item_copy["ngay"] = n.get("ngay_nhap")
+            item_copy["don_gia"] = n.get("gia_nhap")
+            all_items.append(item_copy)
+        for x in xuat_matched:
+            item_copy = dict(x)
+            item_copy["loai"] = "XUAT"
+            item_copy["ngay"] = x.get("ngay_xuat")
+            item_copy["don_gia"] = x.get("gia_ban")
+            all_items.append(item_copy)
+        all_items.sort(key=lambda x: (str(x.get("ngay") or ""), str(x.get("so_phieu") or "")), reverse=True)
+
+        return {
+            "doi_tuong": dt,
+            "summary": {
+                "tong_so_phieu_nhap": len(receipts_nhap),
+                "tong_tien_nhap": sum(r["tong_tien"] for r in receipts_nhap),
+                "tong_so_phieu_xuat": len(receipts_xuat),
+                "tong_tien_xuat": sum(r["tong_tien"] for r in receipts_xuat),
+                "tong_so_phieu": len(all_receipts),
+            },
+            "phieu_nhap": receipts_nhap,
+            "phieu_xuat": receipts_xuat,
+            "tat_ca_phieu": all_receipts,
+            "chi_tiet_hang": all_items
+        }
 
     def generate_so_phieu_nhap(self, date_str: str = "") -> str:
         """Tạo mã số phiếu nhập rút gọn dạng NHxxxx/MM (ví dụ: NH1003/10)."""
@@ -1464,6 +1734,30 @@ class DatabaseManager:
                     except Exception as e:
                         counts["NhaCungCap_err"] = str(e)
 
+                # 3.1. Đồng bộ Danh Mục Đối Tượng
+                if do_all or target in ("doituong", "doitac"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_DOI_TUONG, force_refresh=True)
+                        if records:
+                            cursor.execute("DELETE FROM DoiTuong")
+                            for r in records:
+                                cursor.execute("""
+                                    INSERT OR REPLACE INTO DoiTuong 
+                                    (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    str(r.get("id") or ""),
+                                    str(r.get("ten") or r.get("ten_doi_tuong") or ""),
+                                    str(r.get("phan_loai") or "CA_HAI"),
+                                    str(r.get("dia_chi") or ""),
+                                    str(r.get("dien_thoai") or ""),
+                                    str(r.get("email") or ""),
+                                    str(r.get("ghi_chu") or "")
+                                ))
+                            counts["DoiTuong"] = len(records)
+                    except Exception as e:
+                        counts["DoiTuong_err"] = str(e)
+
                 # 4. Đồng bộ Bảng Nhập Hàng
                 if do_all or target in ("nhaphang", "nhap"):
                     try:
@@ -1635,6 +1929,25 @@ class DatabaseManager:
                     counts["NhaCungCap"] = len(rows)
                 except Exception as e:
                     counts["NhaCungCap_err"] = str(e)
+
+                # 3.1. Đẩy DoiTuong
+                try:
+                    cursor.execute("SELECT id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu FROM DoiTuong")
+                    rows = cursor.fetchall()
+                    ws = sheets_service._sheet(SHEET_DOI_TUONG)
+                    header = ["ID", "Tên Đối Tượng", "Phân Loại", "Điện Thoại", "Địa Chỉ", "Email", "Ghi Chú"]
+                    sheet_data = [header]
+                    for r in rows:
+                        sheet_data.append([
+                            r["id"], r["ten"], r["phan_loai"],
+                            r["dien_thoai"], r["dia_chi"], r["email"], r["ghi_chu"]
+                        ])
+                    ws.clear()
+                    ws.update("A1", sheet_data)
+                    sheets_service.invalidate_records_cache(SHEET_DOI_TUONG)
+                    counts["DoiTuong"] = len(rows)
+                except Exception as e:
+                    counts["DoiTuong_err"] = str(e)
 
                 # 4. Đẩy NhapHang
                 try:

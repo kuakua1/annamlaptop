@@ -1,128 +1,208 @@
 /**
- * danh_muc.js - Suppliers & Customers management with search, filter and full purchase/import history
+ * danh_muc.js - Unified Partners Management (Danh Mục Đối Tượng: Khách Hàng & Nhà Cung Cấp)
  */
 
-let editingNccId = null;
-let editingKhId = null;
+let editingDtId = null;
+let rawDoiTuongList = [];
+let currentHistoryPartner = null;
 
-let rawNCCList = [];
-let rawKHList = [];
+document.addEventListener('DOMContentLoaded', function () {
+    loadDoiTuong();
+});
 
-// ── Nhà Cung Cấp ─────────────────────────────────────────────────────────────
+window.addEventListener('message', function (e) {
+    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'DATA_CHANGED' || e.data.type === 'PRODUCTS_UPDATED')) {
+        loadDoiTuong(true);
+    }
+});
 
-async function loadNCC(silent = false) {
+// ── Tải dữ liệu Đối Tượng ────────────────────────────────────────────────────
+
+async function loadDoiTuong(silent = false) {
     try {
         if (!silent) showLoading();
-        const res = await apiRequest('/api/nha-cung-cap');
-        rawNCCList = res.data || [];
-        const badge = document.getElementById('ncc-badge-count');
-        if (badge) badge.textContent = rawNCCList.length;
-        filterNCC();
+        const res = await apiRequest('/api/doi-tuong');
+        rawDoiTuongList = res.data || [];
+
+        // Cập nhật thẻ thống kê
+        updateStatCards(rawDoiTuongList);
+
+        filterDoiTuong();
     } catch (e) {
-        if (!silent) showToast(e.message, 'error');
+        if (!silent) showToast('Lỗi tải danh mục đối tượng: ' + e.message, 'error');
     } finally {
         if (!silent) hideLoading();
     }
 }
 
-function filterNCC() {
-    const search = (document.getElementById('ncc-search-input')?.value || '').toLowerCase().trim();
-    const status = document.getElementById('ncc-filter-status')?.value || 'all';
-    const sortBy = document.getElementById('ncc-sort-by')?.value || 'default';
+function updateStatCards(list) {
+    const total = list.length;
+    let countKh = 0;
+    let countNcc = 0;
+    let countBoth = 0;
 
-    let list = [...rawNCCList];
+    list.forEach(r => {
+        const type = (r.phan_loai || '').toUpperCase();
+        if (type === 'KHACH_HANG') countKh++;
+        else if (type === 'NHA_CUNG_CAP') countNcc++;
+        else countBoth++;
+    });
 
-    // Search filter
-    if (search) {
+    const elTotal = document.getElementById('stat-tong');
+    const elKh = document.getElementById('stat-kh');
+    const elNcc = document.getElementById('stat-ncc');
+    const elCaHai = document.getElementById('stat-cahai');
+
+    if (elTotal) elTotal.innerText = total;
+    if (elKh) elKh.innerText = countKh;
+    if (elNcc) elNcc.innerText = countNcc;
+    if (elCaHai) elCaHai.innerText = countBoth;
+}
+
+// ── Bộ lọc & Tìm kiếm ─────────────────────────────────────────────────────────
+
+function filterDoiTuong() {
+    const q = (document.getElementById('dt-search-input')?.value || '').toLowerCase().trim();
+    const typeFilter = document.getElementById('dt-filter-type')?.value || 'all';
+    const statusFilter = document.getElementById('dt-filter-status')?.value || 'all';
+    const sortBy = document.getElementById('dt-sort-by')?.value || 'default';
+
+    let list = [...rawDoiTuongList];
+
+    // 1. Tìm kiếm chuỗi
+    if (q) {
         list = list.filter(r => {
-            const text = `${r.ten_ncc || ''} ${r.dien_thoai || ''} ${r.dia_chi || ''} ${r.email || ''} ${r.ghi_chu || ''}`.toLowerCase();
-            return text.includes(search);
+            const str = `${r.ten || ''} ${r.dien_thoai || ''} ${r.dia_chi || ''} ${r.email || ''} ${r.ghi_chu || ''}`.toLowerCase();
+            return str.includes(q);
         });
     }
 
-    // Status filter
-    if (status === 'has_orders') {
-        list = list.filter(r => (r.so_don_nhap || 0) > 0);
-    } else if (status === 'no_orders') {
-        list = list.filter(r => (r.so_don_nhap || 0) === 0);
+    // 2. Lọc theo Phân loại
+    if (typeFilter !== 'all') {
+        list = list.filter(r => (r.phan_loai || 'CA_HAI').toUpperCase() === typeFilter);
     }
 
-    // Sort
+    // 3. Lọc theo trạng thái giao dịch
+    if (statusFilter === 'has_orders') {
+        list = list.filter(r => (r.tong_don || 0) > 0);
+    } else if (statusFilter === 'has_nhap') {
+        list = list.filter(r => (r.so_don_nhap || 0) > 0);
+    } else if (statusFilter === 'has_xuat') {
+        list = list.filter(r => (r.so_don_xuat || 0) > 0);
+    } else if (statusFilter === 'no_orders') {
+        list = list.filter(r => (r.tong_don || 0) === 0);
+    }
+
+    // 4. Sắp xếp
     if (sortBy === 'name_asc') {
-        list.sort((a, b) => (a.ten_ncc || '').localeCompare(b.ten_ncc || '', 'vi'));
+        list.sort((a, b) => (a.ten || '').localeCompare(b.ten || '', 'vi'));
     } else if (sortBy === 'spent_desc') {
+        list.sort((a, b) => (b.tong_giao_dich || 0) - (a.tong_giao_dich || 0));
+    } else if (sortBy === 'xuat_desc') {
+        list.sort((a, b) => (b.tong_tien_xuat || 0) - (a.tong_tien_xuat || 0));
+    } else if (sortBy === 'nhap_desc') {
         list.sort((a, b) => (b.tong_tien_nhap || 0) - (a.tong_tien_nhap || 0));
     } else if (sortBy === 'orders_desc') {
-        list.sort((a, b) => (b.so_don_nhap || 0) - (a.so_don_nhap || 0));
+        list.sort((a, b) => (b.tong_don || 0) - (a.tong_don || 0));
     }
 
-    // Update counter
-    const summaryEl = document.getElementById('ncc-filter-summary');
+    // Cập nhật tóm tắt số lượng
+    const summaryEl = document.getElementById('dt-filter-summary');
     if (summaryEl) {
-        summaryEl.textContent = `${list.length} / ${rawNCCList.length} NCC`;
+        summaryEl.innerText = `${list.length} / ${rawDoiTuongList.length} Đối Tượng`;
     }
 
-    renderNCCTable(list);
+    renderDoiTuongTable(list);
 }
 
-function clearNCCSearch() {
-    const input = document.getElementById('ncc-search-input');
+function clearDoiTuongSearch() {
+    const input = document.getElementById('dt-search-input');
     if (input) input.value = '';
-    filterNCC();
+    filterDoiTuong();
 }
 
-function renderNCCTable(records) {
-    const tbody = document.getElementById('ncc-tbody');
+// ── Render Bảng Đối Tượng ────────────────────────────────────────────────────
+
+function renderDoiTuongTable(records) {
+    const tbody = document.getElementById('dt-tbody');
     if (!tbody) return;
 
     if (!records.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Không tìm thấy nhà cung cấp nào phù hợp</td></tr>';
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" class="text-center text-muted py-5">
+                    <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
+                    Không tìm thấy đối tượng nào phù hợp
+                </td>
+            </tr>
+        `;
         return;
     }
 
     tbody.innerHTML = records.map((r, i) => {
-        const hasOrders = (r.so_don_nhap || 0) > 0;
+        const type = (r.phan_loai || 'CA_HAI').toUpperCase();
+        let badgeType = '';
+        if (type === 'KHACH_HANG') {
+            badgeType = '<span class="badge bg-success-subtle text-success-emphasis border border-success"><i class="bi bi-person me-1"></i>Khách Hàng</span>';
+        } else if (type === 'NHA_CUNG_CAP') {
+            badgeType = '<span class="badge bg-info-subtle text-info-emphasis border border-info"><i class="bi bi-truck me-1"></i>Nhà Cung Cấp</span>';
+        } else {
+            badgeType = '<span class="badge bg-primary-subtle text-primary-emphasis border border-primary"><i class="bi bi-arrow-left-right me-1"></i>Cả Hai</span>';
+        }
+
+        const hasNhap = (r.so_don_nhap || 0) > 0;
+        const hasXuat = (r.so_don_xuat || 0) > 0;
+
+        const nhapHtml = hasNhap
+            ? `<button class="btn btn-sm btn-outline-primary py-0 px-2 font-monospace small" onclick="viewDoiTuongHistory('${r.id}', 'nhap')" title="Xem phiếu nhập">
+                 ${r.so_don_nhap} đơn &bull; ${formatVND(r.tong_tien_nhap)}
+               </button>`
+            : '<span class="text-muted small">-</span>';
+
+        const xuatHtml = hasXuat
+            ? `<button class="btn btn-sm btn-outline-success py-0 px-2 font-monospace small" onclick="viewDoiTuongHistory('${r.id}', 'xuat')" title="Xem phiếu xuất">
+                 ${r.so_don_xuat} đơn &bull; ${formatVND(r.tong_tien_xuat)}
+               </button>`
+            : '<span class="text-muted small">-</span>';
+
+        const initial = (r.ten || 'D').trim().charAt(0).toUpperCase();
+
         return `
             <tr>
-                <td class="text-center text-muted">${i + 1}</td>
+                <td class="text-center text-muted small">${i + 1}</td>
                 <td>
                     <div class="d-flex align-items-center">
-                        <span class="avatar-sm bg-primary-subtle text-primary rounded-circle d-inline-flex align-items-center justify-content-center me-2" style="width:32px;height:32px;font-size:13px;font-weight:bold;">
-                            ${(r.ten_ncc || 'N').charAt(0).toUpperCase()}
+                        <span class="avatar-sm bg-primary-subtle text-primary rounded-circle d-inline-flex align-items-center justify-content-center me-2 fw-bold" style="width:34px;height:34px;font-size:14px;flex-shrink:0;">
+                            ${initial}
                         </span>
                         <div>
-                            <a href="javascript:void(0)" onclick="viewNCCHistory('${r.id}')" class="fw-bold text-primary text-decoration-none" title="Bấm xem lịch sử nhập hàng">
-                                ${escapeHtml(r.ten_ncc)}
+                            <a href="javascript:void(0)" onclick="viewDoiTuongHistory('${r.id}')" class="fw-bold text-dark text-decoration-none hover-primary" title="Bấm xem lịch sử mua / bán 2 chiều">
+                                ${escapeHtml(r.ten)}
                             </a>
-                            ${r.ghi_chu ? `<div class="text-muted small text-truncate" style="max-width:230px;">${escapeHtml(r.ghi_chu)}</div>` : ''}
+                            ${r.ghi_chu ? `<div class="text-muted small text-truncate" style="max-width:240px;">${escapeHtml(r.ghi_chu)}</div>` : ''}
                         </div>
                     </div>
                 </td>
-                <td>
-                    ${r.dien_thoai ? `<a href="tel:${r.dien_thoai}" class="text-decoration-none text-dark fw-semibold"><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(r.dien_thoai)}</a>` : '<span class="text-muted">-</span>'}
+                <td>${badgeType}</td>
+                <td class="font-monospace">
+                    ${r.dien_thoai ? `<a href="tel:${r.dien_thoai}" class="text-decoration-none text-dark fw-semibold"><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(r.dien_thoai)}</a>` : '<span class="text-muted small">-</span>'}
                 </td>
                 <td>
-                    ${r.dia_chi ? `<span class="text-truncate d-inline-block" style="max-width:250px;" title="${escapeHtml(r.dia_chi)}"><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(r.dia_chi)}</span>` : '<span class="text-muted">-</span>'}
+                    ${r.dia_chi ? `<span class="text-truncate d-inline-block small" style="max-width:220px;" title="${escapeHtml(r.dia_chi)}"><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(r.dia_chi)}</span>` : '<span class="text-muted small">-</span>'}
                 </td>
                 <td>
-                    ${r.email ? `<span class="text-truncate d-inline-block small" style="max-width:160px;"><i class="bi bi-envelope text-info me-1"></i>${escapeHtml(r.email)}</span>` : '<span class="text-muted">-</span>'}
+                    ${r.email ? `<span class="text-truncate d-inline-block small" style="max-width:160px;" title="${escapeHtml(r.email)}"><i class="bi bi-envelope text-info me-1"></i>${escapeHtml(r.email)}</span>` : '<span class="text-muted small">-</span>'}
                 </td>
-                <td class="text-end">
-                    ${hasOrders 
-                        ? `<button class="btn btn-sm btn-outline-primary font-monospace fw-bold py-1 px-2 text-nowrap" onclick="viewNCCHistory('${r.id}')" title="Xem lịch sử nhập hàng">
-                             <i class="bi bi-box-arrow-in-down me-1"></i>${r.so_don_nhap} phiếu &bull; ${formatVND(r.tong_tien_nhap)}
-                           </button>`
-                        : `<span class="badge bg-light text-muted border py-1 px-2">Chưa có đơn</span>`
-                    }
-                </td>
+                <td class="text-end">${nhapHtml}</td>
+                <td class="text-end">${xuatHtml}</td>
                 <td class="text-center text-nowrap">
-                    <button class="btn btn-sm btn-primary me-1 px-2 py-1" onclick="viewNCCHistory('${r.id}')" title="Xem chi tiết lịch sử nhập hàng">
+                    <button class="btn btn-sm btn-primary me-1 px-2 py-1" onclick="viewDoiTuongHistory('${r.id}')" title="Xem chi tiết lịch sử giao dịch 2 chiều">
                         <i class="bi bi-clock-history me-1"></i>Lịch sử
                     </button>
-                    <button class="btn btn-sm btn-outline-primary btn-icon me-1" onclick="openEditNCC('${r.id}')" title="Chỉnh sửa">
+                    <button class="btn btn-sm btn-outline-secondary me-1 p-1 px-2" onclick="editDoiTuong('${r.id}')" title="Sửa thông tin">
                         <i class="bi bi-pencil"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteNCC('${r.id}')" title="Xóa">
+                    <button class="btn btn-sm btn-outline-danger p-1 px-2" onclick="deleteDoiTuong('${r.id}')" title="Xóa đối tượng">
                         <i class="bi bi-trash"></i>
                     </button>
                 </td>
@@ -131,303 +211,57 @@ function renderNCCTable(records) {
     }).join('');
 }
 
-function openAddNCC() {
-    editingNccId = null;
-    document.getElementById('ncc-modal-title').textContent = 'Thêm Nhà Cung Cấp';
-    document.getElementById('ncc-form').reset();
-    openModal('ncc-modal');
+// ── Modal Thêm / Sửa Đối Tượng ───────────────────────────────────────────────
+
+function openAddDoiTuong() {
+    editingDtId = null;
+    document.getElementById('dt-modal-title').innerHTML = '<i class="bi bi-person-plus me-2"></i>Thêm Đối Tượng Mới';
+    document.getElementById('dt-form').reset();
+    document.getElementById('dt-phan-loai').value = 'CA_HAI';
+    openModal('dt-modal');
 }
 
-async function openEditNCC(id) {
-    editingNccId = id;
-    const r = rawNCCList.find(x => x.id === id);
-    if (!r) return;
-    document.getElementById('ncc-modal-title').textContent = 'Chỉnh Sửa Nhà Cung Cấp';
-    document.getElementById('ncc-ten').value = r.ten_ncc || '';
-    document.getElementById('ncc-dia-chi').value = r.dia_chi || '';
-    document.getElementById('ncc-dt').value = r.dien_thoai || '';
-    document.getElementById('ncc-email').value = r.email || '';
-    document.getElementById('ncc-ghi-chu').value = r.ghi_chu || '';
-    openModal('ncc-modal');
+function editDoiTuong(id) {
+    const dt = rawDoiTuongList.find(x => x.id === id);
+    if (!dt) return;
+    editingDtId = id;
+    document.getElementById('dt-modal-title').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Sửa Thông Tin Đối Tượng';
+    document.getElementById('dt-ten').value = dt.ten || '';
+    document.getElementById('dt-phan-loai').value = dt.phan_loai || 'CA_HAI';
+    document.getElementById('dt-dia-chi').value = dt.dia_chi || '';
+    document.getElementById('dt-dt').value = dt.dien_thoai || '';
+    document.getElementById('dt-email').value = dt.email || '';
+    document.getElementById('dt-ghi-chu').value = dt.ghi_chu || '';
+    openModal('dt-modal');
 }
 
-async function saveNCC() {
-    const body = {
-        ten_ncc: document.getElementById('ncc-ten').value.trim(),
-        dia_chi: document.getElementById('ncc-dia-chi').value.trim(),
-        dien_thoai: document.getElementById('ncc-dt').value.trim(),
-        email: document.getElementById('ncc-email').value.trim(),
-        ghi_chu: document.getElementById('ncc-ghi-chu').value.trim(),
-    };
-    if (!body.ten_ncc) { showToast('Vui lòng nhập tên nhà cung cấp', 'error'); return; }
-    try {
-        showLoading();
-        if (editingNccId) {
-            await apiRequest(`/api/nha-cung-cap/${editingNccId}`, 'PUT', body);
-            showToast('Cập nhật nhà cung cấp thành công');
-        } else {
-            await apiRequest('/api/nha-cung-cap', 'POST', body);
-            showToast('Thêm nhà cung cấp thành công');
-        }
-        closeModal('ncc-modal');
-        await loadNCC();
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { hideLoading(); }
-}
-
-async function deleteNCC(id) {
-    const r = rawNCCList.find(x => x.id === id);
-    const name = r ? r.ten_ncc : 'này';
-    if (!confirmDelete(`Xóa nhà cung cấp "${name}"?`)) return;
-    try {
-        showLoading();
-        await apiRequest(`/api/nha-cung-cap/${id}`, 'DELETE');
-        showToast('Đã xóa nhà cung cấp');
-        await loadNCC();
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { hideLoading(); }
-}
-
-// ── Khách Hàng ────────────────────────────────────────────────────────────────
-
-async function loadKH(silent = false) {
-    try {
-        if (!silent) showLoading();
-        const res = await apiRequest('/api/khach-hang');
-        rawKHList = res.data || [];
-        const badge = document.getElementById('kh-badge-count');
-        if (badge) badge.textContent = rawKHList.length;
-        filterKH();
-    } catch (e) {
-        if (!silent) showToast(e.message, 'error');
-    } finally {
-        if (!silent) hideLoading();
-    }
-}
-
-function filterKH() {
-    const search = (document.getElementById('kh-search-input')?.value || '').toLowerCase().trim();
-    const status = document.getElementById('kh-filter-status')?.value || 'all';
-    const sortBy = document.getElementById('kh-sort-by')?.value || 'default';
-
-    let list = [...rawKHList];
-
-    // Search filter
-    if (search) {
-        list = list.filter(r => {
-            const text = `${r.ten_kh || ''} ${r.dien_thoai || ''} ${r.dia_chi || ''} ${r.email || ''} ${r.ghi_chu || ''}`.toLowerCase();
-            return text.includes(search);
-        });
-    }
-
-    // Status filter
-    if (status === 'has_orders') {
-        list = list.filter(r => (r.so_don_hang || 0) > 0);
-    } else if (status === 'no_orders') {
-        list = list.filter(r => (r.so_don_hang || 0) === 0);
-    }
-
-    // Sort
-    if (sortBy === 'name_asc') {
-        list.sort((a, b) => (a.ten_kh || '').localeCompare(b.ten_kh || '', 'vi'));
-    } else if (sortBy === 'spent_desc') {
-        list.sort((a, b) => (b.tong_tien_mua || 0) - (a.tong_tien_mua || 0));
-    } else if (sortBy === 'orders_desc') {
-        list.sort((a, b) => (b.so_don_hang || 0) - (a.so_don_hang || 0));
-    }
-
-    // Update counter
-    const summaryEl = document.getElementById('kh-filter-summary');
-    if (summaryEl) {
-        summaryEl.textContent = `${list.length} / ${rawKHList.length} Khách Hàng`;
-    }
-
-    renderKHTable(list);
-}
-
-function clearKHSearch() {
-    const input = document.getElementById('kh-search-input');
-    if (input) input.value = '';
-    filterKH();
-}
-
-function renderKHTable(records) {
-    const tbody = document.getElementById('kh-tbody');
-    if (!tbody) return;
-
-    if (!records.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Không tìm thấy khách hàng nào phù hợp</td></tr>';
+async function saveDoiTuong() {
+    const ten = document.getElementById('dt-ten')?.value.trim();
+    if (!ten) {
+        showToast('Vui lòng nhập Tên đối tượng', 'warning');
         return;
     }
 
-    tbody.innerHTML = records.map((r, i) => {
-        const hasOrders = (r.so_don_hang || 0) > 0;
-        return `
-            <tr>
-                <td class="text-center text-muted">${i + 1}</td>
-                <td>
-                    <div class="d-flex align-items-center">
-                        <span class="avatar-sm bg-success-subtle text-success rounded-circle d-inline-flex align-items-center justify-content-center me-2" style="width:32px;height:32px;font-size:13px;font-weight:bold;">
-                            ${(r.ten_kh || 'K').charAt(0).toUpperCase()}
-                        </span>
-                        <div>
-                            <a href="javascript:void(0)" onclick="viewKHHistory('${r.id}')" class="fw-bold text-success text-decoration-none" title="Bấm xem lịch sử mua hàng">
-                                ${escapeHtml(r.ten_kh)}
-                            </a>
-                            ${r.ghi_chu ? `<div class="text-muted small text-truncate" style="max-width:230px;">${escapeHtml(r.ghi_chu)}</div>` : ''}
-                        </div>
-                    </div>
-                </td>
-                <td>
-                    ${r.dien_thoai ? `<a href="tel:${r.dien_thoai}" class="text-decoration-none text-dark fw-semibold"><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(r.dien_thoai)}</a>` : '<span class="text-muted">-</span>'}
-                </td>
-                <td>
-                    ${r.dia_chi ? `<span class="text-truncate d-inline-block" style="max-width:250px;" title="${escapeHtml(r.dia_chi)}"><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(r.dia_chi)}</span>` : '<span class="text-muted">-</span>'}
-                </td>
-                <td>
-                    ${r.email ? `<span class="text-truncate d-inline-block small" style="max-width:160px;"><i class="bi bi-envelope text-info me-1"></i>${escapeHtml(r.email)}</span>` : '<span class="text-muted">-</span>'}
-                </td>
-                <td class="text-end">
-                    ${hasOrders 
-                        ? `<button class="btn btn-sm btn-outline-success font-monospace fw-bold py-1 px-2 text-nowrap" onclick="viewKHHistory('${r.id}')" title="Xem lịch sử mua hàng">
-                             <i class="bi bi-bag-check me-1"></i>${r.so_don_hang} đơn &bull; ${formatVND(r.tong_tien_mua)}
-                           </button>`
-                        : `<span class="badge bg-light text-muted border py-1 px-2">Chưa có đơn</span>`
-                    }
-                </td>
-                <td class="text-center text-nowrap">
-                    <button class="btn btn-sm btn-info text-white me-1 px-2 py-1" onclick="viewKHHistory('${r.id}')" title="Xem chi tiết lịch sử mua hàng">
-                        <i class="bi bi-clock-history me-1"></i>Lịch sử
-                    </button>
-                    <button class="btn btn-sm btn-outline-primary btn-icon me-1" onclick="openEditKH('${r.id}')" title="Chỉnh sửa">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteKH('${r.id}')" title="Xóa">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    }).join('');
-}
-
-function openAddKH() {
-    editingKhId = null;
-    document.getElementById('kh-modal-title').textContent = 'Thêm Khách Hàng';
-    document.getElementById('kh-form').reset();
-    openModal('kh-modal');
-}
-
-async function openEditKH(id) {
-    editingKhId = id;
-    const r = rawKHList.find(x => x.id === id);
-    if (!r) return;
-    document.getElementById('kh-modal-title').textContent = 'Chỉnh Sửa Khách Hàng';
-    document.getElementById('kh-ten').value = r.ten_kh || '';
-    document.getElementById('kh-dia-chi').value = r.dia_chi || '';
-    document.getElementById('kh-dt').value = r.dien_thoai || '';
-    document.getElementById('kh-email').value = r.email || '';
-    document.getElementById('kh-ghi-chu').value = r.ghi_chu || '';
-    openModal('kh-modal');
-}
-
-async function saveKH() {
-    const body = {
-        ten_kh: document.getElementById('kh-ten').value.trim(),
-        dia_chi: document.getElementById('kh-dia-chi').value.trim(),
-        dien_thoai: document.getElementById('kh-dt').value.trim(),
-        email: document.getElementById('kh-email').value.trim(),
-        ghi_chu: document.getElementById('kh-ghi-chu').value.trim(),
+    const payload = {
+        ten: ten,
+        phan_loai: document.getElementById('dt-phan-loai')?.value || 'CA_HAI',
+        dia_chi: document.getElementById('dt-dia-chi')?.value.trim() || '',
+        dien_thoai: document.getElementById('dt-dt')?.value.trim() || '',
+        email: document.getElementById('dt-email')?.value.trim() || '',
+        ghi_chu: document.getElementById('dt-ghi-chu')?.value.trim() || '',
     };
-    if (!body.ten_kh) { showToast('Vui lòng nhập tên khách hàng', 'error'); return; }
+
     try {
         showLoading();
-        if (editingKhId) {
-            await apiRequest(`/api/khach-hang/${editingKhId}`, 'PUT', body);
-            showToast('Cập nhật khách hàng thành công');
+        if (editingDtId) {
+            await apiRequest(`/api/doi-tuong/${editingDtId}`, 'PUT', payload);
+            showToast('Cập nhật đối tượng thành công');
         } else {
-            await apiRequest('/api/khach-hang', 'POST', body);
-            showToast('Thêm khách hàng thành công');
+            await apiRequest('/api/doi-tuong', 'POST', payload);
+            showToast('Thêm đối tượng thành công');
         }
-        closeModal('kh-modal');
-        await loadKH();
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { hideLoading(); }
-}
-
-async function deleteKH(id) {
-    const r = rawKHList.find(x => x.id === id);
-    const name = r ? r.ten_kh : 'này';
-    if (!confirmDelete(`Xóa khách hàng "${name}"?`)) return;
-    try {
-        showLoading();
-        await apiRequest(`/api/khach-hang/${id}`, 'DELETE');
-        showToast('Đã xóa khách hàng');
-        await loadKH();
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { hideLoading(); }
-}
-
-// ── Lịch Sử Giao Dịch Modal ───────────────────────────────────────────────────
-
-let currentHistoryPartner = null;
-let currentHistoryType = null; // 'KH' or 'NCC'
-
-async function viewKHHistory(id) {
-    try {
-        showLoading();
-        currentHistoryType = 'KH';
-        const res = await apiRequest(`/api/khach-hang/${id}/lich-su`);
-        const kh = res.khach_hang || {};
-        const summary = res.summary || {};
-        const phieuList = res.danh_sach_phieu || [];
-        const itemsList = res.chi_tiet_hang || [];
-
-        currentHistoryPartner = { type: 'KH', data: kh, summary };
-
-        // Header info
-        document.getElementById('history-modal-icon').className = 'bi bi-person-badge fs-4 text-success';
-        document.getElementById('history-modal-title').textContent = `Lịch Sử Mua Hàng - ${kh.ten_kh}`;
-        document.getElementById('history-modal-subtitle').textContent = `Lịch sử các phiếu xuất kho và toàn bộ sản phẩm khách hàng đã mua`;
-
-        // Partner Profile
-        document.getElementById('hist-partner-name').textContent = kh.ten_kh || 'Khách Hàng';
-        document.getElementById('hist-partner-phone').textContent = kh.dien_thoai || 'Chưa có SĐT';
-        document.getElementById('hist-partner-address').textContent = kh.dia_chi || 'Chưa có địa chỉ';
-        document.getElementById('hist-partner-email').textContent = kh.email || 'Chưa có email';
-
-        const noteWrap = document.getElementById('hist-partner-note-wrap');
-        const noteEl = document.getElementById('hist-partner-note');
-        if (kh.ghi_chu) {
-            noteEl.textContent = kh.ghi_chu;
-            noteWrap.style.display = 'block';
-        } else {
-            noteWrap.style.display = 'none';
-        }
-
-        // Summary stats
-        document.getElementById('hist-stat-orders').textContent = summary.tong_so_phieu || 0;
-        document.getElementById('hist-stat-qty').textContent = formatNumber(summary.tong_so_luong || 0);
-        document.getElementById('hist-stat-amount').textContent = formatVND(summary.tong_tien_mua || 0);
-
-        // Counts on tab headers
-        document.getElementById('hist-receipt-count').textContent = phieuList.length;
-        document.getElementById('hist-item-count').textContent = itemsList.length;
-
-        // Render Receipts
-        renderReceiptsList(phieuList, 'export');
-
-        // Render Items
-        renderItemsList(itemsList, 'gia_ban');
-
-        // Reset to first tab
-        const firstTab = document.getElementById('hist-tab-receipts');
-        if (firstTab) {
-            const triggerEl = new bootstrap.Tab(firstTab);
-            triggerEl.show();
-        }
-
-        openModal('history-modal');
+        closeModal('dt-modal');
+        await loadDoiTuong();
     } catch (e) {
         showToast(e.message, 'error');
     } finally {
@@ -435,61 +269,16 @@ async function viewKHHistory(id) {
     }
 }
 
-async function viewNCCHistory(id) {
+async function deleteDoiTuong(id) {
+    const dt = rawDoiTuongList.find(x => x.id === id);
+    const name = dt ? dt.ten : 'này';
+    if (!confirmDelete(`Xóa đối tượng "${name}" khỏi danh mục?`)) return;
+
     try {
         showLoading();
-        currentHistoryType = 'NCC';
-        const res = await apiRequest(`/api/nha-cung-cap/${id}/lich-su`);
-        const ncc = res.nha_cung_cap || {};
-        const summary = res.summary || {};
-        const phieuList = res.danh_sach_phieu || [];
-        const itemsList = res.chi_tiet_hang || [];
-
-        currentHistoryPartner = { type: 'NCC', data: ncc, summary };
-
-        // Header info
-        document.getElementById('history-modal-icon').className = 'bi bi-truck fs-4 text-primary';
-        document.getElementById('history-modal-title').textContent = `Lịch Sử Nhập Hàng - ${ncc.ten_ncc}`;
-        document.getElementById('history-modal-subtitle').textContent = `Lịch sử các phiếu nhập kho và toàn bộ sản phẩm nhập từ nhà cung cấp`;
-
-        // Partner Profile
-        document.getElementById('hist-partner-name').textContent = ncc.ten_ncc || 'Nhà Cung Cấp';
-        document.getElementById('hist-partner-phone').textContent = ncc.dien_thoai || 'Chưa có SĐT';
-        document.getElementById('hist-partner-address').textContent = ncc.dia_chi || 'Chưa có địa chỉ';
-        document.getElementById('hist-partner-email').textContent = ncc.email || 'Chưa có email';
-
-        const noteWrap = document.getElementById('hist-partner-note-wrap');
-        const noteEl = document.getElementById('hist-partner-note');
-        if (ncc.ghi_chu) {
-            noteEl.textContent = ncc.ghi_chu;
-            noteWrap.style.display = 'block';
-        } else {
-            noteWrap.style.display = 'none';
-        }
-
-        // Summary stats
-        document.getElementById('hist-stat-orders').textContent = summary.tong_so_phieu || 0;
-        document.getElementById('hist-stat-qty').textContent = formatNumber(summary.tong_so_luong || 0);
-        document.getElementById('hist-stat-amount').textContent = formatVND(summary.tong_tien_nhap || 0);
-
-        // Counts on tab headers
-        document.getElementById('hist-receipt-count').textContent = phieuList.length;
-        document.getElementById('hist-item-count').textContent = itemsList.length;
-
-        // Render Receipts
-        renderReceiptsList(phieuList, 'import');
-
-        // Render Items
-        renderItemsList(itemsList, 'gia_nhap');
-
-        // Reset to first tab
-        const firstTab = document.getElementById('hist-tab-receipts');
-        if (firstTab) {
-            const triggerEl = new bootstrap.Tab(firstTab);
-            triggerEl.show();
-        }
-
-        openModal('history-modal');
+        await apiRequest(`/api/doi-tuong/${id}`, 'DELETE');
+        showToast('Đã xóa đối tượng');
+        await loadDoiTuong();
     } catch (e) {
         showToast(e.message, 'error');
     } finally {
@@ -497,327 +286,324 @@ async function viewNCCHistory(id) {
     }
 }
 
-function renderReceiptsList(phieuList, type) {
-    const tbody = document.getElementById('hist-tbody-receipts');
+// ── Xem Lịch Sử Giao Dịch 2 Chiều ──────────────────────────────────────────
+
+async function viewDoiTuongHistory(id, defaultTab = 'all') {
+    try {
+        showLoading();
+        const res = await apiRequest(`/api/doi-tuong/${id}/lich-su`);
+        if (!res.success) {
+            showToast('Không thể tải lịch sử', 'error');
+            return;
+        }
+
+        const dt = res.doi_tuong || {};
+        const summary = res.summary || {};
+        const allReceipts = res.tat_ca_phieu || [];
+        const nhapReceipts = res.phieu_nhap || [];
+        const xuatReceipts = res.phieu_xuat || [];
+        const itemsList = res.chi_tiet_hang || [];
+
+        currentHistoryPartner = { data: dt, summary, allReceipts, nhapReceipts, xuatReceipts, itemsList };
+
+        // Profile
+        document.getElementById('hist-partner-name').innerText = dt.ten || 'Đối Tác';
+        const typeBadge = document.getElementById('hist-partner-badge');
+        if (typeBadge) {
+            const t = (dt.phan_loai || 'CA_HAI').toUpperCase();
+            typeBadge.innerText = t === 'KHACH_HANG' ? 'Khách Hàng' : (t === 'NHA_CUNG_CAP' ? 'Nhà Cung Cấp' : 'Khách & NCC');
+        }
+        document.getElementById('hist-partner-phone').innerText = dt.dien_thoai || 'Chưa có SĐT';
+        document.getElementById('hist-partner-address').innerText = dt.dia_chi || 'Chưa có địa chỉ';
+        document.getElementById('hist-partner-email').innerText = dt.email || 'Chưa có email';
+
+        const noteWrap = document.getElementById('hist-partner-note-wrap');
+        const noteEl = document.getElementById('hist-partner-note');
+        if (dt.ghi_chu) {
+            noteEl.innerText = dt.ghi_chu;
+            noteWrap.style.display = 'block';
+        } else {
+            noteWrap.style.display = 'none';
+        }
+
+        // Summary Stats
+        document.getElementById('hist-stat-xuat').innerText = formatVND(summary.tong_tien_xuat || 0);
+        document.getElementById('hist-stat-xuat-count').innerText = `${summary.tong_so_phieu_xuat || 0} phiếu`;
+
+        document.getElementById('hist-stat-nhap').innerText = formatVND(summary.tong_tien_nhap || 0);
+        document.getElementById('hist-stat-nhap-count').innerText = `${summary.tong_so_phieu_nhap || 0} phiếu`;
+
+        const totalMoney = (summary.tong_tien_xuat || 0) + (summary.tong_tien_nhap || 0);
+        document.getElementById('hist-stat-total').innerText = formatVND(totalMoney);
+        document.getElementById('hist-stat-total-count').innerText = `${summary.tong_so_phieu || 0} đơn`;
+
+        // Tab Counts
+        document.getElementById('hist-all-count').innerText = allReceipts.length;
+        document.getElementById('hist-xuat-count').innerText = xuatReceipts.length;
+        document.getElementById('hist-nhap-count').innerText = nhapReceipts.length;
+        document.getElementById('hist-item-count').innerText = itemsList.length;
+
+        // Render contents
+        renderReceiptRows('hist-tbody-all', allReceipts, true);
+        renderReceiptRows('hist-tbody-xuat', xuatReceipts, false);
+        renderReceiptRows('hist-tbody-nhap', nhapReceipts, false);
+        renderItemsRows('hist-tbody-items', itemsList);
+
+        // Switch to chosen tab
+        let tabButtonId = 'hist-tab-all';
+        if (defaultTab === 'nhap') tabButtonId = 'hist-tab-nhap';
+        else if (defaultTab === 'xuat') tabButtonId = 'hist-tab-xuat';
+
+        const tabBtn = document.getElementById(tabButtonId);
+        if (tabBtn) {
+            const triggerEl = new bootstrap.Tab(tabBtn);
+            triggerEl.show();
+        }
+
+        openModal('history-modal');
+    } catch (e) {
+        showToast('Lỗi xem lịch sử: ' + e.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function renderReceiptRows(tbodyId, list, showTypeBadge = false) {
+    const tbody = document.getElementById(tbodyId);
     if (!tbody) return;
 
-    if (!phieuList || !phieuList.length) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Chưa có giao dịch phiếu nào</td></tr>';
+    if (!list || !list.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">Chưa có giao dịch</td></tr>';
         return;
     }
 
-    tbody.innerHTML = phieuList.map((p, i) => {
-        const dateStr = formatDate(p.ngay_xuat || p.ngay_nhap);
-        const viewAction = type === 'export'
-            ? `viewExportReceiptDetail('${p.so_phieu}')`
-            : `viewImportReceiptDetail('${p.so_phieu}')`;
+    tbody.innerHTML = list.map((r, i) => {
+        const isXuat = r.loai === 'XUAT';
+        const typeBadge = isXuat
+            ? '<span class="badge bg-success-subtle text-success-emphasis border border-success">XUẤT</span>'
+            : '<span class="badge bg-primary-subtle text-primary-emphasis border border-primary">NHẬP</span>';
+
+        const amtColor = isXuat ? 'text-success' : 'text-primary';
 
         return `
             <tr>
-                <td class="text-center text-muted">${i + 1}</td>
-                <td>${dateStr}</td>
-                <td><span class="badge bg-secondary font-monospace">${escapeHtml(p.so_phieu)}</span></td>
-                <td class="text-center"><span class="badge bg-light text-dark border">${p.so_mat_hang} mặt hàng</span></td>
-                <td class="text-center fw-bold">${formatNumber(p.tong_so_luong)}</td>
-                <td class="text-end font-monospace fw-bold text-danger">${formatVND(p.tong_tien)}</td>
-                <td><span class="small text-muted text-truncate d-inline-block" style="max-width:180px;">${escapeHtml(p.ghi_chu || '-')}</span></td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="${viewAction}" title="Xem chi tiết phiếu">
-                        <i class="bi bi-eye me-1"></i>Chi tiết
-                    </button>
-                </td>
+                <td class="text-center text-muted small">${i + 1}</td>
+                ${showTypeBadge ? `<td>${typeBadge}</td>` : ''}
+                <td class="small text-muted font-monospace">${formatDate(r.ngay)}</td>
+                <td class="fw-bold font-monospace text-dark">${escapeHtml(r.so_phieu)}</td>
+                <td class="text-center font-monospace">${r.tong_sl || (r.items ? r.items.length : 0)}</td>
+                <td class="text-end fw-bold font-monospace ${amtColor}">${formatVND(r.tong_tien)}</td>
+                <td class="small text-muted">${escapeHtml(r.ghi_chu || '')}</td>
             </tr>
         `;
     }).join('');
 }
 
-function renderItemsList(itemsList, priceField) {
-    const tbody = document.getElementById('hist-tbody-items');
+function renderItemsRows(tbodyId, items) {
+    const tbody = document.getElementById(tbodyId);
     if (!tbody) return;
 
-    if (!itemsList || !itemsList.length) {
+    if (!items || !items.length) {
         tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Chưa có mặt hàng nào</td></tr>';
         return;
     }
 
-    tbody.innerHTML = itemsList.map((item, i) => {
-        const dateStr = formatDate(item.ngay_xuat || item.ngay_nhap);
-        const price = item[priceField] || item.gia_ban || item.gia_nhap || 0;
+    tbody.innerHTML = items.map((it, i) => {
+        const isXuat = it.loai === 'XUAT';
+        const typeBadge = isXuat
+            ? '<span class="badge bg-success-subtle text-success-emphasis border border-success">XUẤT</span>'
+            : '<span class="badge bg-primary-subtle text-primary-emphasis border border-primary">NHẬP</span>';
+        const amtColor = isXuat ? 'text-success' : 'text-primary';
 
         return `
             <tr>
-                <td class="text-center text-muted">${i + 1}</td>
-                <td>${dateStr}</td>
-                <td><span class="badge bg-secondary font-monospace">${escapeHtml(item.so_phieu)}</span></td>
-                <td><span class="badge bg-light text-dark border font-monospace">${escapeHtml(item.ma_hang)}</span></td>
-                <td><strong>${escapeHtml(item.ten_hang)}</strong></td>
-                <td class="text-center text-muted">${escapeHtml(item.don_vi_tinh || 'Cái')}</td>
-                <td class="text-center fw-bold">${formatNumber(item.so_luong)}</td>
-                <td class="text-end font-monospace text-muted">${formatVND(price)}</td>
-                <td class="text-end font-monospace fw-bold text-danger">${formatVND(item.thanh_tien)}</td>
+                <td class="text-center text-muted small">${i + 1}</td>
+                <td>${typeBadge}</td>
+                <td class="small text-muted font-monospace">${formatDate(it.ngay)}</td>
+                <td class="font-monospace small">${escapeHtml(it.so_phieu)}</td>
+                <td class="font-monospace text-primary fw-semibold">${escapeHtml(it.ma_hang)}</td>
+                <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
+                <td class="text-center font-monospace fw-bold">${it.so_luong}</td>
+                <td class="text-end font-monospace">${formatVND(it.don_gia)}</td>
+                <td class="text-end font-monospace fw-bold ${amtColor}">${formatVND(it.thanh_tien)}</td>
             </tr>
         `;
     }).join('');
 }
 
-// ── Receipt Detail Previews ───────────────────────────────────────────────────
+function printDoiTuongHistory() {
+    if (!currentHistoryPartner) return;
+    const { data, summary, allReceipts } = currentHistoryPartner;
 
-async function viewExportReceiptDetail(so_phieu) {
-    try {
-        showLoading();
-        const res = await apiRequest(`/api/xuat-hang/${so_phieu}`);
-        const p = res;
-        const kh = p.khach_hang || {};
-        const items = p.items || [];
-
-        document.getElementById('receipt-modal-title').innerHTML = `
-            <i class="bi bi-journal-arrow-up text-danger me-2"></i>Phiếu Xuất Kho: <span class="font-monospace text-danger">${p.so_phieu}</span>
-        `;
-
-        const body = document.getElementById('receipt-modal-body');
-        body.innerHTML = `
-            <div class="row mb-3 bg-light p-3 rounded">
-                <div class="col-md-6">
-                    <p class="mb-1"><strong>Khách hàng:</strong> <span class="text-primary fw-bold">${escapeHtml(kh.ten_kh || '-')}</span></p>
-                    <p class="mb-1"><strong>Điện thoại:</strong> ${escapeHtml(kh.dien_thoai || '-')}</p>
-                    <p class="mb-0"><strong>Địa chỉ:</strong> ${escapeHtml(kh.dia_chi || '-')}</p>
-                </div>
-                <div class="col-md-6 text-md-end mt-2 mt-md-0">
-                    <p class="mb-1"><strong>Ngày xuất:</strong> ${formatDate(p.ngay_xuat)}</p>
-                    <p class="mb-1"><strong>Số mặt hàng:</strong> ${p.so_mat_hang} loại (${p.tong_so_luong} sản phẩm)</p>
-                    <p class="mb-0"><strong>Ghi chú:</strong> ${escapeHtml(p.ghi_chu || '-')}</p>
-                </div>
-            </div>
-            <div class="table-responsive border rounded mb-3">
-                <table class="table table-bordered table-sm mb-0">
-                    <thead style="background-color: #1e293b !important; color: #ffffff !important;">
-                        <tr>
-                            <th class="text-center" style="width: 40px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
-                            <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Mã Hàng</th>
-                            <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Hàng Hóa</th>
-                            <th class="text-center" style="width: 60px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
-                            <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">SL</th>
-                            <th class="text-end" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Đơn Giá</th>
-                            <th class="text-end" style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Thành Tiền</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${items.map((it, idx) => `
-                            <tr>
-                                <td class="text-center text-muted">${idx + 1}</td>
-                                <td><span class="badge bg-light text-dark border font-monospace">${escapeHtml(it.ma_hang)}</span></td>
-                                <td><strong>${escapeHtml(it.ten_hang)}</strong></td>
-                                <td class="text-center text-muted">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
-                                <td class="text-center fw-bold">${it.so_luong}</td>
-                                <td class="text-end font-monospace">${formatVND(it.gia_ban)}</td>
-                                <td class="text-end font-monospace fw-bold text-danger">${formatVND(it.thanh_tien)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light fw-bold">
-                            <td colspan="4" class="text-end">TỔNG CỘNG:</td>
-                            <td class="text-center">${p.tong_so_luong}</td>
-                            <td></td>
-                            <td class="text-end text-danger font-monospace fs-6" style="white-space:nowrap;min-width:160px;">${formatVND(p.total)}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        `;
-
-        openModal('receipt-detail-modal');
-    } catch (e) {
-        showToast(e.message, 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-async function viewImportReceiptDetail(so_phieu) {
-    try {
-        showLoading();
-        const res = await apiRequest(`/api/nhap-hang/${so_phieu}`);
-        const p = res;
-        const ncc = p.nha_cung_cap || {};
-        const items = p.items || [];
-
-        document.getElementById('receipt-modal-title').innerHTML = `
-            <i class="bi bi-journal-arrow-down text-primary me-2"></i>Phiếu Nhập Kho: <span class="font-monospace text-primary">${p.so_phieu}</span>
-        `;
-
-        const body = document.getElementById('receipt-modal-body');
-        body.innerHTML = `
-            <div class="row mb-3 bg-light p-3 rounded">
-                <div class="col-md-6">
-                    <p class="mb-1"><strong>Nhà cung cấp:</strong> <span class="text-primary fw-bold">${escapeHtml(ncc.ten_ncc || '-')}</span></p>
-                    <p class="mb-1"><strong>Điện thoại:</strong> ${escapeHtml(ncc.dien_thoai || '-')}</p>
-                    <p class="mb-0"><strong>Địa chỉ:</strong> ${escapeHtml(ncc.dia_chi || '-')}</p>
-                </div>
-                <div class="col-md-6 text-md-end mt-2 mt-md-0">
-                    <p class="mb-1"><strong>Ngày nhập:</strong> ${formatDate(p.ngay_nhap)}</p>
-                    <p class="mb-1"><strong>Số mặt hàng:</strong> ${p.so_mat_hang} loại (${p.tong_so_luong} sản phẩm)</p>
-                    <p class="mb-0"><strong>Ghi chú:</strong> ${escapeHtml(p.ghi_chu || '-')}</p>
-                </div>
-            </div>
-            <div class="table-responsive border rounded mb-3">
-                <table class="table table-bordered table-sm mb-0">
-                    <thead style="background-color: #1e293b !important; color: #ffffff !important;">
-                        <tr>
-                            <th class="text-center" style="width: 40px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
-                            <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Mã Hàng</th>
-                            <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Hàng Hóa</th>
-                            <th class="text-center" style="width: 60px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
-                            <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">SL</th>
-                            <th class="text-end" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Đơn Giá</th>
-                            <th class="text-end" style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Thành Tiền</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${items.map((it, idx) => `
-                            <tr>
-                                <td class="text-center text-muted">${idx + 1}</td>
-                                <td><span class="badge bg-light text-dark border font-monospace">${escapeHtml(it.ma_hang)}</span></td>
-                                <td><strong>${escapeHtml(it.ten_hang)}</strong></td>
-                                <td class="text-center text-muted">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
-                                <td class="text-center fw-bold">${it.so_luong}</td>
-                                <td class="text-end font-monospace">${formatVND(it.gia_nhap)}</td>
-                                <td class="text-end font-monospace fw-bold text-primary">${formatVND(it.thanh_tien)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-light fw-bold">
-                            <td colspan="4" class="text-end">TỔNG CỘNG:</td>
-                            <td class="text-center">${p.tong_so_luong}</td>
-                            <td></td>
-                            <td class="text-end text-primary font-monospace fs-6" style="white-space:nowrap;min-width:160px;">${formatVND(p.total)}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        `;
-
-        openModal('receipt-detail-modal');
-    } catch (e) {
-        showToast(e.message, 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-function printPartnerHistory() {
-    printReceiptModal('history-modal-body', 'Lịch Sử Giao Dịch Đối Tác');
-}
-
-function exportSuppliersExcel() {
-    if (!rawNCCList || !rawNCCList.length) {
-        showToast('Không có dữ liệu Nhà cung cấp để xuất Excel!', 'info');
+    const printWin = window.open('', '_blank');
+    if (!printWin) {
+        showToast('Trình duyệt đã chặn cửa sổ in pop-up', 'warning');
         return;
     }
 
-    let totalReceipts = 0;
-    let totalMoney = 0;
+    const rowsHtml = (allReceipts || []).map((r, i) => `
+        <tr>
+            <td style="text-align:center;">${i + 1}</td>
+            <td style="text-align:center;">${r.loai === 'XUAT' ? 'XUẤT KHO' : 'NHẬP KHO'}</td>
+            <td style="text-align:center;">${formatDate(r.ngay)}</td>
+            <td><strong>${escapeHtml(r.so_phieu)}</strong></td>
+            <td style="text-align:center;">${r.tong_sl || 0}</td>
+            <td style="text-align:right;"><strong>${formatVND(r.tong_tien)}</strong></td>
+            <td>${escapeHtml(r.ghi_chu || '')}</td>
+        </tr>
+    `).join('');
 
-    const rows = rawNCCList.map((n, idx) => {
-        const phieuCount = parseInt(n.tong_so_phieu) || 0;
-        const tienNhap = parseFloat(n.tong_gia_tri) || 0;
-        totalReceipts += phieuCount;
-        totalMoney += tienNhap;
+    printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Lịch Sử Giao Dịch - ${escapeHtml(data.ten)}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.4; }
+                h2 { margin: 0 0 5px; color: #1e293b; }
+                .subtitle { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+                .profile { background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; margin-bottom: 20px; }
+                .profile p { margin: 4px 0; font-size: 13px; }
+                .stats { display: flex; gap: 15px; margin-bottom: 20px; }
+                .stat-box { flex: 1; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; text-align: center; }
+                .stat-box .title { font-size: 11px; text-transform: uppercase; color: #64748b; }
+                .stat-box .val { font-size: 16px; font-weight: bold; margin-top: 4px; }
+                table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+                th, td { border: 1px solid #cbd5e1; padding: 8px 10px; }
+                th { background-color: #f1f5f9; text-align: left; }
+            </style>
+        </head>
+        <body>
+            <h2>LỊCH SỬ GIAO DỊCH ĐỐI TÁC</h2>
+            <div class="subtitle">Kho Hàng Laptop An Nam &bull; Ngày in: ${new Date().toLocaleDateString('vi-VN')}</div>
 
-        return [
-            idx + 1,
-            n.ten_ncc,
-            n.dien_thoai || '',
-            n.dia_chi || '',
-            n.email || '',
-            phieuCount,
-            tienNhap,
-            n.ghi_chu || ''
-        ];
-    });
+            <div class="profile">
+                <p><strong>Tên Đối Tượng:</strong> ${escapeHtml(data.ten)}</p>
+                <p><strong>Số Điện Thoại:</strong> ${escapeHtml(data.dien_thoai || '-')}</p>
+                <p><strong>Địa Chỉ:</strong> ${escapeHtml(data.dia_chi || '-')}</p>
+                <p><strong>Email:</strong> ${escapeHtml(data.email || '-')}</p>
+            </div>
 
-    const summaryRow = ['TỔNG CỘNG', '', '', '', '', totalReceipts, totalMoney, ''];
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="title">Đã Mua (Xuất)</div>
+                    <div class="val" style="color:#16a34a;">${formatVND(summary.tong_tien_xuat || 0)}</div>
+                </div>
+                <div class="stat-box">
+                    <div class="title">Đã Bán Cho Ta (Nhập)</div>
+                    <div class="val" style="color:#2563eb;">${formatVND(summary.tong_tien_nhap || 0)}</div>
+                </div>
+                <div class="stat-box">
+                    <div class="title">Tổng Giao Dịch</div>
+                    <div class="val">${formatVND((summary.tong_tien_xuat || 0) + (summary.tong_tien_nhap || 0))}</div>
+                </div>
+            </div>
 
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:40px;text-align:center;">STT</th>
+                        <th style="width:90px;text-align:center;">Loại</th>
+                        <th style="width:100px;text-align:center;">Ngày</th>
+                        <th style="width:120px;">Số Phiếu</th>
+                        <th style="width:60px;text-align:center;">SL</th>
+                        <th style="width:130px;text-align:right;">Tổng Tiền</th>
+                        <th>Ghi Chú</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+            </table>
 
-    exportReportToExcel({
-        title: 'DANH SÁCH NHÀ CUNG CẤP & ĐỐI TÁC HÀNG HÓA',
-        subInfo: `Tổng số: ${rawNCCList.length} nhà cung cấp đối tác`,
-        headers: ['STT', 'Tên Nhà Cung Cấp', 'Điện Thoại', 'Địa Chỉ', 'Email', 'Số Phiếu Nhập', 'Tổng Tiền Nhập (đ)', 'Ghi Chú'],
-        rows,
-        summaryRow,
-        fileName: `Danh_Sach_Nha_Cung_Cap_${dateStr}.xlsx`,
-        sheetName: 'NhaCungCap'
-    });
+            <script>
+                window.onload = function() { window.print(); }
+            </script>
+        </body>
+        </html>
+    `);
+    printWin.document.close();
 }
 
-function exportCustomersExcel() {
-    if (!rawKHList || !rawKHList.length) {
-        showToast('Không có dữ liệu Khách hàng để xuất Excel!', 'info');
+// ── Xuất Excel Danh Mục Đối Tượng ──────────────────────────────────────────
+
+async function exportDoiTuongExcel() {
+    if (!rawDoiTuongList || !rawDoiTuongList.length) {
+        showToast('Không có dữ liệu đối tượng để xuất', 'warning');
         return;
     }
 
-    let totalOrders = 0;
-    let totalMoney = 0;
-
-    const rows = rawKHList.map((k, idx) => {
-        const orderCount = parseInt(k.tong_so_phieu) || 0;
-        const tienMua = parseFloat(k.tong_gia_tri) || 0;
-        totalOrders += orderCount;
-        totalMoney += tienMua;
-
-        return [
-            idx + 1,
-            k.ten_kh,
-            k.dien_thoai || '',
-            k.dia_chi || '',
-            k.email || '',
-            orderCount,
-            tienMua,
-            k.ghi_chu || ''
-        ];
-    });
-
-    const summaryRow = ['TỔNG CỘNG', '', '', '', '', totalOrders, totalMoney, ''];
-
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-
-    exportReportToExcel({
-        title: 'DANH SÁCH KHÁCH HÀNG & LỊCH SỬ MUA HÀNG',
-        subInfo: `Tổng số: ${rawKHList.length} khách hàng trong hệ thống`,
-        headers: ['STT', 'Tên Khách Hàng', 'Điện Thoại', 'Địa Chỉ', 'Email', 'Số Đơn Mua', 'Tổng Tiền Mua (đ)', 'Ghi Chú'],
-        rows,
-        summaryRow,
-        fileName: `Danh_Sach_Khach_Hang_${dateStr}.xlsx`,
-        sheetName: 'KhachHang'
-    });
-}
-
-// ── Initial Load ─────────────────────────────────────────────────────────────
-
-document.addEventListener('DOMContentLoaded', () => {
-    loadNCC();
-    loadKH();
-});
-
-// Lắng nghe sự kiện kích hoạt tab hoặc cập nhật dữ liệu để đồng bộ tự động
-window.addEventListener('message', (e) => {
-    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
-        loadNCC(true);
-        loadKH(true);
-    }
-});
-
-try {
-    const syncChannel = new BroadcastChannel('inventory_sync');
-    syncChannel.onmessage = (e) => {
-        if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
-            loadNCC(true);
-            loadKH(true);
+    try {
+        showLoading();
+        if (typeof ExcelJS === 'undefined') {
+            throw new Error('Thư viện ExcelJS chưa sẵn sàng');
         }
-    };
-} catch (err) {}
 
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet('Danh Mục Đối Tượng');
+
+        ws.columns = [
+            { header: 'STT', key: 'stt', width: 6 },
+            { header: 'Mã / ID', key: 'id', width: 16 },
+            { header: 'Tên Đối Tượng', key: 'ten', width: 28 },
+            { header: 'Phân Loại', key: 'phan_loai', width: 18 },
+            { header: 'Điện Thoại', key: 'dien_thoai', width: 16 },
+            { header: 'Địa Chỉ', key: 'dia_chi', width: 32 },
+            { header: 'Email', key: 'email', width: 24 },
+            { header: 'Đơn Nhập', key: 'don_nhap', width: 12 },
+            { header: 'Tiền Nhập (VNĐ)', key: 'tien_nhap', width: 18 },
+            { header: 'Đơn Xuất', key: 'don_xuat', width: 12 },
+            { header: 'Tiền Xuất (VNĐ)', key: 'tien_xuat', width: 18 },
+            { header: 'Tổng Tiền (VNĐ)', key: 'tong_tien', width: 20 },
+            { header: 'Ghi Chú', key: 'ghi_chu', width: 25 },
+        ];
+
+        // Style Header
+        const headerRow = ws.getRow(1);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+        headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerRow.height = 28;
+
+        rawDoiTuongList.forEach((r, idx) => {
+            const typeStr = r.phan_loai === 'KHACH_HANG' ? 'Khách Hàng' : (r.phan_loai === 'NHA_CUNG_CAP' ? 'Nhà Cung Cấp' : 'Cả Hai (Mua & Bán)');
+            const row = ws.addRow({
+                stt: idx + 1,
+                id: r.id,
+                ten: r.ten,
+                phan_loai: typeStr,
+                dien_thoai: r.dien_thoai,
+                dia_chi: r.dia_chi,
+                email: r.email,
+                don_nhap: r.so_don_nhap || 0,
+                tien_nhap: r.tong_tien_nhap || 0,
+                don_xuat: r.so_don_xuat || 0,
+                tien_xuat: r.tong_tien_xuat || 0,
+                tong_tien: (r.tong_tien_nhap || 0) + (r.tong_tien_xuat || 0),
+                ghi_chu: r.ghi_chu,
+            });
+
+            row.alignment = { vertical: 'middle' };
+            row.getCell('stt').alignment = { horizontal: 'center' };
+            row.getCell('don_nhap').alignment = { horizontal: 'center' };
+            row.getCell('don_xuat').alignment = { horizontal: 'center' };
+            row.getCell('tien_nhap').numFmt = '#,##0';
+            row.getCell('tien_xuat').numFmt = '#,##0';
+            row.getCell('tong_tien').numFmt = '#,##0';
+        });
+
+        const buf = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Danh_Muc_Doi_Tuong_${todayISO()}.xlsx`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        showToast('Xuất file Excel đối tượng thành công');
+    } catch (e) {
+        showToast('Lỗi xuất Excel: ' + e.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}

@@ -101,29 +101,42 @@ function onNccInput(input) {
 
     if (!query || !suppliers.length) { box.classList.add('d-none'); return; }
 
-    const matches = suppliers.filter(s =>
-        (s.ten_ncc || '').toLowerCase().includes(query) ||
-        (s.dien_thoai || '').includes(query)
-    ).slice(0, 8);
+    const matches = suppliers.filter(s => {
+        const name = (s.ten || s.ten_ncc || s.ten_kh || '').toLowerCase();
+        const phone = (s.dien_thoai || '').toLowerCase();
+        return name.includes(query) || phone.includes(query);
+    }).slice(0, 8);
 
     if (!matches.length) { box.classList.add('d-none'); return; }
 
-    box.innerHTML = matches.map(s => `
-        <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectNcc('${s.id}')">
-            <div class="fw-semibold text-primary">${escapeHtml(s.ten_ncc)}</div>
-            <div class="small text-muted">
-                ${s.dien_thoai ? '📞 ' + escapeHtml(s.dien_thoai) : ''}
-                ${s.dia_chi ? ' · ' + escapeHtml(s.dia_chi) : ''}
+    box.innerHTML = matches.map(s => {
+        const name = s.ten || s.ten_ncc || s.ten_kh || '';
+        const type = (s.phan_loai || '').toUpperCase();
+        let badge = '<span class="badge bg-secondary-subtle text-secondary border small ms-1">Đối tác</span>';
+        if (type === 'KHACH_HANG') badge = '<span class="badge bg-success-subtle text-success border small ms-1">Khách Hàng</span>';
+        else if (type === 'NHA_CUNG_CAP') badge = '<span class="badge bg-info-subtle text-info border small ms-1">Nhà Cung Cấp</span>';
+
+        return `
+            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectNcc('${s.id}')">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold text-primary">${escapeHtml(name)}</span>
+                    ${badge}
+                </div>
+                <div class="small text-muted mt-1">
+                    ${s.dien_thoai ? '📞 ' + escapeHtml(s.dien_thoai) : ''}
+                    ${s.dia_chi ? ' · ' + escapeHtml(s.dia_chi) : ''}
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
     box.classList.remove('d-none');
 }
 
 function selectNcc(sOrId) {
     const s = typeof sOrId === 'object' ? sOrId : suppliers.find(x => x.id === sOrId);
     if (!s) return;
-    document.getElementById('f-ncc-ten').value = s.ten_ncc || '';
+    const name = s.ten || s.ten_ncc || s.ten_kh || '';
+    document.getElementById('f-ncc-ten').value = name;
     document.getElementById('f-ncc-id').value = s.id || '';
     document.getElementById('f-ncc-dia-chi').value = s.dia_chi || '';
     document.getElementById('f-ncc-sdt').value = s.dien_thoai || '';
@@ -275,7 +288,7 @@ async function loadData() {
     try {
         const [pRes, sRes] = await Promise.all([
             apiRequest('/api/hang-hoa'),
-            apiRequest('/api/nha-cung-cap'),
+            apiRequest('/api/doi-tuong'),
         ]);
         products = pRes.data || [];
         suppliers = sRes.data || [];

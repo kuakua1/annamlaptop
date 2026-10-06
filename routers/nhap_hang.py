@@ -40,12 +40,12 @@ async def get_nhap_hang(
 ):
     try:
         records = db_manager.get_all("NhapHang")
-        ncc_records = db_manager.get_all("NhaCungCap")
+        ncc_records = db_manager.get_all("DoiTuong") or db_manager.get_all("NhaCungCap")
         hang_records = db_manager.get_all("HangHoa")
 
         ncc_map = {}
         for n in ncc_records:
-            ten = str(n.get("ten_ncc", "")).strip()
+            ten = str(n.get("ten") or n.get("ten_ncc") or n.get("ten_kh") or "").strip()
             nid = str(n.get("id", "")).strip()
             ncc_data = {
                 "ten_ncc": ten,
@@ -141,36 +141,49 @@ async def create_nhap_hang(
         raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Nhà Cung Cấp")
 
     try:
-        # Tự động lưu/khớp Nhà Cung Cấp
+        # Tự động lưu/khớp Đối Tượng / Nhà Cung Cấp
         if ncc_ten or ncc_id or ncc_sdt:
-            ncc_list = db_manager.get_all("NhaCungCap")
+            dt_list = db_manager.get_all("DoiTuong")
             matched = None
             if ncc_id:
-                for n in ncc_list:
+                for n in dt_list:
                     if str(n.get("id", "")).strip() == ncc_id:
                         matched = n
                         break
             if not matched and ncc_sdt:
-                for n in ncc_list:
+                for n in dt_list:
                     if str(n.get("dien_thoai", "")).strip() == ncc_sdt:
                         matched = n
                         break
             if not matched and ncc_ten:
-                for n in ncc_list:
-                    if str(n.get("ten_ncc", "")).strip().lower() == ncc_ten.lower():
+                for n in dt_list:
+                    if str(n.get("ten", "")).strip().lower() == ncc_ten.lower():
                         matched = n
                         break
 
             if not matched:
                 new_ncc_id = str(int(time.time() * 1000))
-                db_manager.insert_nha_cung_cap({
+                db_manager.insert_doi_tuong({
                     "id": new_ncc_id,
-                    "ten_ncc": ncc_ten,
+                    "ten": ncc_ten,
+                    "phan_loai": "CA_HAI",
                     "dia_chi": ncc_dia_chi,
                     "dien_thoai": ncc_sdt,
                     "email": "",
                     "ghi_chu": "Tự động lưu từ phiếu nhập",
                 })
+                # Lưu đồng thời vào NhaCungCap để tương thích
+                try:
+                    db_manager.insert_nha_cung_cap({
+                        "id": new_ncc_id,
+                        "ten_ncc": ncc_ten,
+                        "dia_chi": ncc_dia_chi,
+                        "dien_thoai": ncc_sdt,
+                        "email": "",
+                        "ghi_chu": "Tự động lưu từ phiếu nhập",
+                    })
+                except Exception:
+                    pass
                 ncc_id = new_ncc_id
             else:
                 ncc_id = str(matched.get("id", "")).strip()

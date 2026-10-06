@@ -26,7 +26,11 @@ def _parse_record(rec: dict, row_num: int) -> dict:
 @router.get("/api/khach-hang")
 async def get_khach_hang(request: Request, user: str = Depends(require_login)):
     try:
-        records = db_manager.get_all("KhachHang")
+        dt_records = db_manager.get_all("DoiTuong")
+        if dt_records:
+            records = [{"id": r["id"], "ten_kh": r["ten"], "dia_chi": r.get("dia_chi",""), "dien_thoai": r.get("dien_thoai",""), "email": r.get("email",""), "ghi_chu": r.get("ghi_chu","")} for r in dt_records]
+        else:
+            records = db_manager.get_all("KhachHang")
         xuat_records = db_manager.get_all("XuatHang")
 
         # Đếm số lượng khách hàng trùng tên để tránh gộp nhầm

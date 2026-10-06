@@ -246,8 +246,8 @@ const TAB_DEFINITIONS = {
         closable: true
     },
     'danh-muc': {
-        title: 'NCC & Khách Hàng',
-        icon: 'bi-people text-info',
+        title: 'Danh Mục Đối Tượng',
+        icon: 'bi-people-fill text-primary',
         url: '/danh-muc?embed=1',
         closable: true
     },

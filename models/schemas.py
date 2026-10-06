@@ -106,6 +106,37 @@ class KhachHang(BaseModel):
     row_num: Optional[int] = None
 
 
+# ─── DoiTuong (Unified Partners: Suppliers & Customers) ───────────────────────
+
+class DoiTuongCreate(BaseModel):
+    ten: str
+    phan_loai: Optional[str] = "CA_HAI"  # 'CA_HAI', 'KHACH_HANG', 'NHA_CUNG_CAP'
+    dia_chi: Optional[str] = ""
+    dien_thoai: Optional[str] = ""
+    email: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+
+
+class DoiTuongUpdate(BaseModel):
+    ten: Optional[str] = None
+    phan_loai: Optional[str] = None
+    dia_chi: Optional[str] = None
+    dien_thoai: Optional[str] = None
+    email: Optional[str] = None
+    ghi_chu: Optional[str] = None
+
+
+class DoiTuong(BaseModel):
+    id: str
+    ten: str
+    phan_loai: str = "CA_HAI"
+    dia_chi: str = ""
+    dien_thoai: str = ""
+    email: str = ""
+    ghi_chu: str = ""
+    row_num: Optional[int] = None
+
+
 # ─── NhapHang (Import Goods) ─────────────────────────────────────────────────
 
 class NhapHangItem(BaseModel):
