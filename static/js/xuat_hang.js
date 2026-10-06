@@ -219,7 +219,12 @@ function onProductSearchInput(id, input) {
         return;
     }
 
-    renderProductSuggestions(id, query);
+    const matches = products.filter(p =>
+        (p.ma_hang || '').toLowerCase().includes(query) ||
+        (p.ten_hang || '').toLowerCase().includes(query)
+    ).slice(0, 20);
+
+    renderProductSuggestions(id, matches);
 
     // Tự động kiểm tra và làm mới tồn kho ngầm nếu dữ liệu đã quá 2 giây
     if (Date.now() - lastLoadTime > 2000 && !isRefreshingProducts) {
@@ -228,7 +233,11 @@ function onProductSearchInput(id, input) {
             isRefreshingProducts = false;
             const currentVal = document.getElementById(`prod-input-${id}`)?.value.trim().toLowerCase();
             if (currentVal && currentVal === query) {
-                renderProductSuggestions(id, query);
+                const refreshedMatches = products.filter(p =>
+                    (p.ma_hang || '').toLowerCase().includes(query) ||
+                    (p.ten_hang || '').toLowerCase().includes(query)
+                ).slice(0, 20);
+                renderProductSuggestions(id, refreshedMatches);
             }
         }).catch(() => { isRefreshingProducts = false; });
     }
@@ -239,26 +248,19 @@ function onProductInputFocus(id, input) {
     loadData();
     const query = input.value.trim().toLowerCase();
     if (query) {
-        renderProductSuggestions(id, query);
+        const matches = products.filter(p =>
+            (p.ma_hang || '').toLowerCase().includes(query) ||
+            (p.ten_hang || '').toLowerCase().includes(query)
+        ).slice(0, 20);
+        renderProductSuggestions(id, matches);
     }
 }
 
-function renderProductSuggestions(id, query) {
+function renderProductSuggestions(id, matches) {
     const box = document.getElementById(`prod-sug-${id}`);
     if (!box) return;
 
-    if (!products.length) {
-        box.innerHTML = `<div class="p-2 text-muted small text-center">Đang tải danh sách hàng hóa...</div>`;
-        box.classList.remove('d-none');
-        return;
-    }
-
-    const matches = products.filter(p =>
-        (p.ma_hang || '').toLowerCase().includes(query) ||
-        (p.ten_hang || '').toLowerCase().includes(query)
-    ).slice(0, 10);
-
-    if (!matches.length) {
+    if (!matches || !matches.length) {
         box.innerHTML = `<div class="p-2 text-muted small text-center">Không tìm thấy hàng khớp</div>`;
         box.classList.remove('d-none');
         return;
@@ -267,7 +269,7 @@ function renderProductSuggestions(id, query) {
     box.innerHTML = matches.map(p => `
         <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.id}')">
             <div class="d-flex justify-content-between align-items-center">
-                <span class="badge bg-danger bg-opacity-10 text-danger me-2">${escapeHtml(p.ma_hang)}</span>
+                <span class="badge bg-danger bg-opacity-10 text-danger me-2 font-monospace">${escapeHtml(p.ma_hang)}</span>
                 <span class="fw-semibold text-truncate small flex-grow-1">${escapeHtml(p.ten_hang)}</span>
                 <span class="text-danger fw-bold small ms-2 text-nowrap">${formatVND(p.gia_ban)}</span>
             </div>
@@ -278,6 +280,38 @@ function renderProductSuggestions(id, query) {
         </div>
     `).join('');
     box.classList.remove('d-none');
+}
+
+function toggleProductDropdown(id, e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    const box = document.getElementById(`prod-sug-${id}`);
+    if (!box) return;
+
+    if (!box.classList.contains('d-none')) {
+        box.classList.add('d-none');
+    } else {
+        // Đóng các dropdown khác trước
+        document.querySelectorAll('div[id^="prod-sug-"]').forEach(el => el.classList.add('d-none'));
+        
+        loadData(); // Tải lại số liệu tồn kho mới nhất
+        const input = document.getElementById(`prod-input-${id}`);
+        const query = (input?.value || '').trim().toLowerCase();
+        let matches = [];
+        if (query) {
+            matches = products.filter(p =>
+                (p.ma_hang || '').toLowerCase().includes(query) ||
+                (p.ten_hang || '').toLowerCase().includes(query)
+            ).slice(0, 50);
+        }
+        if (!matches.length) {
+            matches = products.slice(0, 50);
+        }
+        renderProductSuggestions(id, matches);
+        if (input) input.focus();
+    }
 }
 
 function selectProductForRow(id, prodIdOrMa) {
@@ -325,7 +359,7 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('#f-kh-ten') && !e.target.closest('#kh-suggestions') && !e.target.closest('#btn-toggle-kh-dropdown')) {
         document.getElementById('kh-suggestions')?.classList.add('d-none');
     }
-    if (!e.target.closest('.autocomplete-dropdown') && !e.target.closest('input[id^="prod-input-"]')) {
+    if (!e.target.closest('.autocomplete-dropdown') && !e.target.closest('input[id^="prod-input-"]') && !e.target.closest('.btn-toggle-prod-dd')) {
         document.querySelectorAll('div[id^="prod-sug-"]').forEach(el => el.classList.add('d-none'));
     }
 });
@@ -427,7 +461,7 @@ function _appendRow(id, ma_hang, so_luong, gia_ban) {
     const tr = document.createElement('tr');
     tr.id = `row-${id}`;
     tr.innerHTML = `
-        <td class="position-relative" style="min-width: 250px;">
+        <td class="position-relative" style="min-width: 260px;">
             <div class="input-group input-group-sm">
                 <input type="text" class="form-control form-control-sm" id="prod-input-${id}"
                     value="${prodName}"
@@ -438,6 +472,9 @@ function _appendRow(id, ma_hang, so_luong, gia_ban) {
                     oninput="onProductSearchInput(${id}, this)">
                 <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearProductRow(${id})" title="Xóa chọn">
                     <i class="bi bi-x"></i>
+                </button>
+                <button class="btn btn-outline-danger btn-sm btn-toggle-prod-dd" type="button" onclick="toggleProductDropdown(${id}, event)" title="Chọn hàng hóa từ danh sách">
+                    <i class="bi bi-chevron-down"></i>
                 </button>
             </div>
             <input type="hidden" id="prod-ma-${id}" value="${ma_hang}">

@@ -209,6 +209,32 @@ function selectNcc(sOrId) {
 
 // ── Autocomplete Tìm Kiếm Hàng Hóa ──────────────────────────────────────────
 
+function renderProductSuggestions(id, matches) {
+    const box = document.getElementById(`prod-sug-${id}`);
+    if (!box) return;
+
+    if (!matches || !matches.length) {
+        box.innerHTML = `<div class="p-2 text-muted small text-center">Không tìm thấy hàng khớp</div>`;
+        box.classList.remove('d-none');
+        return;
+    }
+
+    box.innerHTML = matches.map(p => `
+        <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.id}')">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="badge bg-primary bg-opacity-10 text-primary me-2 font-monospace">${escapeHtml(p.ma_hang)}</span>
+                <span class="fw-semibold text-truncate small flex-grow-1">${escapeHtml(p.ten_hang)}</span>
+                <span class="text-success fw-bold small ms-2 text-nowrap">${formatVND(p.gia_nhap)}</span>
+            </div>
+            <div class="text-muted small mt-1 d-flex justify-content-between" style="font-size: 0.75rem;">
+                <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${escapeHtml(p.danh_muc)}</span>` : ''} ĐVT: ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
+                <span>Tồn hiện tại: <strong>${formatNumber(p.ton_kho)}</strong></span>
+            </div>
+        </div>
+    `).join('');
+    box.classList.remove('d-none');
+}
+
 function onProductSearchInput(id, input) {
     const query = input.value.trim().toLowerCase();
     const box = document.getElementById(`prod-sug-${id}`);
@@ -227,28 +253,51 @@ function onProductSearchInput(id, input) {
     const matches = products.filter(p =>
         (p.ma_hang || '').toLowerCase().includes(query) ||
         (p.ten_hang || '').toLowerCase().includes(query)
-    ).slice(0, 10);
+    ).slice(0, 20);
 
-    if (!matches.length) {
-        box.innerHTML = `<div class="p-2 text-muted small text-center">Không tìm thấy hàng khớp</div>`;
-        box.classList.remove('d-none');
-        return;
+    renderProductSuggestions(id, matches);
+}
+
+function onProductInputFocus(id, input) {
+    const query = (input?.value || '').trim().toLowerCase();
+    if (query && products.length) {
+        const matches = products.filter(p =>
+            (p.ma_hang || '').toLowerCase().includes(query) ||
+            (p.ten_hang || '').toLowerCase().includes(query)
+        ).slice(0, 20);
+        renderProductSuggestions(id, matches);
     }
+}
 
-    box.innerHTML = matches.map(p => `
-        <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.id}')">
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="badge bg-primary bg-opacity-10 text-primary me-2">${escapeHtml(p.ma_hang)}</span>
-                <span class="fw-semibold text-truncate small flex-grow-1">${escapeHtml(p.ten_hang)}</span>
-                <span class="text-success fw-bold small ms-2 text-nowrap">${formatVND(p.gia_nhap)}</span>
-            </div>
-            <div class="text-muted small mt-1 d-flex justify-content-between" style="font-size: 0.75rem;">
-                <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${escapeHtml(p.danh_muc)}</span>` : ''} ĐVT: ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
-                <span>Tồn hiện tại: <strong>${formatNumber(p.ton_kho)}</strong></span>
-            </div>
-        </div>
-    `).join('');
-    box.classList.remove('d-none');
+function toggleProductDropdown(id, e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    const box = document.getElementById(`prod-sug-${id}`);
+    if (!box) return;
+
+    if (!box.classList.contains('d-none')) {
+        box.classList.add('d-none');
+    } else {
+        // Đóng các dropdown khác trước
+        document.querySelectorAll('div[id^="prod-sug-"]').forEach(el => el.classList.add('d-none'));
+        
+        const input = document.getElementById(`prod-input-${id}`);
+        const query = (input?.value || '').trim().toLowerCase();
+        let matches = [];
+        if (query) {
+            matches = products.filter(p =>
+                (p.ma_hang || '').toLowerCase().includes(query) ||
+                (p.ten_hang || '').toLowerCase().includes(query)
+            ).slice(0, 50);
+        }
+        if (!matches.length) {
+            matches = products.slice(0, 50);
+        }
+        renderProductSuggestions(id, matches);
+        if (input) input.focus();
+    }
 }
 
 function selectProductForRow(id, prodIdOrMa) {
@@ -290,7 +339,7 @@ document.addEventListener('click', (e) => {
     if (!e.target.closest('#f-ncc-ten') && !e.target.closest('#ncc-suggestions') && !e.target.closest('#btn-toggle-ncc-dropdown')) {
         document.getElementById('ncc-suggestions')?.classList.add('d-none');
     }
-    if (!e.target.closest('.autocomplete-dropdown') && !e.target.closest('input[id^="prod-input-"]')) {
+    if (!e.target.closest('.autocomplete-dropdown') && !e.target.closest('input[id^="prod-input-"]') && !e.target.closest('.btn-toggle-prod-dd')) {
         document.querySelectorAll('div[id^="prod-sug-"]').forEach(el => el.classList.add('d-none'));
     }
 });
@@ -412,16 +461,20 @@ function _appendRow(id, ma_hang, so_luong, gia_nhap) {
     const tr = document.createElement('tr');
     tr.id = `row-${id}`;
     tr.innerHTML = `
-        <td class="position-relative" style="min-width: 250px;">
+        <td class="position-relative" style="min-width: 260px;">
             <div class="input-group input-group-sm">
                 <input type="text" class="form-control form-control-sm" id="prod-input-${id}"
                     value="${prodName}"
                     placeholder="Gõ mã hoặc tên hàng..."
                     autocomplete="off"
+                    onfocus="onProductInputFocus(${id}, this)"
                     onkeydown="onProductInputKeydown(${id}, event)"
                     oninput="onProductSearchInput(${id}, this)">
                 <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearProductRow(${id})" title="Xóa chọn">
                     <i class="bi bi-x"></i>
+                </button>
+                <button class="btn btn-outline-primary btn-sm btn-toggle-prod-dd" type="button" onclick="toggleProductDropdown(${id}, event)" title="Chọn hàng hóa từ danh sách">
+                    <i class="bi bi-chevron-down"></i>
                 </button>
             </div>
             <input type="hidden" id="prod-ma-${id}" value="${ma_hang}">
