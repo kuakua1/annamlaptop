@@ -300,6 +300,9 @@ async function savePhieuThu() {
             resetFormPhieuThu();
             await fetchNextCode();
             await loadRecentReceipts();
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('DEBT_UPDATED');
+            }
         }
     } catch (e) {
         showToast(`Lỗi: ${e.message}`, 'error');

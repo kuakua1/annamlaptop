@@ -1324,10 +1324,8 @@ async function executeDeleteReceiptApi(so_phieu, type, onDone) {
         const res = await apiRequest(apiUrl, 'DELETE');
         showToast(res.message || `Đã xóa phiếu ${so_phieu} thành công!`, 'success');
 
-        // Báo cho các tab iframe khác cập nhật kho
-        try {
-            window.top.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
-        } catch (e) {}
+        // Báo cho các tab iframe khác cập nhật kho & công nợ tức thì
+        broadcastDataUpdate('DEBT_UPDATED');
 
         if (typeof onDone === 'function') {
             await onDone();
@@ -1981,6 +1979,7 @@ async function submitQuickPhieuThu(event, so_phieu) {
             if (typeof loadReceipts === 'function') {
                 loadReceipts();
             }
+            broadcastDataUpdate('DEBT_UPDATED');
         }
     } catch (e) {
         showToast('Lỗi tạo phiếu thu: ' + e.message, 'error');
@@ -2194,6 +2193,7 @@ async function submitQuickPhieuChi(event, so_phieu) {
             if (typeof loadReceipts === 'function') {
                 loadReceipts();
             }
+            broadcastDataUpdate('DEBT_UPDATED');
         }
     } catch (e) {
         showToast('Lỗi tạo phiếu chi: ' + e.message, 'error');
@@ -2681,12 +2681,46 @@ async function syncFromGoogleSheets() {
     }
 }
 
-// Chuyển tiếp tín hiệu đồng bộ giữa các tab iframe
-window.addEventListener('message', (e) => {
-    if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+// ── Đa Kênh Đồng Bộ Real-time (BroadcastChannel & Iframe Message) ──────────
+
+function broadcastDataUpdate(type = 'DATA_UPDATED') {
+    const payload = { type: type, timestamp: Date.now() };
+    try {
+        if (typeof BroadcastChannel !== 'undefined') {
+            const bc = new BroadcastChannel('inventory_sync');
+            bc.postMessage(payload);
+            bc.postMessage({ type: 'PRODUCTS_UPDATED', timestamp: Date.now() });
+            bc.postMessage({ type: 'DEBT_UPDATED', timestamp: Date.now() });
+        }
+    } catch (e) {}
+
+    try {
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage(payload, '*');
+            window.parent.postMessage({ type: 'PRODUCTS_UPDATED', timestamp: Date.now() }, '*');
+            window.parent.postMessage({ type: 'DEBT_UPDATED', timestamp: Date.now() }, '*');
+        }
+    } catch (e) {}
+
+    // Dispatch trực tiếp đến tất cả tab iframe trong window hiện tại nếu là parent
+    try {
         document.querySelectorAll('.tab-frame').forEach(f => {
             try {
-                f.contentWindow.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+                f.contentWindow.postMessage(payload, '*');
+                f.contentWindow.postMessage({ type: 'PRODUCTS_UPDATED', timestamp: Date.now() }, '*');
+                f.contentWindow.postMessage({ type: 'DEBT_UPDATED', timestamp: Date.now() }, '*');
+            } catch (err) {}
+        });
+    } catch (e) {}
+}
+window.broadcastDataUpdate = broadcastDataUpdate;
+
+// Chuyển tiếp tín hiệu đồng bộ giữa các tab iframe
+window.addEventListener('message', (e) => {
+    if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
+        document.querySelectorAll('.tab-frame').forEach(f => {
+            try {
+                f.contentWindow.postMessage(e.data, '*');
             } catch (err) {}
         });
     }
@@ -2695,12 +2729,13 @@ window.addEventListener('message', (e) => {
 try {
     const syncChannel = new BroadcastChannel('inventory_sync');
     syncChannel.onmessage = (e) => {
-        if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+        if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
             document.querySelectorAll('.tab-frame').forEach(f => {
                 try {
-                    f.contentWindow.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+                    f.contentWindow.postMessage(e.data, '*');
                 } catch (err) {}
             });
         }
     };
 } catch (err) {}
+

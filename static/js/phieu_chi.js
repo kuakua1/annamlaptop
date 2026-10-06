@@ -376,6 +376,9 @@ async function savePhieuChi() {
             resetFormPhieuChi();
             await fetchNextCodeChi();
             await loadRecentChi();
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('DEBT_UPDATED');
+            }
         }
     } catch (e) {
         showToast(`Lỗi: ${e.message}`, 'error');
@@ -545,6 +548,9 @@ async function confirmDeletePhieuChi(recordId, maPhieu) {
             }
             await fetchNextCodeChi();
             await loadRecentChi();
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('DEBT_UPDATED');
+            }
         }
     } catch (e) {
         showToast('Lỗi xóa phiếu chi: ' + e.message, 'error');

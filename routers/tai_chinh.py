@@ -255,13 +255,13 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
     """Thống kê tổng công nợ phải thu (khách nợ) và công nợ phải trả (nợ NCC)."""
     # 1. Phải thu: từ bảng XuatHang có tien_khach_no > 0
     all_xuat = db_manager.get_all("XuatHang")
-    kh_records = db_manager.get_all("KhachHang")
+    kh_records = db_manager.get_all("DoiTuong") or db_manager.get_all("KhachHang")
 
     # Map tra cứu khách hàng theo ID hoặc Tên
     kh_map = {}
     for k in kh_records:
         kid = str(k.get("id", "")).strip()
-        kten = str(k.get("ten_kh", "")).strip()
+        kten = str(k.get("ten") or k.get("ten_kh") or "").strip()
         sdt_clean = _clean_phone(k.get("dien_thoai"))
         info = {
             "id": kid,
