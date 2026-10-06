@@ -1989,6 +1989,7 @@ async function submitQuickPhieuThu(event, so_phieu) {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Xác Nhận Tạo Phiếu Thu';
         }
+    }
 }
 
 /**
