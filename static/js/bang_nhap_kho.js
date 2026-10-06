@@ -46,6 +46,7 @@ function renderImportTable(apiRes) {
     const count = importRecords.length;
     const totalQty = apiRes.tong_so_luong || importRecords.reduce((sum, r) => sum + (parseInt(r.so_luong) || 0), 0);
     const totalCost = apiRes.tong_thanh_tien || importRecords.reduce((sum, r) => sum + (parseFloat(r.thanh_tien) || 0), 0);
+    const totalDebt = apiRes.tong_cong_no !== undefined ? apiRes.tong_cong_no : importRecords.reduce((sum, r) => sum + (parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0), 0);
 
     // Cập nhật card trên đầu
     document.getElementById('stat-count').textContent = formatNumber(count);
@@ -59,6 +60,8 @@ function renderImportTable(apiRes) {
         tfoot.style.display = '';
         document.getElementById('tf-qty').textContent = formatNumber(totalQty);
         document.getElementById('tf-val').textContent = formatVND(totalCost);
+        const tfDebt = document.getElementById('tf-debt');
+        if (tfDebt) tfDebt.textContent = formatVND(totalDebt);
     } else {
         tfoot.style.display = 'none';
     }
@@ -76,6 +79,10 @@ function renderImportTable(apiRes) {
         const sl = parseInt(r.so_luong) || 0;
         const giaNhap = parseFloat(r.gia_nhap) || 0;
         const thanhTien = parseFloat(r.thanh_tien) || 0;
+        const congNo = parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0;
+        const debtHtml = congNo > 0
+            ? `<span class="fw-bold text-danger font-monospace">${formatVND(congNo)}</span>`
+            : `<span class="text-muted font-monospace">0 đ</span>`;
 
         // Định dạng thông tin đơn vị nhập (Tên, SĐT, Địa chỉ)
         const nccTen = r.ncc_ten || r.nha_cung_cap_id || 'Nhà cung cấp lẻ';
@@ -97,6 +104,7 @@ function renderImportTable(apiRes) {
                 <td class="text-center fw-bold fs-6 text-primary font-monospace">${formatNumber(sl)}</td>
                 <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(giaNhap)}</td>
                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
+                <td class="text-end font-monospace text-nowrap" style="white-space: nowrap; min-width: 145px;">${debtHtml}</td>
                 <td class="text-center no-print">
                     <div class="d-flex justify-content-center gap-1">
                         <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu nhập">
@@ -147,14 +155,17 @@ function exportImportToExcel() {
 
     let totalQty = 0;
     let totalThanhTien = 0;
+    let totalDebt = 0;
 
     const rows = importRecords.map((r, idx) => {
         const sl = parseInt(r.so_luong) || 0;
         const giaNhap = parseFloat(r.gia_nhap) || 0;
         const thanhTien = parseFloat(r.thanh_tien) || 0;
+        const congNo = parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0;
 
         totalQty += sl;
         totalThanhTien += thanhTien;
+        totalDebt += congNo;
 
         return [
             idx + 1,
@@ -165,11 +176,12 @@ function exportImportToExcel() {
             sl,
             giaNhap,
             thanhTien,
+            congNo,
             r.ncc_ten || 'Không xác định'
         ];
     });
 
-    const summaryRow = ['Tổng cộng', '', '', '', '-', totalQty, '-', totalThanhTien, '-'];
+    const summaryRow = ['Tổng cộng', '', '', '', '-', totalQty, '-', totalThanhTien, totalDebt, '-'];
 
     const monthInput = document.getElementById('filter-month')?.value;
     const now = new Date();
@@ -195,7 +207,8 @@ function exportImportToExcel() {
             { header: 'Số lượng', code: '1', width: 12, align: 'right', isNumber: true },
             { header: 'Đơn giá nhập', code: '2', width: 16, align: 'right', isNumber: true },
             { header: 'Thành tiền', code: '3', width: 20, align: 'right', isNumber: true },
-            { header: 'Nhà cung cấp', code: '4', width: 25, align: 'left', wrapText: true }
+            { header: 'Công nợ', code: '4', width: 18, align: 'right', isNumber: true },
+            { header: 'Nhà cung cấp', code: '5', width: 25, align: 'left', wrapText: true }
         ],
         rows,
         summaryRow,

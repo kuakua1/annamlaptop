@@ -110,6 +110,7 @@ async def get_xuat_hang(
                 "gia_von": gia_von,
                 "loi_nhuan": loi_nhuan,
                 "tien_khach_no": tien_khach_no,
+                "cong_no": tien_khach_no,
                 "row_num": i + 2,
             }
             result.append(item)
@@ -118,6 +119,7 @@ async def get_xuat_hang(
         total_sl = sum(x["so_luong"] for x in result)
         total_tien = sum(x["thanh_tien"] for x in result)
         total_profit = sum(x["loi_nhuan"] for x in result)
+        total_khach_no = sum(x["tien_khach_no"] for x in result)
         return {
             "success": True,
             "data": result,
@@ -125,6 +127,8 @@ async def get_xuat_hang(
             "tong_so_luong": total_sl,
             "tong_tien": total_tien,
             "tong_loi_nhuan": total_profit,
+            "tong_khach_no": total_khach_no,
+            "tong_cong_no": total_khach_no,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

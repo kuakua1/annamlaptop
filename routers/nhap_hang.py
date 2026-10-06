@@ -86,6 +86,10 @@ async def get_nhap_hang(
                 if s_lower not in searchable_text:
                     continue
 
+            thanh_tien = float(rec.get("thanh_tien", 0) or 0)
+            raw_no = rec.get("cong_no")
+            cong_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
+
             item = {
                 "id": str(rec.get("id", "")),
                 "so_phieu": so_phieu,
@@ -95,7 +99,8 @@ async def get_nhap_hang(
                 "don_vi_tinh": dvt_map.get(ma, "Cái"),
                 "so_luong": int(rec.get("so_luong", 0) or 0),
                 "gia_nhap": float(rec.get("gia_nhap", 0) or 0),
-                "thanh_tien": float(rec.get("thanh_tien", 0) or 0),
+                "thanh_tien": thanh_tien,
+                "cong_no": cong_no,
                 "nha_cung_cap_id": ncc_key,
                 "ncc_ten": ncc_ten,
                 "ncc_sdt": ncc_sdt,
@@ -108,12 +113,14 @@ async def get_nhap_hang(
         result.sort(key=lambda x: (x["ngay_nhap"], x["id"]), reverse=True)
         total_sl = sum(x["so_luong"] for x in result)
         total_tien = sum(x["thanh_tien"] for x in result)
+        total_cong_no = sum(x["cong_no"] for x in result)
         return {
             "success": True,
             "data": result,
             "total": len(result),
             "tong_so_luong": total_sl,
             "tong_tien": total_tien,
+            "tong_cong_no": total_cong_no,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

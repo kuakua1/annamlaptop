@@ -47,6 +47,7 @@ function renderExportTable(apiRes) {
     const totalQty = apiRes.tong_so_luong || exportRecords.reduce((sum, r) => sum + (parseInt(r.so_luong) || 0), 0);
     const totalRevenue = apiRes.tong_thanh_tien || exportRecords.reduce((sum, r) => sum + (parseFloat(r.thanh_tien) || 0), 0);
     const totalProfit = apiRes.tong_loi_nhuan || exportRecords.reduce((sum, r) => sum + (parseFloat(r.loi_nhuan) || 0), 0);
+    const totalDebt = apiRes.tong_khach_no !== undefined ? apiRes.tong_khach_no : exportRecords.reduce((sum, r) => sum + (parseFloat(r.tien_khach_no !== undefined ? r.tien_khach_no : (r.cong_no !== undefined ? r.cong_no : r.thanh_tien)) || 0), 0);
 
     // Cập nhật card trên đầu
     document.getElementById('stat-count').textContent = formatNumber(count);
@@ -61,6 +62,8 @@ function renderExportTable(apiRes) {
         tfoot.style.display = '';
         document.getElementById('tf-qty').textContent = formatNumber(totalQty);
         document.getElementById('tf-val').textContent = formatVND(totalRevenue);
+        const tfDebt = document.getElementById('tf-debt');
+        if (tfDebt) tfDebt.textContent = formatVND(totalDebt);
     } else {
         tfoot.style.display = 'none';
     }
@@ -78,6 +81,10 @@ function renderExportTable(apiRes) {
         const sl = parseInt(r.so_luong) || 0;
         const giaBan = parseFloat(r.gia_ban) || 0;
         const thanhTien = parseFloat(r.thanh_tien) || 0;
+        const khachNo = parseFloat(r.tien_khach_no !== undefined ? r.tien_khach_no : (r.cong_no !== undefined ? r.cong_no : r.thanh_tien)) || 0;
+        const debtHtml = khachNo > 0
+            ? `<span class="fw-bold text-danger font-monospace text-nowrap">${formatVND(khachNo)}</span>`
+            : `<span class="text-muted font-monospace text-nowrap">0 đ</span>`;
 
         // Định dạng thông tin khách hàng (Tên, SĐT, Địa chỉ)
         const khTen = r.kh_ten || r.khach_hang_id || 'Khách lẻ';
@@ -99,6 +106,7 @@ function renderExportTable(apiRes) {
                 <td class="text-center fw-bold fs-6 text-danger font-monospace">${formatNumber(sl)}</td>
                 <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(giaBan)}</td>
                 <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
+                <td class="text-end font-monospace text-nowrap" style="white-space: nowrap; min-width: 145px;">${debtHtml}</td>
                 <td class="text-center no-print">
                     <div class="d-flex justify-content-center gap-1">
                         <button class="btn btn-xs btn-outline-danger btn-sm" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu xuất">
@@ -149,14 +157,17 @@ function exportExportToExcel() {
 
     let totalQty = 0;
     let totalThanhTien = 0;
+    let totalDebt = 0;
 
     const rows = exportRecords.map((r, idx) => {
         const sl = parseInt(r.so_luong) || 0;
         const giaBan = parseFloat(r.gia_ban) || 0;
         const thanhTien = parseFloat(r.thanh_tien) || 0;
+        const khachNo = parseFloat(r.tien_khach_no !== undefined ? r.tien_khach_no : (r.cong_no !== undefined ? r.cong_no : r.thanh_tien)) || 0;
 
         totalQty += sl;
         totalThanhTien += thanhTien;
+        totalDebt += khachNo;
 
         return [
             idx + 1,
@@ -167,11 +178,12 @@ function exportExportToExcel() {
             sl,
             giaBan,
             thanhTien,
+            khachNo,
             r.kh_ten || 'Khách lẻ'
         ];
     });
 
-    const summaryRow = ['Tổng cộng', '', '', '', '-', totalQty, '-', totalThanhTien, '-'];
+    const summaryRow = ['Tổng cộng', '', '', '', '-', totalQty, '-', totalThanhTien, totalDebt, '-'];
 
     const monthInput = document.getElementById('filter-month')?.value;
     const now = new Date();
@@ -197,7 +209,8 @@ function exportExportToExcel() {
             { header: 'Số lượng', code: '1', width: 12, align: 'right', isNumber: true },
             { header: 'Đơn giá bán', code: '2', width: 16, align: 'right', isNumber: true },
             { header: 'Thành tiền', code: '3', width: 20, align: 'right', isNumber: true },
-            { header: 'Khách hàng', code: '4', width: 25, align: 'left', wrapText: true }
+            { header: 'Khách nợ', code: '4', width: 18, align: 'right', isNumber: true },
+            { header: 'Khách hàng', code: '5', width: 25, align: 'left', wrapText: true }
         ],
         rows,
         summaryRow,
