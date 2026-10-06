@@ -173,6 +173,7 @@ class XuatHang(BaseModel):
     thanh_tien: float
     khach_hang_id: str
     ghi_chu: str
+    tien_khach_no: Optional[float] = 0
     row_num: Optional[int] = None
 
 
@@ -198,3 +199,29 @@ class XuatHangUpdate(BaseModel):
     dien_thoai: Optional[str] = ""
     ghi_chu: Optional[str] = ""
     items: List[XuatHangItem]
+
+
+# ─── SoQuy (Cash Flow) ────────────────────────────────────────────────────────
+
+class PhieuThuCreate(BaseModel):
+    loai_quy: str = "TIEN_MAT"  # "TIEN_MAT" | "NGAN_HANG"
+    ngay: str  # YYYY-MM-DD
+    doi_tuong: str  # Tên khách hàng (bắt buộc)
+    dien_thoai: str  # Số điện thoại (bắt buộc)
+    dia_chi: Optional[str] = ""
+    khach_hang_id: Optional[str] = ""
+    so_tien: float
+    phieu_lien_quan: Optional[str] = ""  # Số phiếu xuất (nếu có)
+    ghi_chu: Optional[str] = ""
+
+
+class PhieuChiCreate(BaseModel):
+    loai_quy: str = "TIEN_MAT"
+    ngay: str
+    doi_tuong: str
+    dien_thoai: Optional[str] = ""
+    dia_chi: Optional[str] = ""
+    so_tien: float
+    phieu_lien_quan: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+

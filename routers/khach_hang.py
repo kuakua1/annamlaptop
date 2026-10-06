@@ -103,6 +103,31 @@ async def get_khach_hang(request: Request, user: str = Depends(require_login)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/khach-hang/unpaid-invoices")
+async def get_customer_unpaid_invoices_kh_route(
+    ten_kh: str = "",
+    kh_id: str = "",
+    sdt: str = "",
+    user: str = Depends(require_login)
+):
+    """
+    Kiểm tra xem khách hàng có đang nợ công ty phiếu xuất nào không.
+    Trả về danh sách phiếu xuất còn nợ, kèm thông tin tiền nợ và gợi ý nội dung.
+    """
+    query_name = kh_id or ten_kh
+    if not query_name and not sdt:
+        return {"success": True, "has_debt": False, "invoices": []}
+
+    invoices = db_manager.get_customer_unpaid_invoices(query_name, sdt)
+    has_debt = len(invoices) > 0
+    return {
+        "success": True,
+        "has_debt": has_debt,
+        "count": len(invoices),
+        "invoices": invoices
+    }
+
+
 @router.get("/api/khach-hang/{record_id}")
 @router.get("/api/khach-hang/{record_id}/lich-su")
 async def get_khach_hang_detail(record_id: str, request: Request, user: str = Depends(require_login)):

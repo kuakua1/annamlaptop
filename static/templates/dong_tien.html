@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Dòng Tiền - Kho Hàng An Nam{% endblock %}
+{% block page_title %}Quản Lý Dòng Tiền & Sổ Quỹ{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <!-- Thống kê số dư hiện tại -->
+    <div class="col-12">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tiền Mặt Hiện Tại</h6>
+                                <h3 class="mb-0 text-success fw-bold" id="card-tien-mat">0 đ</h3>
+                                <small class="text-muted">Tổng quỹ tiền mặt tại cửa hàng</small>
+                            </div>
+                            <div class="bg-success bg-opacity-10 p-3 rounded-circle text-success fs-3">
+                                <i class="bi bi-cash-stack"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tiền Gửi Ngân Hàng</h6>
+                                <h3 class="mb-0 text-primary fw-bold" id="card-tien-gui">0 đ</h3>
+                                <small class="text-muted">Số dư tài khoản chuyển khoản</small>
+                            </div>
+                            <div class="bg-primary bg-opacity-10 p-3 rounded-circle text-primary fs-3">
+                                <i class="bi bi-bank"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div>
+                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tổng Quỹ Doanh Nghiệp</h6>
+                                <h3 class="mb-0 text-info fw-bold" id="card-tong-quy">0 đ</h3>
+                                <small class="text-muted">Tiền mặt + Tiền gửi ngân hàng</small>
+                            </div>
+                            <div class="bg-info bg-opacity-10 p-3 rounded-circle text-info fs-3">
+                                <i class="bi bi-wallet2"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions & Filter -->
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-body py-3">
+                <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-success" onclick="TabManager.openTab('phieu-thu')">
+                            <i class="bi bi-box-arrow-in-down-right me-1"></i>Tạo Phiếu Thu Tiền
+                        </button>
+                        <button class="btn btn-danger" onclick="TabManager.openTab('phieu-chi')">
+                            <i class="bi bi-box-arrow-up-right me-1"></i>Tạo Phiếu Chi Tiền
+                        </button>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <select class="form-select form-select-sm" id="filter-loai-quy" style="width: 170px;" onchange="filterSoQuy()">
+                            <option value="">-- Tất cả loại quỹ --</option>
+                            <option value="TIEN_MAT">Tiền mặt</option>
+                            <option value="NGAN_HANG">Tiền gửi ngân hàng</option>
+                        </select>
+                        <select class="form-select form-select-sm" id="filter-loai-phieu" style="width: 150px;" onchange="filterSoQuy()">
+                            <option value="">-- Thu & Chi --</option>
+                            <option value="THU">Chỉ phiếu Thu</option>
+                            <option value="CHI">Chỉ phiếu Chi</option>
+                        </select>
+                        <input type="text" class="form-control form-control-sm" id="search-phieu" placeholder="Tìm kiếm theo mã, khách..." style="width: 200px;" oninput="filterSoQuy()">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadSoQuy()" title="Tải lại">
+                            <i class="bi bi-arrow-repeat"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Danh sách giao dịch sổ quỹ -->
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h6 class="card-title mb-0 fw-bold">
+                    <i class="bi bi-journal-text me-2 text-primary"></i>Sổ Nhật Ký Thu / Chi Toàn Doanh Nghiệp
+                </h6>
+                <span class="badge bg-light text-dark border" id="badge-total-records">0 giao dịch</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 130px;">Mã Phiếu</th>
+                                <th style="width: 110px;">Ngày</th>
+                                <th style="width: 110px;">Loại Phiếu</th>
+                                <th style="width: 120px;">Hình Thức</th>
+                                <th>Đối Tượng</th>
+                                <th style="width: 130px;">Phiếu Liên Quan</th>
+                                <th class="text-end" style="width: 140px;">Số Tiền</th>
+                                <th>Nội Dung / Ghi Chú</th>
+                                <th class="text-center" style="width: 70px;">Thao Tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-so-quy">
+                            <tr>
+                                <td colspan="9" class="text-center py-4 text-muted">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div> Đang tải sổ quỹ...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let allTransactions = [];
+
+document.addEventListener('DOMContentLoaded', function () {
+    loadSoQuy();
+});
+
+async function loadSoQuy() {
+    try {
+        const res = await apiRequest('/api/dong-tien/tong-quan');
+        if (res.success) {
+            document.getElementById('card-tien-mat').innerText = formatVND(res.tien_mat);
+            document.getElementById('card-tien-gui').innerText = formatVND(res.tien_gui);
+            document.getElementById('card-tong-quy').innerText = formatVND(res.tong_quy);
+
+            allTransactions = res.transactions || [];
+            renderSoQuyTable(allTransactions);
+        }
+    } catch (e) {
+        showToast('Lỗi tải dữ liệu dòng tiền: ' + e.message, 'error');
+    }
+}
+
+function filterSoQuy() {
+    const loaiQuy = document.getElementById('filter-loai-quy').value;
+    const loaiPhieu = document.getElementById('filter-loai-phieu').value;
+    const q = document.getElementById('search-phieu').value.trim().toLowerCase();
+
+    let filtered = allTransactions.filter(item => {
+        if (loaiQuy && item.loai_quy !== loaiQuy) return false;
+        if (loaiPhieu && item.loai_phieu !== loaiPhieu) return false;
+        if (q) {
+            const str = `${item.ma_phieu} ${item.doi_tuong} ${item.dien_thoai} ${item.phieu_lien_quan} ${item.ghi_chu}`.toLowerCase();
+            if (!str.includes(q)) return false;
+        }
+        return true;
+    });
+
+    renderSoQuyTable(filtered);
+}
+
+function renderSoQuyTable(list) {
+    const tbody = document.getElementById('tbody-so-quy');
+    document.getElementById('badge-total-records').innerText = `${list.length} giao dịch`;
+
+    if (!list || list.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" class="text-center py-5 text-muted">
+                    <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
+                    Không có giao dịch thu / chi nào phù hợp
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = list.map(item => {
+        const isThu = item.loai_phieu === 'THU';
+        const typeBadge = isThu
+            ? '<span class="badge bg-success">PHIẾU THU</span>'
+            : '<span class="badge bg-danger">PHIẾU CHI</span>';
+
+        const quyBadge = item.loai_quy === 'TIEN_MAT'
+            ? '<span class="badge bg-light text-dark border">Tiền mặt</span>'
+            : '<span class="badge bg-info-subtle text-info-emphasis border border-info">Ngân hàng</span>';
+
+        const amountColor = isThu ? 'text-success' : 'text-danger';
+        const sign = isThu ? '+' : '-';
+
+        return `
+            <tr>
+                <td class="fw-bold font-monospace text-primary">${escapeHtml(item.ma_phieu)}</td>
+                <td class="small text-muted">${formatDate(item.ngay)}</td>
+                <td>${typeBadge}</td>
+                <td>${quyBadge}</td>
+                <td>
+                    <div class="fw-semibold">${escapeHtml(item.doi_tuong)}</div>
+                    <small class="text-muted">${item.dien_thoai ? '📞 ' + escapeHtml(item.dien_thoai) : ''}</small>
+                </td>
+                <td>
+                    ${item.phieu_lien_quan ? `<span class="badge bg-light text-danger border font-monospace">${escapeHtml(item.phieu_lien_quan)}</span>` : '<span class="text-muted small">Tự do</span>'}
+                </td>
+                <td class="text-end fw-bold font-monospace ${amountColor}">
+                    ${sign} ${formatVND(item.so_tien)}
+                </td>
+                <td class="small">${escapeHtml(item.ghi_chu || '')}</td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-outline-danger p-1 px-2" title="Xóa phiếu" onclick="deleteReceipt('${item.id}', '${item.ma_phieu}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function deleteReceipt(id, maPhieu) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa phiếu ${maPhieu}?`)) return;
+    try {
+        const res = await apiRequest(`/api/so-quy/${id}`, 'DELETE');
+        if (res.success) {
+            showToast(`Đã xóa phiếu ${maPhieu}`, 'success');
+            await loadSoQuy();
+        }
+    } catch (e) {
+        showToast('Lỗi: ' + e.message, 'error');
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+</script>
+{% endblock %}

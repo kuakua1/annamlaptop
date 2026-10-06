@@ -626,39 +626,30 @@ function renderReceiptsPage(page) {
     const pageItems = allReceiptsList.slice(startIdx, startIdx + RECEIPTS_PAGE_SIZE);
 
     container.innerHTML = pageItems.map(r => `
-        <div class="receipt-list-item p-3 mb-2 border rounded shadow-sm bg-white" onclick="viewReceipt('${r.so_phieu}')" style="cursor: pointer; transition: all 0.2s ease;">
-            <!-- Dòng 1: Thời gian bên trái (to rõ ràng) + Số phiếu & Tổng tiền bên phải -->
-            <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewReceipt('${r.so_phieu}')" style="cursor: pointer; transition: all 0.2s ease;">
+            <!-- Dòng 1: Ngày + ID phiếu (trái) và Số tiền (phải) -->
+            <div class="d-flex justify-content-between align-items-center mb-1">
                 <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle fs-6 px-2 py-1 fw-bold">
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
                         <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
                     </span>
-                    <span class="fw-bold text-danger font-monospace fs-6">${r.so_phieu}</span>
+                    <span class="fw-bold text-danger font-monospace" style="font-size: 0.85rem;">${r.so_phieu}</span>
                 </div>
                 <div class="text-end">
-                    <span class="fw-bold text-danger fs-5 font-monospace">${formatVND(r.total)}</span>
+                    <span class="fw-bold text-danger font-monospace" style="font-size: 0.95rem;">${formatVND(r.total)}</span>
                 </div>
             </div>
 
-            <!-- Dòng 2: Thông tin khách hàng đầy đủ (Tên, SĐT, Địa chỉ) -->
-            <div class="mb-2 bg-light p-2 rounded">
-                <div class="d-flex align-items-center justify-content-between">
-                    <div class="fw-bold text-dark fs-6 text-truncate" title="${escapeHtml(r.kh_ten)}">
-                        <i class="bi bi-person-fill text-danger me-1"></i>${escapeHtml(r.kh_ten)}
-                    </div>
-                    ${r.kh_sdt ? `<span class="badge bg-white text-dark border small fw-semibold"><i class="bi bi-telephone text-success me-1"></i>${escapeHtml(r.kh_sdt)}</span>` : ''}
+            <!-- Dòng 2: Tên khách hàng (trái) + Nút thao tác (phải) -->
+            <div class="d-flex justify-content-between align-items-center pt-1 border-top border-light">
+                <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.kh_ten || 'Khách lẻ')}">
+                    <i class="bi bi-person text-secondary me-1"></i>${escapeHtml(r.kh_ten || 'Khách lẻ')}
                 </div>
-                ${r.kh_dia_chi ? `<div class="small text-muted text-truncate mt-1"><i class="bi bi-geo-alt me-1 text-danger"></i>${escapeHtml(r.kh_dia_chi)}</div>` : ''}
-            </div>
-
-            <!-- Dòng 3: Tổng số lượng hàng & Số loại món -->
-            <div class="d-flex justify-content-between align-items-center text-muted small pt-1 border-top">
-                <span><i class="bi bi-box-seam me-1 text-secondary"></i>Tổng xuất: <strong class="text-dark">${formatNumber(r.total_sl)}</strong> cái &middot; <strong>${r.count}</strong> món</span>
-                <div class="d-flex align-items-center gap-2">
-                    <button class="btn btn-xs btn-outline-danger py-0 px-2" onclick="event.stopPropagation(); confirmDeleteReceipt('${r.so_phieu}', 'xuat', () => { loadReceipts(); loadData(); })" title="Xóa phiếu xuất">
-                        <i class="bi bi-trash"></i> Xóa
+                <div class="d-flex align-items-center gap-2 text-nowrap">
+                    <button class="btn btn-xs btn-outline-danger py-0 px-1.5" style="font-size: 0.725rem; line-height: 1.4;" onclick="event.stopPropagation(); confirmDeleteReceipt('${r.so_phieu}', 'xuat', () => { loadReceipts(); loadData(); })" title="Xóa phiếu xuất">
+                        <i class="bi bi-trash"></i>
                     </button>
-                    <span class="text-danger small fw-semibold">Xem chi tiết <i class="bi bi-arrow-right-short"></i></span>
+                    <span class="text-danger fw-semibold" style="font-size: 0.75rem;">Chi tiết <i class="bi bi-chevron-right" style="font-size: 0.65rem;"></i></span>
                 </div>
             </div>
         </div>

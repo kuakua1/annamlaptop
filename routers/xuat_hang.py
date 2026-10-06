@@ -89,6 +89,8 @@ async def get_xuat_hang(
             thanh_tien = float(rec.get("thanh_tien", 0) or 0)
             gia_von = float(rec.get("gia_von", 0) or 0)
             loi_nhuan = float(rec.get("loi_nhuan", 0) or 0)
+            raw_no = rec.get("tien_khach_no")
+            tien_khach_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
 
             item = {
                 "id": str(rec.get("id", "")),
@@ -107,6 +109,7 @@ async def get_xuat_hang(
                 "ghi_chu": ghi_chu,
                 "gia_von": gia_von,
                 "loi_nhuan": loi_nhuan,
+                "tien_khach_no": tien_khach_no,
                 "row_num": i + 2,
             }
             result.append(item)
@@ -263,10 +266,14 @@ async def get_xuat_hang_detail(
         kh_name = ""
         ghi_chu = ""
 
+        total_no = 0.0
         for rec in records:
             if str(rec.get("so_phieu", "")) == so_phieu:
                 thanh_tien = float(rec.get("thanh_tien", 0) or 0)
                 sl = int(rec.get("so_luong", 0) or 0)
+                raw_no = rec.get("tien_khach_no")
+                line_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
+                total_no += line_no
                 total += thanh_tien
                 total_sl += sl
                 if not ngay_xuat:
@@ -286,11 +293,22 @@ async def get_xuat_hang_detail(
                     "so_luong": sl,
                     "gia_ban": float(rec.get("gia_ban", 0) or 0),
                     "thanh_tien": thanh_tien,
+                    "tien_khach_no": line_no,
                     "khach_hang_id": kh_name,
                     "ghi_chu": str(rec.get("ghi_chu", "")),
                 })
         if not items:
             raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu {so_phieu}")
+
+        # Kiểm tra phiếu thu liên quan trong Sổ Quỹ
+        so_quy_records = db_manager.get_all("SoQuy")
+        phieu_thu_list = [
+            sq for sq in so_quy_records
+            if str(sq.get("loai_phieu", "")).upper() == "THU" and str(sq.get("phieu_lien_quan", "")).strip() == so_phieu
+        ]
+        so_tien_da_thu = sum(float(sq.get("so_tien", 0) or 0) for sq in phieu_thu_list)
+        ma_phieu_thu = phieu_thu_list[0].get("ma_phieu") if phieu_thu_list else None
+        da_thanh_toan = (total_no <= 0) or (len(phieu_thu_list) > 0 and (so_tien_da_thu >= total or total_no <= 0))
 
         kh_info = {"ten_kh": kh_name, "dien_thoai": "", "dia_chi": ""}
         if kh_name:
@@ -310,7 +328,11 @@ async def get_xuat_hang_detail(
             "tong_so_luong": total_sl,
             "so_mat_hang": len(items),
             "items": items,
-            "total": total
+            "total": total,
+            "total_no": total_no,
+            "da_thanh_toan": da_thanh_toan,
+            "ma_phieu_thu": ma_phieu_thu,
+            "so_tien_da_thu": so_tien_da_thu,
         }
     except HTTPException:
         raise

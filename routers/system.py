@@ -15,6 +15,47 @@ from services.db_service import db_manager, DB_PATH
 from config import SECRET_KEY
 
 
+@router.get("/api/system/sheets-status")
+async def get_sheets_status(
+    user: str = Depends(require_login)
+):
+    """Kiểm tra trạng thái kết nối Google Sheets."""
+    from services.sheets_service import sheets_service
+    from config import SPREADSHEET_ID
+    try:
+        sheets_service.initialize()
+        title = sheets_service._spreadsheet.title if sheets_service._spreadsheet else "OK"
+        return {
+            "connected": True,
+            "spreadsheet_id": SPREADSHEET_ID,
+            "title": title,
+            "message": f"Đã kết nối thành công tới Google Sheet: {title}"
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "spreadsheet_id": SPREADSHEET_ID,
+            "error": str(e),
+            "message": f"Chưa kết nối được Google Sheet: {str(e)}"
+        }
+
+
+@router.post("/api/system/sync-to-sheets")
+async def sync_to_sheets_api(
+    user: str = Depends(require_login)
+):
+    """Đẩy toàn bộ dữ liệu SQLite hiện tại lên Google Sheets."""
+    try:
+        counts = db_manager.sync_to_google_sheets()
+        return {
+            "success": True,
+            "message": "Đã đẩy toàn bộ dữ liệu từ phần mềm lên Google Sheets thành công!",
+            "details": counts
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi đẩy dữ liệu lên Google Sheets: {str(e)}")
+
+
 @router.post("/api/system/sync-sheets")
 async def sync_from_sheets(
     request: Request,

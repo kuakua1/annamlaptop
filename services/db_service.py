@@ -9,7 +9,7 @@ from services.sheets_service import (
     sheets_service,
     parse_batches_str, format_batches_str,
     SHEET_HANG_HOA, SHEET_NHAP_HANG, SHEET_XUAT_HANG,
-    SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG, SHEET_CONFIG
+    SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG, SHEET_CONFIG, SHEET_SO_QUY
 )
 
 # Đường dẫn database SQLite nội bộ
@@ -125,17 +125,20 @@ class DatabaseManager:
                     dien_thoai TEXT,
                     ghi_chu TEXT,
                     gia_von REAL DEFAULT 0,
-                    loi_nhuan REAL DEFAULT 0
+                    loi_nhuan REAL DEFAULT 0,
+                    tien_khach_no REAL DEFAULT 0
                 )
             """)
 
-            # Kiểm tra và thêm cột gia_von, loi_nhuan nếu bảng XuatHang cũ chưa có
+            # Kiểm tra và thêm cột gia_von, loi_nhuan, tien_khach_no nếu bảng XuatHang cũ chưa có
             cursor.execute("PRAGMA table_info(XuatHang)")
             xuat_cols = [c["name"] for c in cursor.fetchall()]
             if "gia_von" not in xuat_cols:
                 cursor.execute("ALTER TABLE XuatHang ADD COLUMN gia_von REAL DEFAULT 0")
             if "loi_nhuan" not in xuat_cols:
                 cursor.execute("ALTER TABLE XuatHang ADD COLUMN loi_nhuan REAL DEFAULT 0")
+            if "tien_khach_no" not in xuat_cols:
+                cursor.execute("ALTER TABLE XuatHang ADD COLUMN tien_khach_no REAL DEFAULT 0")
 
             # 4. Bảng NhaCungCap
             cursor.execute("""
@@ -166,6 +169,22 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS Config (
                     key TEXT PRIMARY KEY,
                     value TEXT
+                )
+            """)
+
+            # 7. Bảng SoQuy (Thu / Chi)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS SoQuy (
+                    id TEXT PRIMARY KEY,
+                    ma_phieu TEXT UNIQUE,
+                    ngay TEXT,
+                    loai_phieu TEXT,
+                    loai_quy TEXT,
+                    doi_tuong TEXT,
+                    dien_thoai TEXT,
+                    so_tien REAL DEFAULT 0,
+                    phieu_lien_quan TEXT,
+                    ghi_chu TEXT
                 )
             """)
 
@@ -227,8 +246,8 @@ class DatabaseManager:
                             if row_num != -1:
                                 if "gia_nhap" in payload:
                                     sheets_service.update_cell(sheet_name, row_num, 6, payload["gia_nhap"])
-                                sheets_service.update_cell(sheet_name, row_num, 8, payload["ton_kho"])
-                                sheets_service.update_cell(sheet_name, row_num, 9, payload["chi_tiet_lo"])
+                                sheets_service.update_cell(sheet_name, row_num, 7, payload["ton_kho"])
+                                sheets_service.update_cell(sheet_name, row_num, 8, payload["chi_tiet_lo"])
                         elif t_type == "SET_CONFIG":
                             key = payload["key"]
                             value = payload["value"]
@@ -785,7 +804,7 @@ class DatabaseManager:
         })
         return new_total_sl, new_lo_str, total_cost
 
-    def create_xuat_hang_transaction(self, so_phieu: str, ngay_xuat: str, kh_save_ref: str, ghi_chu: str, items: list[dict]) -> list[dict]:
+    def create_xuat_hang_transaction(self, so_phieu: str, ngay_xuat: str, kh_save_ref: str, ghi_chu: str, items: list[dict], tien_khach_no_dict: dict = None) -> list[dict]:
         """Tạo phiếu xuất hàng: trừ FIFO trong SQLite và enqueue lên Sheet."""
         created_rows = []
         with self._lock:
@@ -797,13 +816,14 @@ class DatabaseManager:
                     # Tính FIFO trực tiếp trong SQLite
                     _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"])
                     loi_nhuan = float(thanh_tien) - float(gia_von)
+                    tien_no = float(it.get("tien_khach_no", thanh_tien))
 
                     cursor.execute("""
-                        INSERT INTO XuatHang (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO XuatHang (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan, tien_khach_no)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         new_id, so_phieu, ngay_xuat, it["ma_hang"], it["ten_hang"],
-                        it["so_luong"], it["gia_ban"], thanh_tien, kh_save_ref, ghi_chu, gia_von, loi_nhuan
+                        it["so_luong"], it["gia_ban"], thanh_tien, kh_save_ref, ghi_chu, gia_von, loi_nhuan, tien_no
                     ))
 
                     created_rows.append({
@@ -818,7 +838,8 @@ class DatabaseManager:
                         "khach_hang_id": kh_save_ref,
                         "ghi_chu": ghi_chu,
                         "gia_von": gia_von,
-                        "loi_nhuan": loi_nhuan
+                        "loi_nhuan": loi_nhuan,
+                        "tien_khach_no": tien_no
                     })
                 conn.commit()
 
@@ -827,7 +848,7 @@ class DatabaseManager:
             sheet_row = [
                 r["id"], r["so_phieu"], r["ngay_xuat"], r["ma_hang"], r["ten_hang"],
                 r["so_luong"], r["gia_ban"], r["thanh_tien"], r["khach_hang_id"],
-                r["ghi_chu"], r["gia_von"], r["loi_nhuan"]
+                r["ghi_chu"], r["gia_von"], r["loi_nhuan"], r["tien_khach_no"]
             ]
             self._enqueue_task("APPEND_ROW", SHEET_XUAT_HANG, {"row": sheet_row})
 
@@ -917,13 +938,14 @@ class DatabaseManager:
                     thanh_tien = it["so_luong"] * it["gia_ban"]
                     _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"])
                     loi_nhuan = float(thanh_tien) - float(gia_von)
+                    tien_no = float(it.get("tien_khach_no", thanh_tien))
 
                     cursor.execute("""
-                        INSERT INTO XuatHang (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO XuatHang (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan, tien_khach_no)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         new_id, so_phieu, ngay_xuat, it["ma_hang"], it["ten_hang"],
-                        it["so_luong"], it["gia_ban"], thanh_tien, kh_save_ref, ghi_chu, gia_von, loi_nhuan
+                        it["so_luong"], it["gia_ban"], thanh_tien, kh_save_ref, ghi_chu, gia_von, loi_nhuan, tien_no
                     ))
 
                     created_rows.append({
@@ -938,7 +960,8 @@ class DatabaseManager:
                         "khach_hang_id": kh_save_ref,
                         "ghi_chu": ghi_chu,
                         "gia_von": gia_von,
-                        "loi_nhuan": loi_nhuan
+                        "loi_nhuan": loi_nhuan,
+                        "tien_khach_no": tien_no
                     })
                 conn.commit()
 
@@ -946,14 +969,344 @@ class DatabaseManager:
             sheet_row = [
                 r["id"], r["so_phieu"], r["ngay_xuat"], r["ma_hang"], r["ten_hang"],
                 r["so_luong"], r["gia_ban"], r["thanh_tien"], r["khach_hang_id"],
-                r["ghi_chu"], r["gia_von"], r["loi_nhuan"]
+                r["ghi_chu"], r["gia_von"], r["loi_nhuan"], r["tien_khach_no"]
             ]
             self._enqueue_task("APPEND_ROW", SHEET_XUAT_HANG, {"row": sheet_row})
 
         return created_rows
 
 
-    # ── 6. Config CRUD ────────────────────────────────────────────────────────
+    # ── 6. SoQuy (Thu / Chi) CRUD ─────────────────────────────────────────────
+
+    def generate_ma_phieu_thu(self, loai_quy: str = "TIEN_MAT", date_str: str = "") -> str:
+        """
+        Tạo mã phiếu thu theo định dạng người dùng yêu cầu:
+        - Tiền mặt: TMxxxx/MM (ví dụ TM0001/10)
+        - Tiền gửi: TGxxxx/MM (ví dụ TG0001/10)
+        """
+        if not date_str:
+            date_str = date.today().isoformat()
+        parts = date_str.split("-")
+        month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
+        prefix = "TM" if str(loai_quy).upper() == "TIEN_MAT" else "TG"
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ma_phieu FROM SoQuy WHERE ma_phieu LIKE ? OR ma_phieu LIKE ?", (f"{prefix}%/{month}", f"{prefix}%"))
+            rows = cursor.fetchall()
+            max_seq = 0
+            for r in rows:
+                mp = str(r["ma_phieu"] or "").strip()
+                if "/" in mp:
+                    p_part, m_part = mp.split("/", 1)
+                    if m_part == month and p_part.startswith(prefix):
+                        digits = p_part[len(prefix):]
+                        if digits.isdigit():
+                            max_seq = max(max_seq, int(digits))
+            return f"{prefix}{max_seq + 1:04d}/{month}"
+
+    def generate_ma_phieu_chi(self, loai_quy: str = "TIEN_MAT", date_str: str = "") -> str:
+        """
+        Tạo mã phiếu chi:
+        - Tiền mặt: CMxxxx/MM (hoặc PCxxxx/MM)
+        - Tiền gửi: CGxxxx/MM
+        """
+        if not date_str:
+            date_str = date.today().isoformat()
+        parts = date_str.split("-")
+        month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
+        prefix = "CM" if str(loai_quy).upper() == "TIEN_MAT" else "CG"
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT ma_phieu FROM SoQuy WHERE ma_phieu LIKE ? OR ma_phieu LIKE ?", (f"{prefix}%/{month}", f"{prefix}%"))
+            rows = cursor.fetchall()
+            max_seq = 0
+            for r in rows:
+                mp = str(r["ma_phieu"] or "").strip()
+                if "/" in mp:
+                    p_part, m_part = mp.split("/", 1)
+                    if m_part == month and p_part.startswith(prefix):
+                        digits = p_part[len(prefix):]
+                        if digits.isdigit():
+                            max_seq = max(max_seq, int(digits))
+            return f"{prefix}{max_seq + 1:04d}/{month}"
+
+    def create_phieu_thu(self, data: dict) -> dict:
+        """
+        Tạo phiếu thu tiền, cập nhật trừ công nợ phiếu xuất tương ứng (nếu có liên quan)
+        và enqueue lên Google Sheet SoQuy.
+        """
+        record_id = str(int(time.time() * 1000))
+        loai_quy = data.get("loai_quy", "TIEN_MAT")
+        ngay = data.get("ngay") or date.today().isoformat()
+        ma_phieu = data.get("ma_phieu") or self.generate_ma_phieu_thu(loai_quy, ngay)
+        so_tien = float(data.get("so_tien", 0) or 0)
+        phieu_lien_quan = str(data.get("phieu_lien_quan") or "").strip()
+        doi_tuong = str(data.get("doi_tuong") or "").strip()
+        dien_thoai = str(data.get("dien_thoai") or "").strip()
+        ghi_chu = str(data.get("ghi_chu") or "").strip()
+
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO SoQuy (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu))
+
+                # Nếu thu tiền cho 1 phiếu xuất cụ thể, trừ bớt tien_khach_no trên các dòng của phiếu đó
+                if phieu_lien_quan:
+                    cursor.execute("SELECT id, tien_khach_no, thanh_tien FROM XuatHang WHERE so_phieu = ?", (phieu_lien_quan,))
+                    xuat_rows = cursor.fetchall()
+                    if xuat_rows:
+                        rem_payment = so_tien
+                        for xr in xuat_rows:
+                            cur_no = float(xr["tien_khach_no"] if xr["tien_khach_no"] is not None else xr["thanh_tien"] or 0)
+                            deduct = min(cur_no, rem_payment)
+                            new_no = max(0.0, cur_no - deduct)
+                            rem_payment -= deduct
+                            cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (new_no, xr["id"]))
+                conn.commit()
+
+        # Enqueue lên Google Sheet
+        sheet_row = [record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu]
+        self._enqueue_task("APPEND_ROW", SHEET_SO_QUY, {"row": sheet_row})
+
+        # Nếu có cập nhật phiếu xuất, ta có thể cập nhật cả Sheet XuatHang
+        if phieu_lien_quan:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM XuatHang WHERE so_phieu = ?", (phieu_lien_quan,))
+                updated_xuat = cursor.fetchall()
+                for ux in updated_xuat:
+                    u_row = [
+                        ux["id"], ux["so_phieu"], ux["ngay_xuat"], ux["ma_hang"], ux["ten_hang"],
+                        ux["so_luong"], ux["gia_ban"], ux["thanh_tien"], ux["khach_hang_id"],
+                        ux["ghi_chu"], ux["gia_von"], ux["loi_nhuan"], ux["tien_khach_no"]
+                    ]
+                    self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
+
+        return {
+            "id": record_id,
+            "ma_phieu": ma_phieu,
+            "ngay": ngay,
+            "loai_phieu": "THU",
+            "loai_quy": loai_quy,
+            "doi_tuong": doi_tuong,
+            "dien_thoai": dien_thoai,
+            "so_tien": so_tien,
+            "phieu_lien_quan": phieu_lien_quan,
+            "ghi_chu": ghi_chu
+        }
+
+    def create_phieu_chi(self, data: dict) -> dict:
+        """Tạo phiếu chi tiền và lưu vào SQLite + Google Sheet."""
+        record_id = str(int(time.time() * 1000))
+        loai_quy = data.get("loai_quy", "TIEN_MAT")
+        ngay = data.get("ngay") or date.today().isoformat()
+        ma_phieu = data.get("ma_phieu") or self.generate_ma_phieu_chi(loai_quy, ngay)
+        so_tien = float(data.get("so_tien", 0) or 0)
+        phieu_lien_quan = str(data.get("phieu_lien_quan") or "").strip()
+        doi_tuong = str(data.get("doi_tuong") or "").strip()
+        dien_thoai = str(data.get("dien_thoai") or "").strip()
+        ghi_chu = str(data.get("ghi_chu") or "").strip()
+
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO SoQuy (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu))
+                conn.commit()
+
+        sheet_row = [record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu]
+        self._enqueue_task("APPEND_ROW", SHEET_SO_QUY, {"row": sheet_row})
+
+        return {
+            "id": record_id,
+            "ma_phieu": ma_phieu,
+            "ngay": ngay,
+            "loai_phieu": "CHI",
+            "loai_quy": loai_quy,
+            "doi_tuong": doi_tuong,
+            "dien_thoai": dien_thoai,
+            "so_tien": so_tien,
+            "phieu_lien_quan": phieu_lien_quan,
+            "ghi_chu": ghi_chu
+        }
+
+    def delete_phieu_so_quy(self, record_id: str) -> bool:
+        """Xóa phiếu thu/chi và đồng bộ."""
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM SoQuy WHERE id = ? OR ma_phieu = ?", (str(record_id), str(record_id)))
+                rec = cursor.fetchone()
+                if not rec:
+                    return False
+                rec_id = str(rec["id"])
+                cursor.execute("DELETE FROM SoQuy WHERE id = ?", (rec_id,))
+                conn.commit()
+
+        self._enqueue_task("DELETE_ROW", SHEET_SO_QUY, {"id": rec_id})
+        return True
+
+    def get_customer_unpaid_invoices(self, kh_id_or_name: str, dien_thoai: str = "") -> list[dict]:
+        """Lấy danh sách các phiếu xuất mà khách hàng này còn nợ (tien_khach_no > 0)."""
+        def _clean_p(p):
+            p = str(p or "").replace("None", "").strip()
+            if p.endswith(".0"):
+                p = p[:-2]
+            if len(p) == 9 and p.isdigit() and not p.startswith("0"):
+                p = "0" + p
+            return p
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM XuatHang ORDER BY ngay_xuat DESC, id DESC")
+            all_rows = cursor.fetchall()
+            cursor.execute("SELECT * FROM KhachHang")
+            kh_rows = cursor.fetchall()
+
+        # Map danh mục KhachHang tra cứu chéo
+        kh_lookup_by_id = {}
+        kh_lookup_by_name = {}
+        kh_lookup_by_phone = {}
+        for k in kh_rows:
+            kid = str(k["id"] or "").strip()
+            kname = str(k["ten_kh"] or "").strip()
+            kphone = _clean_p(k["dien_thoai"])
+            kinfo = {
+                "id": kid,
+                "ten_kh": kname,
+                "dia_chi": str(k["dia_chi"] or "").strip(),
+                "dien_thoai": kphone
+            }
+            if kid:
+                kh_lookup_by_id[kid] = kinfo
+            if kname:
+                kh_lookup_by_name[kname.lower()] = kinfo
+            if kphone:
+                kh_lookup_by_phone[kphone] = kinfo
+                if kphone.startswith("0"):
+                    kh_lookup_by_phone[kphone[1:]] = kinfo
+
+        q_raw = str(kh_id_or_name or "").strip()
+        q_phone = _clean_p(dien_thoai)
+
+        # Xác định đối tượng khách hàng mục tiêu
+        target_customer = None
+        if q_raw:
+            target_customer = kh_lookup_by_id.get(q_raw) or kh_lookup_by_name.get(q_raw.lower())
+        if not target_customer and q_phone:
+            target_customer = kh_lookup_by_phone.get(q_phone)
+
+        target_ids = {x for x in [q_raw, target_customer.get("id") if target_customer else None] if x}
+        target_names = {x.lower() for x in [q_raw, target_customer.get("ten_kh") if target_customer else None] if x}
+        target_phones = {x for x in [q_phone, target_customer.get("dien_thoai") if target_customer else None] if x}
+        if q_phone and q_phone.startswith("0"):
+            target_phones.add(q_phone[1:])
+
+        # Nhóm phiếu xuất theo so_phieu
+        receipt_map = {}
+        for r in all_rows:
+            sp = str(r["so_phieu"] or "").strip()
+            if not sp:
+                continue
+
+            tt = float(r["thanh_tien"] or 0)
+            no = float(r["tien_khach_no"] if r["tien_khach_no"] is not None else tt)
+
+            if sp not in receipt_map:
+                inv_kh_ref = str(r["khach_hang_id"] or "").strip()
+                inv_phone = _clean_p(r["dien_thoai"])
+                inv_dia_chi = str(r["dia_chi"] or "").strip()
+
+                cust_info = kh_lookup_by_id.get(inv_kh_ref) or kh_lookup_by_name.get(inv_kh_ref.lower()) or target_customer or {}
+                disp_ten_kh = cust_info.get("ten_kh") or inv_kh_ref
+                disp_phone = cust_info.get("dien_thoai") or inv_phone
+                disp_dia_chi = cust_info.get("dia_chi") or inv_dia_chi
+
+                receipt_map[sp] = {
+                    "so_phieu": sp,
+                    "ngay_xuat": str(r["ngay_xuat"] or ""),
+                    "khach_hang_id": inv_kh_ref,
+                    "ten_kh": disp_ten_kh,
+                    "dia_chi": disp_dia_chi,
+                    "dien_thoai": disp_phone,
+                    "ghi_chu": str(r["ghi_chu"] or ""),
+                    "tong_tien": 0.0,
+                    "tong_no": 0.0,
+                    "items": []
+                }
+
+            receipt_map[sp]["tong_tien"] += tt
+            receipt_map[sp]["tong_no"] += no
+            receipt_map[sp]["items"].append(dict(r))
+
+        matched_invoices = []
+        for sp, inv in receipt_map.items():
+            if inv["tong_no"] <= 0:
+                continue  # Đã trả hết
+
+            inv_kh = str(inv["khach_hang_id"] or "").strip()
+            inv_phone = _clean_p(inv["dien_thoai"])
+
+            is_match = (
+                inv_kh in target_ids or
+                inv_kh.lower() in target_names or
+                (inv_phone and inv_phone in target_phones)
+            )
+            if not is_match and inv_kh in kh_lookup_by_id:
+                c = kh_lookup_by_id[inv_kh]
+                if c["id"] in target_ids or c["ten_kh"].lower() in target_names:
+                    is_match = True
+
+            if is_match:
+                matched_invoices.append(inv)
+
+        return matched_invoices
+
+    def get_so_quy_balances(self) -> dict:
+        """Tính số dư hiện tại của Tiền mặt, Tiền gửi và Tổng quỹ."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT loai_phieu, loai_quy, SUM(so_tien) as total FROM SoQuy GROUP BY loai_phieu, loai_quy")
+            rows = cursor.fetchall()
+
+        tm_thu = 0.0
+        tm_chi = 0.0
+        tg_thu = 0.0
+        tg_chi = 0.0
+
+        for r in rows:
+            lp = str(r["loai_phieu"] or "").upper()
+            lq = str(r["loai_quy"] or "").upper()
+            amt = float(r["total"] or 0)
+            if lq == "TIEN_MAT":
+                if lp == "THU":
+                    tm_thu += amt
+                elif lp == "CHI":
+                    tm_chi += amt
+            else:  # NGAN_HANG
+                if lp == "THU":
+                    tg_thu += amt
+                elif lp == "CHI":
+                    tg_chi += amt
+
+        tien_mat = tm_thu - tm_chi
+        tien_gui = tg_thu - tg_chi
+        tong_quy = tien_mat + tien_gui
+
+        return {
+            "tien_mat": tien_mat,
+            "tien_gui": tien_gui,
+            "tong_quy": tong_quy
+        }
+
+    # ── 7. Config CRUD ────────────────────────────────────────────────────────
 
     def get_config(self, key: str) -> str:
         with self._get_connection() as conn:
@@ -1085,10 +1438,14 @@ class DatabaseManager:
                         records = sheets_service.get_all_records(SHEET_XUAT_HANG, force_refresh=True)
                         cursor.execute("DELETE FROM XuatHang")
                         for r in records:
+                            thanh_tien_val = _safe_float(r.get("thanh_tien"))
+                            # Nếu cột tien_khach_no có giá trị thì lấy, nếu rỗng thì mặc định bằng thanh_tien
+                            raw_no = r.get("tien_khach_no")
+                            tien_no_val = _safe_float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien_val
                             cursor.execute("""
                                 INSERT OR REPLACE INTO XuatHang 
-                                (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, dia_chi, dien_thoai, ghi_chu, gia_von, loi_nhuan)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                (id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, dia_chi, dien_thoai, ghi_chu, gia_von, loi_nhuan, tien_khach_no)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
                                 str(r.get("id") or ""),
                                 str(r.get("so_phieu") or ""),
@@ -1097,19 +1454,46 @@ class DatabaseManager:
                                 str(r.get("ten_hang") or ""),
                                 _safe_int(r.get("so_luong")),
                                 _safe_float(r.get("gia_ban")),
-                                _safe_float(r.get("thanh_tien")),
+                                thanh_tien_val,
                                 str(r.get("khach_hang_id") or r.get("ten_kh") or ""),
                                 str(r.get("dia_chi") or ""),
                                 str(r.get("dien_thoai") or ""),
                                 str(r.get("ghi_chu") or ""),
                                 _safe_float(r.get("gia_von")),
-                                _safe_float(r.get("loi_nhuan"))
+                                _safe_float(r.get("loi_nhuan")),
+                                tien_no_val
                             ))
                         counts["XuatHang"] = len(records)
                     except Exception as e:
                         counts["XuatHang_err"] = str(e)
 
-                # 6. Đồng bộ Config
+                # 6. Đồng bộ Sổ Quỹ (Thu / Chi)
+                if do_all or target in ("soquy", "dongtien", "phieuthu", "phieuchi"):
+                    try:
+                        records = sheets_service.get_all_records(SHEET_SO_QUY, force_refresh=True)
+                        cursor.execute("DELETE FROM SoQuy")
+                        for r in records:
+                            cursor.execute("""
+                                INSERT OR REPLACE INTO SoQuy
+                                (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                str(r.get("id") or ""),
+                                str(r.get("ma_phieu") or ""),
+                                str(r.get("ngay") or ""),
+                                str(r.get("loai_phieu") or ""),
+                                str(r.get("loai_quy") or "TIEN_MAT"),
+                                str(r.get("doi_tuong") or ""),
+                                str(r.get("dien_thoai") or ""),
+                                _safe_float(r.get("so_tien")),
+                                str(r.get("phieu_lien_quan") or ""),
+                                str(r.get("ghi_chu") or "")
+                            ))
+                        counts["SoQuy"] = len(records)
+                    except Exception as e:
+                        counts["SoQuy_err"] = str(e)
+
+                # 7. Đồng bộ Config
                 if do_all or target in ("config", "cauhinh"):
                     try:
                         records = sheets_service.get_all_records(SHEET_CONFIG, force_refresh=True)
@@ -1214,17 +1598,17 @@ class DatabaseManager:
 
                 # 5. Đẩy XuatHang
                 try:
-                    cursor.execute("SELECT id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan FROM XuatHang")
+                    cursor.execute("SELECT id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan, tien_khach_no FROM XuatHang")
                     rows = cursor.fetchall()
                     ws = sheets_service._sheet(SHEET_XUAT_HANG)
-                    header = ["ID", "Số Phiếu", "Ngày Xuất", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Bán (đ)", "Thành Tiền (đ)", "Khách Hàng", "Ghi Chú", "Giá Vốn (đ)", "Lợi Nhuận (đ)"]
+                    header = ["ID", "Số Phiếu", "Ngày Xuất", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Bán (đ)", "Thành Tiền (đ)", "Khách Hàng", "Ghi Chú", "Giá Vốn (đ)", "Lợi Nhuận (đ)", "Tiền Khách Nợ (đ)"]
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
                             r["id"], r["so_phieu"], r["ngay_xuat"], r["ma_hang"],
                             r["ten_hang"], r["so_luong"], r["gia_ban"],
                             r["thanh_tien"], r["khach_hang_id"], r["ghi_chu"],
-                            r["gia_von"], r["loi_nhuan"]
+                            r["gia_von"], r["loi_nhuan"], r["tien_khach_no"]
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)
@@ -1232,6 +1616,26 @@ class DatabaseManager:
                     counts["XuatHang"] = len(rows)
                 except Exception as e:
                     counts["XuatHang_err"] = str(e)
+
+                # 6. Đẩy SoQuy
+                try:
+                    cursor.execute("SELECT id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu FROM SoQuy")
+                    rows = cursor.fetchall()
+                    ws = sheets_service._sheet(SHEET_SO_QUY)
+                    header = ["ID", "Mã Phiếu", "Ngày", "Loại Phiếu", "Loại Quỹ", "Đối Tượng", "Điện Thoại", "Số Tiền (đ)", "Phiếu Liên Quan", "Ghi Chú"]
+                    sheet_data = [header]
+                    for r in rows:
+                        sheet_data.append([
+                            r["id"], r["ma_phieu"], r["ngay"], r["loai_phieu"],
+                            r["loai_quy"], r["doi_tuong"], r["dien_thoai"],
+                            r["so_tien"], r["phieu_lien_quan"], r["ghi_chu"]
+                        ])
+                    ws.clear()
+                    ws.update("A1", sheet_data)
+                    sheets_service.invalidate_records_cache(SHEET_SO_QUY)
+                    counts["SoQuy"] = len(rows)
+                except Exception as e:
+                    counts["SoQuy_err"] = str(e)
 
         return counts
 

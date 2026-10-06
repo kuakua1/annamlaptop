@@ -57,6 +57,41 @@ body {
   padding: 12px 20px 4px;
 }
 
+.sidebar-label.collapsible {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  padding: 10px 16px 6px 20px;
+  border-radius: 4px;
+  transition: color 0.2s, background-color 0.2s;
+}
+
+.sidebar-label.collapsible:hover {
+  color: rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.04);
+}
+
+.sidebar-label.collapsible .chevron-icon {
+  font-size: 0.75rem;
+  transition: transform 0.25s ease;
+  opacity: 0.7;
+}
+
+.sidebar-label.collapsible.collapsed .chevron-icon {
+  transform: rotate(-90deg);
+}
+
+.sidebar-group-content {
+  overflow: hidden;
+  transition: max-height 0.25s ease, opacity 0.25s ease;
+}
+
+.sidebar-group-content.collapsed {
+  display: none;
+}
+
 .sidebar-link {
   display: flex;
   align-items: center;
@@ -332,7 +367,131 @@ body.is-embedded-tab .main-wrapper {
 
 html.is-embedded-tab .content-area,
 body.is-embedded-tab .content-area {
-  padding: 12px 20px 24px 20px !important;
+  padding: 10px 16px !important;
+  box-sizing: border-box;
+}
+
+/* ── Receipt Creation Viewport Auto-Fit ────────────────── */
+.receipt-layout-container {
+  width: 100%;
+  margin: 0;
+}
+
+.receipt-layout-container .card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.receipt-layout-container .card-header {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.95rem;
+  background: #fff;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.receipt-layout-container .card-body {
+  padding: 0.75rem 0.85rem;
+}
+
+.form-label-compact {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 3px;
+  display: block;
+  color: #475569;
+}
+
+.customer-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.receipt-table-wrapper {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.receipt-history-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.receipt-history-body {
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}
+
+/* Dynamic screen height auto-scaling (1366x768, 1920x1080 with 125%/150% scaling) */
+@media (max-height: 850px) {
+  html.is-embedded-tab .content-area,
+  body.is-embedded-tab .content-area {
+    padding: 8px 12px !important;
+  }
+  .receipt-layout-container .card-header {
+    padding: 0.4rem 0.75rem !important;
+    font-size: 0.9rem;
+  }
+  .receipt-layout-container .card-body {
+    padding: 0.5rem 0.75rem !important;
+  }
+  .receipt-layout-container .form-control,
+  .receipt-layout-container .form-select,
+  .receipt-layout-container .input-group-text {
+    font-size: 0.84rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+  }
+  .form-label-compact {
+    font-size: 0.78rem;
+    margin-bottom: 2px;
+  }
+  .customer-section {
+    padding: 6px 8px;
+    margin-bottom: 6px;
+  }
+  .receipt-history-body {
+    max-height: calc(100vh - 130px);
+  }
+}
+
+@media (max-height: 720px) {
+  html.is-embedded-tab .content-area,
+  body.is-embedded-tab .content-area {
+    padding: 5px 8px !important;
+  }
+  .receipt-layout-container .card-header {
+    padding: 0.3rem 0.6rem !important;
+    font-size: 0.84rem;
+  }
+  .receipt-layout-container .card-body {
+    padding: 0.4rem 0.6rem !important;
+  }
+  .receipt-layout-container .form-control,
+  .receipt-layout-container .form-select,
+  .receipt-layout-container .btn {
+    font-size: 0.8rem !important;
+    padding: 0.2rem 0.45rem !important;
+  }
+  .form-label-compact {
+    font-size: 0.74rem;
+    margin-bottom: 1px;
+  }
+  .customer-section {
+    padding: 4px 6px;
+    margin-bottom: 4px;
+  }
+  .receipt-table-wrapper .table th,
+  .receipt-table-wrapper .table td {
+    padding: 3px 5px !important;
+    font-size: 0.8rem;
+  }
+  .receipt-history-body {
+    max-height: calc(100vh - 110px);
+  }
 }
 
 html.is-embedded-tab .tab-direct-content,

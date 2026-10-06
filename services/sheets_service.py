@@ -11,6 +11,7 @@ from config import (
     SPREADSHEET_ID,
     SHEET_HANG_HOA, SHEET_NHAP_HANG, SHEET_XUAT_HANG,
     SHEET_NHA_CUNG_CAP, SHEET_KHACH_HANG, SHEET_CONFIG,
+    SHEET_SO_QUY,
 )
 
 SCOPES = [
@@ -139,6 +140,10 @@ COLUMN_ALIAS_MAP = {
     "lợi nhuận": "loi_nhuan",
     "lợi nhuận (đ)": "loi_nhuan",
     "loi_nhuan": "loi_nhuan",
+    "tiền khách nợ": "tien_khach_no",
+    "tiền khách nợ (đ)": "tien_khach_no",
+    "tien_khach_no": "tien_khach_no",
+    "khách nợ": "tien_khach_no",
     # NhaCungCap & KhachHang
     "tên nhà cung cấp": "ten_ncc",
     "tên ncc": "ten_ncc",
@@ -153,6 +158,20 @@ COLUMN_ALIAS_MAP = {
     "dien_thoai": "dien_thoai",
     "sđt": "dien_thoai",
     "email": "email",
+    # SoQuy
+    "ngày": "ngay",
+    "ngày thu/chi": "ngay",
+    "loại phiếu": "loai_phieu",
+    "loai_phieu": "loai_phieu",
+    "loại quỹ": "loai_quy",
+    "loai_quy": "loai_quy",
+    "đối tượng": "doi_tuong",
+    "doi_tuong": "doi_tuong",
+    "số tiền": "so_tien",
+    "số tiền (đ)": "so_tien",
+    "so_tien": "so_tien",
+    "phiếu liên quan": "phieu_lien_quan",
+    "phieu_lien_quan": "phieu_lien_quan",
     # Config
     "key": "key",
     "value": "value",
@@ -181,15 +200,37 @@ class SheetsService:
             return
 
         creds = None
-        if GOOGLE_SERVICE_ACCOUNT_JSON and GOOGLE_SERVICE_ACCOUNT_JSON.strip():
-            info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
-            creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-        elif os.path.exists(GOOGLE_SERVICE_ACCOUNT_FILE):
+        # 1. Check raw JSON from env
+        if GOOGLE_SERVICE_ACCOUNT_JSON and GOOGLE_SERVICE_ACCOUNT_JSON.strip().startswith("{"):
+            try:
+                info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+                creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+            except Exception as e:
+                raise RuntimeError(f"Lỗi đọc GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+
+        # 2. Check specified file path
+        elif GOOGLE_SERVICE_ACCOUNT_FILE and os.path.exists(GOOGLE_SERVICE_ACCOUNT_FILE):
             creds = Credentials.from_service_account_file(GOOGLE_SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+
+        # 3. Auto-discover any service account json file in project directory
         else:
-            raise RuntimeError(
-                "Google credentials not found. Set GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_FILE."
-            )
+            found_file = None
+            for fname in os.listdir("."):
+                if fname.endswith(".json") and fname != "version.json":
+                    try:
+                        with open(fname, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            if isinstance(data, dict) and data.get("type") == "service_account":
+                                found_file = fname
+                                break
+                    except Exception:
+                        pass
+            if found_file:
+                creds = Credentials.from_service_account_file(found_file, scopes=SCOPES)
+            else:
+                raise RuntimeError(
+                    "Không tìm thấy file chứng thực Google Service Account (credentials.json hoặc *.json có type=service_account). Vui lòng thêm file key vào thư mục gốc dự án."
+                )
 
         self._client = gspread.authorize(creds)
         self._spreadsheet = self._client.open_by_key(SPREADSHEET_ID)

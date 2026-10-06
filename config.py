@@ -53,6 +53,7 @@ SHEET_XUAT_HANG = "XuatHang"
 SHEET_NHA_CUNG_CAP = "NhaCungCap"
 SHEET_KHACH_HANG = "KhachHang"
 SHEET_CONFIG = "Config"
+SHEET_SO_QUY = "SoQuy"
 
 # Session
 SESSION_COOKIE_NAME = "inventory_session"

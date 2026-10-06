@@ -11,4 +11,7 @@ installer/
 *.exe
 .secret_key
 *.bat
-
+inventory.db
+*.db
+*.sqlite
+*.sqlite3
