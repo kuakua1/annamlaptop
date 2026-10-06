@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from datetime import date
 
 from routers.auth import get_current_user, require_login
-from models.schemas import PhieuThuCreate, PhieuChiCreate
+from models.schemas import PhieuThuCreate, PhieuChiCreate, QuyConfigUpdate
 from services.db_service import db_manager
 
 router = APIRouter()
@@ -157,7 +157,7 @@ async def delete_phieu_so_quy(record_id: str, user: str = Depends(require_login)
     return {"success": True, "message": "Xóa phiếu thành công"}
 
 
-# ── Tổng quan Dòng Tiền & Công Nợ ───────────────────────────────────────────
+# ── Tổng quan Dòng Tiền & Cấu Hình Quỹ ───────────────────────────────────────
 
 @router.get("/api/dong-tien/tong-quan")
 async def get_tong_quan_dong_tien(user: str = Depends(require_login)):
@@ -171,8 +171,47 @@ async def get_tong_quan_dong_tien(user: str = Depends(require_login)):
         "tien_mat": balances["tien_mat"],
         "tien_gui": balances["tien_gui"],
         "tong_quy": balances["tong_quy"],
+        "so_du_dau_tien_mat": balances.get("so_du_dau_tien_mat", 0.0),
+        "so_du_dau_tien_gui": balances.get("so_du_dau_tien_gui", 0.0),
+        "tm_thu": balances.get("tm_thu", 0.0),
+        "tm_chi": balances.get("tm_chi", 0.0),
+        "tg_thu": balances.get("tg_thu", 0.0),
+        "tg_chi": balances.get("tg_chi", 0.0),
         "transactions": all_rows[:50]
     }
+
+
+@router.get("/api/dong-tien/quy-config")
+async def get_quy_config(user: str = Depends(require_login)):
+    """Lấy thông tin số dư quỹ ban đầu và số tiền hiện tại."""
+    balances = db_manager.get_so_quy_balances()
+    last_updated = db_manager.get_config("cap_nhat_quy_luc")
+    return {
+        "success": True,
+        "balances": balances,
+        "last_updated": last_updated
+    }
+
+
+@router.post("/api/dong-tien/quy-config")
+async def update_quy_config(data: QuyConfigUpdate, user: str = Depends(require_login)):
+    """
+    Cập nhật số tiền hiện tại hoặc số dư ban đầu của công ty và đồng bộ lên Google Sheets.
+    """
+    try:
+        new_balances = db_manager.update_company_balances(
+            mode=data.mode,
+            tien_mat=float(data.tien_mat or 0),
+            tien_gui=float(data.tien_gui or 0)
+        )
+        return {
+            "success": True,
+            "message": "Đã lưu số tiền của công ty thành công vào Config (Database & Google Sheets)!",
+            "balances": new_balances
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 def _clean_phone(p: str) -> str:

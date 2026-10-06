@@ -1296,15 +1296,53 @@ class DatabaseManager:
                 elif lp == "CHI":
                     tg_chi += amt
 
-        tien_mat = tm_thu - tm_chi
-        tien_gui = tg_thu - tg_chi
+        # Lấy số dư ban đầu được cấu hình trong Config (nếu có)
+        so_du_dau_tm = _safe_float(self.get_config("so_du_dau_tien_mat"), 0.0)
+        so_du_dau_tg = _safe_float(self.get_config("so_du_dau_tien_gui"), 0.0)
+
+        tien_mat = so_du_dau_tm + tm_thu - tm_chi
+        tien_gui = so_du_dau_tg + tg_thu - tg_chi
         tong_quy = tien_mat + tien_gui
 
         return {
+            "so_du_dau_tien_mat": so_du_dau_tm,
+            "so_du_dau_tien_gui": so_du_dau_tg,
+            "tm_thu": tm_thu,
+            "tm_chi": tm_chi,
+            "tg_thu": tg_thu,
+            "tg_chi": tg_chi,
             "tien_mat": tien_mat,
             "tien_gui": tien_gui,
             "tong_quy": tong_quy
         }
+
+    def update_company_balances(self, mode: str, tien_mat: float, tien_gui: float) -> dict:
+        """
+        Cập nhật số tiền hiện tại hoặc số dư ban đầu của công ty và lưu vào Config (cả SQLite lẫn Google Sheet).
+        mode == 'current': Người dùng nhập trực tiếp số tiền hiện tại mong muốn -> quy đổi ra số dư đầu.
+        mode == 'initial': Người dùng nhập số dư đầu kỳ.
+        """
+        balances = self.get_so_quy_balances()
+        net_tm = balances["tm_thu"] - balances["tm_chi"]
+        net_tg = balances["tg_thu"] - balances["tg_chi"]
+
+        if mode == "current":
+            so_du_dau_tm = tien_mat - net_tm
+            so_du_dau_tg = tien_gui - net_tg
+        else:
+            so_du_dau_tm = tien_mat
+            so_du_dau_tg = tien_gui
+
+        self.set_config("so_du_dau_tien_mat", str(so_du_dau_tm))
+        self.set_config("so_du_dau_tien_gui", str(so_du_dau_tg))
+
+        try:
+            from datetime import datetime
+            self.set_config("cap_nhat_quy_luc", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        except Exception:
+            pass
+
+        return self.get_so_quy_balances()
 
     # ── 7. Config CRUD ────────────────────────────────────────────────────────
 

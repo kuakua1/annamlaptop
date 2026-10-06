@@ -8,11 +8,11 @@
     <div class="col-12">
         <div class="row g-3">
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+                <div class="card shadow-sm border-0 border-start border-success border-4 h-100" style="cursor: pointer;" onclick="openQuyConfigModal()" title="Nhấn để thiết lập số tiền">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
-                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tiền Mặt Hiện Tại</h6>
+                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tiền Mặt Hiện Tại <i class="bi bi-pencil-square text-success ms-1 small"></i></h6>
                                 <h3 class="mb-0 text-success fw-bold" id="card-tien-mat">0 đ</h3>
                                 <small class="text-muted">Tổng quỹ tiền mặt tại cửa hàng</small>
                             </div>
@@ -24,11 +24,11 @@
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+                <div class="card shadow-sm border-0 border-start border-primary border-4 h-100" style="cursor: pointer;" onclick="openQuyConfigModal()" title="Nhấn để thiết lập số tiền">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
-                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tiền Gửi Ngân Hàng</h6>
+                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tiền Gửi Ngân Hàng <i class="bi bi-pencil-square text-primary ms-1 small"></i></h6>
                                 <h3 class="mb-0 text-primary fw-bold" id="card-tien-gui">0 đ</h3>
                                 <small class="text-muted">Số dư tài khoản chuyển khoản</small>
                             </div>
@@ -40,11 +40,11 @@
                 </div>
             </div>
             <div class="col-md-4">
-                <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+                <div class="card shadow-sm border-0 border-start border-info border-4 h-100" style="cursor: pointer;" onclick="openQuyConfigModal()" title="Nhấn để thiết lập số tiền">
                     <div class="card-body">
                         <div class="d-flex align-items-center justify-content-between">
                             <div>
-                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tổng Quỹ Doanh Nghiệp</h6>
+                                <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Tổng Quỹ Doanh Nghiệp <i class="bi bi-pencil-square text-info ms-1 small"></i></h6>
                                 <h3 class="mb-0 text-info fw-bold" id="card-tong-quy">0 đ</h3>
                                 <small class="text-muted">Tiền mặt + Tiền gửi ngân hàng</small>
                             </div>
@@ -69,6 +69,9 @@
                         </button>
                         <button class="btn btn-danger" onclick="TabManager.openTab('phieu-chi')">
                             <i class="bi bi-box-arrow-up-right me-1"></i>Tạo Phiếu Chi Tiền
+                        </button>
+                        <button class="btn btn-primary fw-semibold shadow-sm" onclick="openQuyConfigModal()">
+                            <i class="bi bi-wallet2 me-1"></i>Nhập Số Tiền Hiện Tại (Mặt / Gửi)
                         </button>
                     </div>
                     <div class="d-flex align-items-center gap-2">
@@ -250,5 +253,201 @@ function escapeHtml(text) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+
+// ── Modal Thiết Lập Số Tiền Của Công Ty ──────────────────────────────────────
+
+let quyBalanceData = null;
+
+async function openQuyConfigModal() {
+    try {
+        showLoading();
+        const res = await apiRequest('/api/dong-tien/quy-config');
+        if (res && res.success) {
+            quyBalanceData = res.balances || {};
+
+            const mode = document.querySelector('input[name="quy_mode"]:checked')?.value || 'current';
+            const tmVal = mode === 'current' ? (quyBalanceData.tien_mat || 0) : (quyBalanceData.so_du_dau_tien_mat || 0);
+            const tgVal = mode === 'current' ? (quyBalanceData.tien_gui || 0) : (quyBalanceData.so_du_dau_tien_gui || 0);
+
+            document.getElementById('cfg-tien-mat').value = tmVal || '';
+            document.getElementById('cfg-tien-gui').value = tgVal || '';
+
+            onModeChange();
+            onInputAmountChange();
+
+            const modalEl = document.getElementById('modal-quy-config');
+            if (modalEl) {
+                const bsModal = new bootstrap.Modal(modalEl);
+                bsModal.show();
+            }
+        }
+    } catch (e) {
+        showToast('Lỗi tải cấu hình quỹ: ' + e.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+function onModeChange() {
+    const isCurrent = document.getElementById('mode-current')?.checked;
+    const lblTm = document.getElementById('lbl-tien-mat');
+    const lblTg = document.getElementById('lbl-tien-gui');
+    const hintTm = document.getElementById('txt-tm-hint');
+    const hintTg = document.getElementById('txt-tg-hint');
+
+    if (isCurrent) {
+        if (lblTm) lblTm.innerHTML = '<i class="bi bi-cash-stack text-success me-1"></i>Số Tiền Mặt Thực Tế Hiện Tại (VNĐ) <span class="text-danger">*</span>';
+        if (lblTg) lblTg.innerHTML = '<i class="bi bi-bank text-primary me-1"></i>Số Tiền Gửi Ngân Hàng Hiện Tại (VNĐ) <span class="text-danger">*</span>';
+        if (hintTm) hintTm.innerText = 'Số tiền mặt đang có trong két / quầy';
+        if (hintTg) hintTg.innerText = 'Số dư khả dụng trong các tài khoản ngân hàng';
+    } else {
+        if (lblTm) lblTm.innerHTML = '<i class="bi bi-cash-stack text-success me-1"></i>Số Dư Tiền Mặt Ban Đầu (VNĐ) <span class="text-danger">*</span>';
+        if (lblTg) lblTg.innerHTML = '<i class="bi bi-bank text-primary me-1"></i>Số Dư Tiền Gửi Ban Đầu (VNĐ) <span class="text-danger">*</span>';
+        if (hintTm) hintTm.innerText = 'Số dư tiền mặt trước khi phát sinh thu / chi';
+        if (hintTg) hintTg.innerText = 'Số dư ngân hàng trước khi phát sinh thu / chi';
+    }
+    onInputAmountChange();
+}
+
+function onInputAmountChange() {
+    const tm = parseFloat(document.getElementById('cfg-tien-mat')?.value || 0);
+    const tg = parseFloat(document.getElementById('cfg-tien-gui')?.value || 0);
+    const isCurrent = document.getElementById('mode-current')?.checked;
+
+    document.getElementById('txt-tm-preview').innerText = formatVND(tm);
+    document.getElementById('txt-tg-preview').innerText = formatVND(tg);
+
+    let tongHienTai = 0;
+    if (isCurrent) {
+        tongHienTai = tm + tg;
+    } else {
+        const netTm = quyBalanceData ? (quyBalanceData.tm_thu - quyBalanceData.tm_chi) : 0;
+        const netTg = quyBalanceData ? (quyBalanceData.tg_thu - quyBalanceData.tg_chi) : 0;
+        tongHienTai = (tm + netTm) + (tg + netTg);
+    }
+
+    const tongEl = document.getElementById('txt-tong-preview');
+    if (tongEl) tongEl.innerText = formatVND(tongHienTai);
+}
+
+async function saveQuyConfig() {
+    const btn = document.getElementById('btn-save-quy-cfg');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang lưu vào Config...';
+    }
+
+    try {
+        const mode = document.querySelector('input[name="quy_mode"]:checked')?.value || 'current';
+        const tm = parseFloat(document.getElementById('cfg-tien-mat')?.value || 0);
+        const tg = parseFloat(document.getElementById('cfg-tien-gui')?.value || 0);
+
+        if (isNaN(tm) || tm < 0 || isNaN(tg) || tg < 0) {
+            showToast('Số tiền không hợp lệ, vui lòng kiểm tra lại!', 'warning');
+            return;
+        }
+
+        const res = await apiRequest('/api/dong-tien/quy-config', 'POST', {
+            mode: mode,
+            tien_mat: tm,
+            tien_gui: tg
+        });
+
+        if (res && res.success) {
+            showToast('Đã lưu số tiền của công ty vào Config (Google Sheets & Database)!', 'success');
+            
+            // Đóng modal
+            const modalEl = document.getElementById('modal-quy-config');
+            if (modalEl) {
+                const bsModal = bootstrap.Modal.getInstance(modalEl);
+                if (bsModal) bsModal.hide();
+            }
+
+            // Tải lại số dư trang
+            await loadSoQuy();
+        }
+    } catch (e) {
+        showToast('Lỗi lưu số tiền quỹ: ' + e.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
 </script>
+
+<!-- Modal Thiết Lập Số Tiền Quỹ Hiện Tại -->
+<div class="modal fade" id="modal-quy-config" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow border-0">
+            <div class="modal-header bg-primary text-white py-2 px-3">
+                <h6 class="modal-title fw-bold">
+                    <i class="bi bi-wallet2 me-2"></i>Thiết Lập Số Tiền Quỹ Của Công Ty
+                </h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <!-- Chọn chế độ -->
+                <div class="mb-3 p-2 bg-light rounded border">
+                    <label class="form-label fw-semibold small text-muted text-uppercase mb-2">Chế độ cập nhật:</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="radio" name="quy_mode" id="mode-current" value="current" checked onchange="onModeChange()">
+                        <label class="form-check-label fw-bold" for="mode-current">
+                            Nhập số tiền thực tế hiện có của công ty (Hệ thống tự cân đối số dư)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="quy_mode" id="mode-initial" value="initial" onchange="onModeChange()">
+                        <label class="form-check-label text-muted small" for="mode-initial">
+                            Nhập số dư ban đầu (khi bắt đầu dùng phần mềm)
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Ô nhập tiền mặt -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" id="lbl-tien-mat">
+                        <i class="bi bi-cash-stack text-success me-1"></i>Số Tiền Mặt Thực Tế Hiện Tại (VNĐ) <span class="text-danger">*</span>
+                    </label>
+                    <input type="number" class="form-control form-control-lg text-success fw-bold font-monospace" id="cfg-tien-mat" placeholder="0" min="0" step="1000" oninput="onInputAmountChange()">
+                    <div class="d-flex justify-content-between align-items-center mt-1">
+                        <small class="text-muted fw-bold" id="txt-tm-preview">0 đ</small>
+                        <small class="text-muted" id="txt-tm-hint">Số tiền mặt đang có trong két / quầy</small>
+                    </div>
+                </div>
+
+                <!-- Ô nhập tiền gửi ngân hàng -->
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" id="lbl-tien-gui">
+                        <i class="bi bi-bank text-primary me-1"></i>Số Tiền Gửi Ngân Hàng Hiện Tại (VNĐ) <span class="text-danger">*</span>
+                    </label>
+                    <input type="number" class="form-control form-control-lg text-primary fw-bold font-monospace" id="cfg-tien-gui" placeholder="0" min="0" step="1000" oninput="onInputAmountChange()">
+                    <div class="d-flex justify-content-between align-items-center mt-1">
+                        <small class="text-muted fw-bold" id="txt-tg-preview">0 đ</small>
+                        <small class="text-muted" id="txt-tg-hint">Số dư khả dụng trong các tài khoản ngân hàng</small>
+                    </div>
+                </div>
+
+                <!-- Tóm tắt tổng quỹ -->
+                <div class="p-3 rounded bg-info bg-opacity-10 border border-info border-opacity-25 mb-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold text-secondary">TỔNG QUỸ DOANH NGHIỆP:</span>
+                        <span class="fs-5 fw-bold text-info font-monospace" id="txt-tong-preview">0 đ</span>
+                    </div>
+                    <small class="text-muted d-block mt-1" style="font-size: 0.75rem;">
+                        <i class="bi bi-cloud-arrow-up me-1"></i>Dữ liệu sẽ tự động lưu vào <strong>Config</strong> trong Database và Google Sheets.
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer py-2 bg-light d-flex justify-content-between">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary btn-sm px-4 fw-bold shadow-sm" id="btn-save-quy-cfg" onclick="saveQuyConfig()">
+                    <i class="bi bi-check2-circle me-1"></i>Lưu Số Tiền Của Công Ty
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

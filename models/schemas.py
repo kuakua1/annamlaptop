@@ -225,3 +225,10 @@ class PhieuChiCreate(BaseModel):
     phieu_lien_quan: Optional[str] = ""
     ghi_chu: Optional[str] = ""
 
+
+class QuyConfigUpdate(BaseModel):
+    mode: str = "current"  # "current" (số tiền hiện tại) | "initial" (số dư ban đầu)
+    tien_mat: float = 0.0
+    tien_gui: float = 0.0
+
+
