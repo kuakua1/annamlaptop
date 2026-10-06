@@ -19,10 +19,15 @@
                 <div class="row g-2">
                     <!-- Phương thức & Ngày chi -->
                     <div class="col-md-6">
-                        <label class="form-label-compact">Nguồn Tiền Chi <span class="text-danger">*</span></label>
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label-compact mb-0">Nguồn Tiền Chi <span class="text-danger">*</span></label>
+                            <span class="badge bg-light text-dark border small" id="badge-so-du-quy">
+                                Số dư: <strong class="text-success font-monospace" id="lbl-so-du-quy">0 đ</strong>
+                            </span>
+                        </div>
                         <select class="form-select form-select-sm" id="f-chi-loai-quy" onchange="onLoaiQuyChange()">
-                            <option value="TIEN_MAT">Tiền mặt (Mã CMxxxx)</option>
-                            <option value="NGAN_HANG">Tiền gửi ngân hàng (Mã CGxxxx)</option>
+                            <option value="TIEN_MAT" id="opt-chi-tien-mat">Tiền mặt (Mã CMxxxx)</option>
+                            <option value="NGAN_HANG" id="opt-chi-ngan-hang">Tiền gửi ngân hàng (Mã CGxxxx)</option>
                         </select>
                     </div>
                     <div class="col-md-6">
@@ -82,8 +87,13 @@
 
                     <!-- Số tiền chi & Nội dung chi -->
                     <div class="col-md-5">
-                        <label class="form-label-compact">Số Tiền Chi (VNĐ) <span class="text-danger">*</span></label>
-                        <input type="number" class="form-control form-control-sm fw-bold text-danger fs-5 py-1" id="f-chi-so-tien" placeholder="0">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label-compact mb-0">Số Tiền Chi (VNĐ) <span class="text-danger">*</span></label>
+                            <span class="badge bg-danger text-white small d-none" id="warn-so-du-khong-du">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>Không đủ số dư!
+                            </span>
+                        </div>
+                        <input type="number" class="form-control form-control-sm fw-bold text-danger fs-5 py-1" id="f-chi-so-tien" placeholder="0" oninput="onSoTienChiInput()">
                     </div>
                     <div class="col-md-7">
                         <label class="form-label-compact">Nội Dung / Lý Do Chi</label>

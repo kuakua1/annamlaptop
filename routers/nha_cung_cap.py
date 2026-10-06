@@ -107,9 +107,37 @@ async def get_nha_cung_cap(request: Request, user: str = Depends(require_login))
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/nha-cung-cap/unpaid-invoices")
+async def get_supplier_unpaid_invoices_ncc_route(
+    ten_ncc: str = "",
+    ncc_id: str = "",
+    sdt: str = "",
+    user: str = Depends(require_login)
+):
+    """Kiểm tra xem nhà cung cấp / đối tác có phiếu nhập kho nào còn nợ tiền không."""
+    query_name = ncc_id or ten_ncc
+    if not query_name and not sdt:
+        return {"success": True, "has_debt": False, "invoices": []}
+
+    invoices = db_manager.get_supplier_unpaid_invoices(query_name, sdt)
+    return {
+        "success": True,
+        "has_debt": len(invoices) > 0,
+        "count": len(invoices),
+        "invoices": invoices
+    }
+
+
 @router.get("/api/nha-cung-cap/{record_id}")
 @router.get("/api/nha-cung-cap/{record_id}/lich-su")
 async def get_nha_cung_cap_detail(record_id: str, request: Request, user: str = Depends(require_login)):
+    if record_id == "unpaid-invoices":
+        return await get_supplier_unpaid_invoices_ncc_route(
+            ten_ncc=request.query_params.get("ten_ncc", ""),
+            ncc_id=request.query_params.get("ncc_id", ""),
+            sdt=request.query_params.get("sdt", ""),
+            user=user
+        )
     try:
         ncc_data = db_manager.get_by_id("NhaCungCap", record_id)
         if not ncc_data:

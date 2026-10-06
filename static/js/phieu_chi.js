@@ -4,6 +4,7 @@
 
 let suppliersList = [];
 let unpaidInvoicesList = [];
+let companyBalances = { tien_mat: 0, tien_gui: 0, tong_quy: 0 };
 
 document.addEventListener('DOMContentLoaded', async function () {
     // 1. Gán ngày mặc định hôm nay
@@ -11,7 +12,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     const ngayEl = document.getElementById('f-chi-ngay');
     if (ngayEl) ngayEl.value = today;
 
-    // 2. Tải mã phiếu chi dự kiến & danh sách đối tác / NCC & phiếu chi gần đây
+    // 2. Tải số dư công ty, mã phiếu chi dự kiến, danh sách đối tác & phiếu chi gần đây
+    await loadCompanyBalances();
     await fetchNextCodeChi();
     await loadSuppliers();
     await loadRecentChi();
@@ -70,6 +72,80 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
 });
 
+// ── Quản Lý & Kiểm Tra Số Dư Công Ty (Tiền Mặt / Tiền Gửi) ───────────────────
+
+async function loadCompanyBalances() {
+    try {
+        const res = await apiRequest('/api/so-quy/balances');
+        if (res && res.success && res.data) {
+            companyBalances = res.data;
+        }
+    } catch (e) {
+        console.warn('Lỗi lấy số dư công ty:', e);
+    }
+    updateBalanceUI();
+}
+
+function updateBalanceUI() {
+    const loaiQuy = document.getElementById('f-chi-loai-quy')?.value || 'TIEN_MAT';
+    const tm = companyBalances.tien_mat || 0;
+    const tg = companyBalances.tien_gui || 0;
+
+    const optTm = document.getElementById('opt-chi-tien-mat');
+    if (optTm) {
+        optTm.innerText = `Tiền mặt (Mã CMxxxx) - Dư: ${formatVND(tm)}`;
+    }
+    const optTg = document.getElementById('opt-chi-ngan-hang');
+    if (optTg) {
+        optTg.innerText = `Tiền gửi ngân hàng (Mã CGxxxx) - Dư: ${formatVND(tg)}`;
+    }
+
+    const currentBal = (loaiQuy === 'TIEN_MAT') ? tm : tg;
+    const lbl = document.getElementById('lbl-so-du-quy');
+    if (lbl) {
+        lbl.innerText = formatVND(currentBal);
+        if (currentBal <= 0) {
+            lbl.className = 'text-danger font-monospace';
+        } else {
+            lbl.className = 'text-success font-monospace';
+        }
+    }
+
+    checkSufficientBalance();
+}
+
+function checkSufficientBalance() {
+    const loaiQuy = document.getElementById('f-chi-loai-quy')?.value || 'TIEN_MAT';
+    const soTien = parseFloat(document.getElementById('f-chi-so-tien')?.value || 0);
+    const availBal = (loaiQuy === 'TIEN_MAT') ? (companyBalances.tien_mat || 0) : (companyBalances.tien_gui || 0);
+    const warnEl = document.getElementById('warn-so-du-khong-du');
+    const inputSoTien = document.getElementById('f-chi-so-tien');
+
+    if (soTien > availBal) {
+        if (warnEl) {
+            const quyTen = loaiQuy === 'TIEN_MAT' ? 'tiền mặt' : 'tiền gửi ngân hàng';
+            warnEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i>Số dư ${quyTen} không đủ! (Còn: ${formatVND(availBal)})`;
+            warnEl.classList.remove('d-none');
+        }
+        if (inputSoTien) {
+            inputSoTien.classList.add('is-invalid');
+        }
+        return false;
+    } else {
+        if (warnEl) {
+            warnEl.classList.add('d-none');
+        }
+        if (inputSoTien) {
+            inputSoTien.classList.remove('is-invalid');
+        }
+        return true;
+    }
+}
+
+function onSoTienChiInput() {
+    checkSufficientBalance();
+}
+
 // ── Mã Phiếu Chi Tự Động ───────────────────────────────────────────────────
 
 async function fetchNextCodeChi() {
@@ -88,11 +164,30 @@ async function fetchNextCodeChi() {
 
 function onLoaiQuyChange() {
     fetchNextCodeChi();
+    updateBalanceUI();
 }
 
 function onNgayChange() {
     fetchNextCodeChi();
 }
+
+// Lắng nghe cập nhật số dư từ các tab khác
+try {
+    if (typeof BroadcastChannel !== 'undefined') {
+        const bc = new BroadcastChannel('inventory_sync');
+        bc.onmessage = function (e) {
+            if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
+                loadCompanyBalances();
+            }
+        };
+    }
+} catch (err) {}
+
+window.addEventListener('message', function (e) {
+    if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
+        loadCompanyBalances();
+    }
+});
 
 // ── Danh Sách & Autocomplete Đối Tác / Nhà Cung Cấp ────────────────────────
 
@@ -397,6 +492,15 @@ async function savePhieuChi() {
         return;
     }
 
+    // Kiểm tra số dư khả dụng của quỹ công ty
+    const availBal = (loaiQuy === 'TIEN_MAT') ? (companyBalances.tien_mat || 0) : (companyBalances.tien_gui || 0);
+    const fundName = loaiQuy === 'TIEN_MAT' ? 'tiền mặt' : 'tiền gửi ngân hàng';
+    if (soTien > availBal) {
+        showToast(`Số dư ${fundName} của công ty không đủ để chi! (Khả dụng: ${formatVND(availBal)}, Cần chi: ${formatVND(soTien)}). Vui lòng nạp thêm quỹ hoặc chọn nguồn tiền khác.`, 'error');
+        document.getElementById('f-chi-so-tien').focus();
+        return;
+    }
+
     const btn = document.getElementById('btn-save-phieu-chi');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang lưu phiếu...';
@@ -418,12 +522,22 @@ async function savePhieuChi() {
         const res = await apiRequest('/api/phieu-chi', 'POST', payload);
         if (res.success) {
             const maPhieu = res.data?.ma_phieu || '';
-            showToast(`Lưu phiếu chi ${maPhieu} thành công!`, 'success');
+            showToast(`Lưu phiếu chi ${maPhieu} thành công! Đã khấu trừ ${formatVND(soTien)} vào quỹ ${fundName}.`, 'success');
             resetFormPhieuChi();
             await fetchNextCodeChi();
             await loadRecentChi();
+            
+            // Cập nhật lại số dư công ty tức thì
+            if (res.data && res.data.balances) {
+                companyBalances = res.data.balances;
+            } else {
+                await loadCompanyBalances();
+            }
+            updateBalanceUI();
+
             if (typeof broadcastDataUpdate === 'function') {
                 broadcastDataUpdate('DEBT_UPDATED');
+                broadcastDataUpdate('BALANCE_UPDATED');
             }
         }
     } catch (e) {
@@ -455,6 +569,7 @@ function resetFormPhieuChi() {
     if (helpEl) {
         helpEl.innerHTML = 'Hệ thống sẽ tự động quét phiếu nhập kho mà công ty còn nợ tiền để tự động điền số tiền & nội dung.';
     }
+    checkSufficientBalance();
 }
 
 // ── Tải Phiếu Chi Gần Đây ───────────────────────────────────────────────────
@@ -579,7 +694,7 @@ async function viewDetailChi(recordId) {
 }
 
 async function confirmDeletePhieuChi(recordId, maPhieu) {
-    if (!confirm(`Bạn có chắc chắn muốn xóa phiếu chi ${maPhieu}?\nNếu phiếu có liên quan đến phiếu nhập kho, số tiền nợ sẽ được hoàn lại.`)) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa phiếu chi ${maPhieu}?\nNếu phiếu có liên quan đến phiếu nhập kho, số tiền nợ sẽ được hoàn lại và quỹ tiền sẽ được cộng lại.`)) {
         return;
     }
 
@@ -594,8 +709,10 @@ async function confirmDeletePhieuChi(recordId, maPhieu) {
             }
             await fetchNextCodeChi();
             await loadRecentChi();
+            await loadCompanyBalances();
             if (typeof broadcastDataUpdate === 'function') {
                 broadcastDataUpdate('DEBT_UPDATED');
+                broadcastDataUpdate('BALANCE_UPDATED');
             }
         }
     } catch (e) {

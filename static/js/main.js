@@ -2732,7 +2732,7 @@ window.broadcastDataUpdate = broadcastDataUpdate;
 
 // Chuyển tiếp tín hiệu đồng bộ giữa các tab iframe
 window.addEventListener('message', (e) => {
-    if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
+    if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'BALANCE_UPDATED')) {
         document.querySelectorAll('.tab-frame').forEach(f => {
             try {
                 f.contentWindow.postMessage(e.data, '*');
@@ -2744,7 +2744,7 @@ window.addEventListener('message', (e) => {
 try {
     const syncChannel = new BroadcastChannel('inventory_sync');
     syncChannel.onmessage = (e) => {
-        if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
+        if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'BALANCE_UPDATED')) {
             document.querySelectorAll('.tab-frame').forEach(f => {
                 try {
                     f.contentWindow.postMessage(e.data, '*');

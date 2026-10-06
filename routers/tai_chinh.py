@@ -158,6 +158,19 @@ async def get_list_phieu_chi(user: str = Depends(require_login)):
     return {"success": True, "data": chi_rows, "total": len(chi_rows)}
 
 
+@router.get("/api/so-quy/balances")
+async def get_so_quy_balances_endpoint(user: str = Depends(require_login)):
+    """Lấy số dư hiện tại của công ty (Tiền mặt, Tiền gửi, Tổng quỹ)."""
+    balances = db_manager.get_so_quy_balances()
+    return {
+        "success": True,
+        "tien_mat": balances["tien_mat"],
+        "tien_gui": balances["tien_gui"],
+        "tong_quy": balances["tong_quy"],
+        "balances": balances
+    }
+
+
 @router.post("/api/phieu-chi")
 async def create_phieu_chi(data: PhieuChiCreate, user: str = Depends(require_login)):
     if not data.doi_tuong or not str(data.doi_tuong).strip():
@@ -167,11 +180,15 @@ async def create_phieu_chi(data: PhieuChiCreate, user: str = Depends(require_log
 
     try:
         created = db_manager.create_phieu_chi(data.model_dump())
+        balances = db_manager.get_so_quy_balances()
         return {
             "success": True,
             "message": f"Tạo phiếu chi {created.get('ma_phieu')} thành công",
-            "data": created
+            "data": created,
+            "balances": balances
         }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

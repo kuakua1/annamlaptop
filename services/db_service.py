@@ -1480,6 +1480,18 @@ class DatabaseManager:
         dien_thoai = str(data.get("dien_thoai") or "").strip()
         ghi_chu = str(data.get("ghi_chu") or "").strip()
 
+        # Kiểm tra số dư khả dụng của công ty trước khi chi tiền
+        balances = self.get_so_quy_balances()
+        is_tm = (str(loai_quy).upper() == "TIEN_MAT")
+        avail_balance = float(balances["tien_mat"] if is_tm else balances["tien_gui"])
+        fund_name = "Tiền mặt" if is_tm else "Tiền gửi ngân hàng"
+        if so_tien > avail_balance:
+            raise ValueError(
+                f"Số dư {fund_name} của công ty không đủ để chi! "
+                f"Khả dụng: {avail_balance:,.0f} đ, Số tiền cần chi: {so_tien:,.0f} đ. "
+                f"Vui lòng nạp thêm quỹ vào Quản Lý Dòng Tiền hoặc chọn nguồn tiền khác."
+            )
+
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -1873,6 +1885,7 @@ class DatabaseManager:
             is_match = (
                 inv_ncc in target_ids or
                 inv_ncc.lower() in target_names or
+                str(inv.get("ten_ncc", "")).strip().lower() in target_names or
                 (inv_phone and inv_phone in target_phones)
             )
             if not is_match and inv_ncc in ncc_lookup_by_id:
