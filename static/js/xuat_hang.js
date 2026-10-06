@@ -225,28 +225,10 @@ function onProductSearchInput(id, input) {
     ).slice(0, 20);
 
     renderProductSuggestions(id, matches);
-
-    // Tự động kiểm tra và làm mới tồn kho ngầm nếu dữ liệu đã quá 2 giây
-    if (Date.now() - lastLoadTime > 2000 && !isRefreshingProducts) {
-        isRefreshingProducts = true;
-        loadData().then(() => {
-            isRefreshingProducts = false;
-            const currentVal = document.getElementById(`prod-input-${id}`)?.value.trim().toLowerCase();
-            if (currentVal && currentVal === query) {
-                const refreshedMatches = products.filter(p =>
-                    (p.ma_hang || '').toLowerCase().includes(query) ||
-                    (p.ten_hang || '').toLowerCase().includes(query)
-                ).slice(0, 20);
-                renderProductSuggestions(id, refreshedMatches);
-            }
-        }).catch(() => { isRefreshingProducts = false; });
-    }
 }
 
 function onProductInputFocus(id, input) {
-    // Tải lại tồn kho mới nhất tức thì khi người dùng click vào ô chọn hàng
-    loadData();
-    const query = input.value.trim().toLowerCase();
+    const query = (input?.value || '').trim().toLowerCase();
     if (query) {
         const matches = products.filter(p =>
             (p.ma_hang || '').toLowerCase().includes(query) ||
@@ -296,7 +278,6 @@ function toggleProductDropdown(id, e) {
         // Đóng các dropdown khác trước
         document.querySelectorAll('div[id^="prod-sug-"]').forEach(el => el.classList.add('d-none'));
         
-        loadData(); // Tải lại số liệu tồn kho mới nhất
         const input = document.getElementById(`prod-input-${id}`);
         const query = (input?.value || '').trim().toLowerCase();
         let matches = [];
@@ -396,9 +377,11 @@ window.addEventListener('message', (e) => {
     }
 });
 
-window.addEventListener('focus', () => { loadData(); });
+window.addEventListener('focus', () => { 
+    if (Date.now() - lastLoadTime > 30000) loadData(); 
+});
 document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) loadData();
+    if (!document.hidden && Date.now() - lastLoadTime > 30000) loadData();
 });
 
 // ── Line items ────────────────────────────────────────────────────────────────
