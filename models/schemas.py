@@ -111,6 +111,7 @@ class KhachHang(BaseModel):
 class DoiTuongCreate(BaseModel):
     ten: str
     phan_loai: Optional[str] = "CA_HAI"  # 'CA_HAI', 'KHACH_HANG', 'NHA_CUNG_CAP'
+    ma_so_thue: Optional[str] = ""
     dia_chi: Optional[str] = ""
     dien_thoai: Optional[str] = ""
     email: Optional[str] = ""
@@ -120,6 +121,7 @@ class DoiTuongCreate(BaseModel):
 class DoiTuongUpdate(BaseModel):
     ten: Optional[str] = None
     phan_loai: Optional[str] = None
+    ma_so_thue: Optional[str] = None
     dia_chi: Optional[str] = None
     dien_thoai: Optional[str] = None
     email: Optional[str] = None
@@ -130,6 +132,7 @@ class DoiTuong(BaseModel):
     id: str
     ten: str
     phan_loai: str = "CA_HAI"
+    ma_so_thue: str = ""
     dia_chi: str = ""
     dien_thoai: str = ""
     email: str = ""

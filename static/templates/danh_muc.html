@@ -137,18 +137,17 @@
                 <thead style="background-color: #1e293b !important; color: #ffffff !important;">
                     <tr style="background-color: #1e293b !important;">
                         <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
-                        <th style="min-width: 180px; background-color: #1e293b !important; color: #ffffff !important;">Tên Đối Tượng</th>
+                        <th style="min-width: 200px; background-color: #1e293b !important; color: #ffffff !important;">Tên Đối Tượng</th>
+                        <th style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Mã Số Thuế</th>
                         <th style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Phân Loại</th>
                         <th style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Điện Thoại</th>
                         <th style="background-color: #1e293b !important; color: #ffffff !important;">Địa Chỉ</th>
-                        <th style="width: 150px; background-color: #1e293b !important; color: #ffffff !important;">Email</th>
-                        <th class="text-end" style="width: 150px; background-color: #1e293b !important; color: #ffffff !important;">Giao Dịch Nhập</th>
-                        <th class="text-end" style="width: 150px; background-color: #1e293b !important; color: #ffffff !important;">Giao Dịch Xuất</th>
+                        <th style="width: 160px; background-color: #1e293b !important; color: #ffffff !important;">Email / Ghi Chú</th>
                         <th class="text-center" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Thao Tác</th>
                     </tr>
                 </thead>
                 <tbody id="dt-tbody">
-                    <tr><td colspan="9" class="text-center text-muted py-4">Đang tải danh sách đối tượng...</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-4">Đang tải danh sách đối tượng...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -167,9 +166,15 @@
             </div>
             <div class="modal-body p-3">
                 <form id="dt-form">
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold">Tên Đối Tượng <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="dt-ten" placeholder="Nhập tên khách hàng hoặc nhà cung cấp" required>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label fw-semibold">Tên Đối Tượng <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="dt-ten" placeholder="Nhập tên khách hàng hoặc NCC" required>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold">Mã Số Thuế <small class="text-muted fw-normal">(Không bắt buộc)</small></label>
+                            <input type="text" class="form-control font-monospace" id="dt-mst" placeholder="Ví dụ: 0103932533">
+                        </div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Phân Loại Vai Trò</label>
@@ -178,7 +183,7 @@
                             <option value="KHACH_HANG">Khách Hàng (Thường mua hàng)</option>
                             <option value="NHA_CUNG_CAP">Nhà Cung Cấp (Thường giao hàng)</option>
                         </select>
-                        <small class="text-muted">Chọn vai trò chính để dễ phân loại, hệ thống cho phép xuất và nhập đối với tất cả đối tượng.</small>
+                        <small class="text-muted">Hệ thống cho phép nhập và xuất với tất cả đối tượng dù chọn vai trò nào.</small>
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-6">
@@ -235,6 +240,7 @@
                                     <span class="badge bg-secondary" id="hist-partner-badge">Đối tác</span>
                                 </div>
                                 <div class="text-secondary small d-flex flex-wrap gap-3 mt-2">
+                                    <span id="hist-partner-mst-wrap" style="display:none;"><i class="bi bi-file-earmark-text me-1 text-warning"></i>MST: <span id="hist-partner-mst" class="font-monospace fw-semibold">-</span></span>
                                     <span><i class="bi bi-telephone me-1 text-primary"></i><span id="hist-partner-phone">-</span></span>
                                     <span><i class="bi bi-geo-alt me-1 text-danger"></i><span id="hist-partner-address">-</span></span>
                                     <span><i class="bi bi-envelope me-1 text-info"></i><span id="hist-partner-email">-</span></span>

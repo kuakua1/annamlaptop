@@ -216,12 +216,19 @@ class DatabaseManager:
                     id TEXT PRIMARY KEY,
                     ten TEXT NOT NULL,
                     phan_loai TEXT DEFAULT 'CA_HAI',
+                    ma_so_thue TEXT DEFAULT '',
                     dia_chi TEXT,
                     dien_thoai TEXT,
                     email TEXT,
                     ghi_chu TEXT
                 )
             """)
+
+            # Thêm cột ma_so_thue nếu bảng DoiTuong chưa có
+            cursor.execute("PRAGMA table_info(DoiTuong)")
+            dt_cols = [c["name"] for c in cursor.fetchall()]
+            if "ma_so_thue" not in dt_cols:
+                cursor.execute("ALTER TABLE DoiTuong ADD COLUMN ma_so_thue TEXT DEFAULT ''")
 
             # Tự động gộp dữ liệu từ NhaCungCap và KhachHang vào DoiTuong nếu DoiTuong còn trống
             try:
@@ -577,6 +584,7 @@ class DatabaseManager:
         item["id"] = dt_id
         ten = str(item.get("ten") or "").strip()
         phan_loai = str(item.get("phan_loai") or "CA_HAI").strip().upper()
+        ma_so_thue = str(item.get("ma_so_thue") or "").strip()
         dia_chi = str(item.get("dia_chi") or "").strip()
         dien_thoai = str(item.get("dien_thoai") or "").strip()
         email = str(item.get("email") or "").strip()
@@ -586,12 +594,12 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO DoiTuong (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (dt_id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu))
+                    INSERT INTO DoiTuong (id, ten, phan_loai, ma_so_thue, dia_chi, dien_thoai, email, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (dt_id, ten, phan_loai, ma_so_thue, dia_chi, dien_thoai, email, ghi_chu))
                 conn.commit()
 
-        row = [dt_id, ten, phan_loai, dien_thoai, dia_chi, email, ghi_chu]
+        row = [dt_id, ten, ma_so_thue, dien_thoai, dia_chi, phan_loai, email, ghi_chu]
         self._enqueue_task("APPEND_ROW", SHEET_DOI_TUONG, {"row": row})
         return item
 
@@ -608,18 +616,19 @@ class DatabaseManager:
                     "id": record_id,
                     "ten": str(data.get("ten", cur_dict["ten"]) or "").strip(),
                     "phan_loai": str(data.get("phan_loai", cur_dict["phan_loai"]) or "CA_HAI").strip().upper(),
+                    "ma_so_thue": str(data.get("ma_so_thue", cur_dict.get("ma_so_thue", "")) or "").strip(),
                     "dia_chi": str(data.get("dia_chi", cur_dict["dia_chi"]) or "").strip(),
                     "dien_thoai": str(data.get("dien_thoai", cur_dict["dien_thoai"]) or "").strip(),
                     "email": str(data.get("email", cur_dict["email"]) or "").strip(),
                     "ghi_chu": str(data.get("ghi_chu", cur_dict["ghi_chu"]) or "").strip(),
                 }
                 cursor.execute("""
-                    UPDATE DoiTuong SET ten = ?, phan_loai = ?, dia_chi = ?, dien_thoai = ?, email = ?, ghi_chu = ?
+                    UPDATE DoiTuong SET ten = ?, phan_loai = ?, ma_so_thue = ?, dia_chi = ?, dien_thoai = ?, email = ?, ghi_chu = ?
                     WHERE id = ?
-                """, (updated["ten"], updated["phan_loai"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"], record_id))
+                """, (updated["ten"], updated["phan_loai"], updated["ma_so_thue"], updated["dia_chi"], updated["dien_thoai"], updated["email"], updated["ghi_chu"], record_id))
                 conn.commit()
 
-        row = [record_id, updated["ten"], updated["phan_loai"], updated["dien_thoai"], updated["dia_chi"], updated["email"], updated["ghi_chu"]]
+        row = [record_id, updated["ten"], updated["ma_so_thue"], updated["dien_thoai"], updated["dia_chi"], updated["phan_loai"], updated["email"], updated["ghi_chu"]]
         self._enqueue_task("UPDATE_ROW", SHEET_DOI_TUONG, {"id": record_id, "row": row})
         return updated
 
@@ -1743,12 +1752,13 @@ class DatabaseManager:
                             for r in records:
                                 cursor.execute("""
                                     INSERT OR REPLACE INTO DoiTuong 
-                                    (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                    (id, ten, phan_loai, ma_so_thue, dia_chi, dien_thoai, email, ghi_chu)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
-                                    str(r.get("id") or ""),
+                                    str(r.get("id") or r.get("ma_doi_tuong") or ""),
                                     str(r.get("ten") or r.get("ten_doi_tuong") or ""),
                                     str(r.get("phan_loai") or "CA_HAI"),
+                                    str(r.get("ma_so_thue") or r.get("mst") or ""),
                                     str(r.get("dia_chi") or ""),
                                     str(r.get("dien_thoai") or ""),
                                     str(r.get("email") or ""),
@@ -1932,15 +1942,21 @@ class DatabaseManager:
 
                 # 3.1. Đẩy DoiTuong
                 try:
-                    cursor.execute("SELECT id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu FROM DoiTuong")
+                    cursor.execute("SELECT id, ten, phan_loai, ma_so_thue, dia_chi, dien_thoai, email, ghi_chu FROM DoiTuong")
                     rows = cursor.fetchall()
                     ws = sheets_service._sheet(SHEET_DOI_TUONG)
-                    header = ["ID", "Tên Đối Tượng", "Phân Loại", "Điện Thoại", "Địa Chỉ", "Email", "Ghi Chú"]
+                    header = ["Mã Đối Tượng", "Tên Đối Tượng", "Mã Số Thuế", "Điện Thoại", "Địa Chỉ", "Phân Loại", "Email", "Ghi Chú"]
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
-                            r["id"], r["ten"], r["phan_loai"],
-                            r["dien_thoai"], r["dia_chi"], r["email"], r["ghi_chu"]
+                            str(r["id"] or ""),
+                            str(r["ten"] or ""),
+                            str(r["ma_so_thue"] or ""),
+                            str(r["dien_thoai"] or ""),
+                            str(r["dia_chi"] or ""),
+                            str(r["phan_loai"] or "CA_HAI"),
+                            str(r["email"] or ""),
+                            str(r["ghi_chu"] or "")
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)

@@ -72,7 +72,7 @@ function filterDoiTuong() {
     // 1. Tìm kiếm chuỗi
     if (q) {
         list = list.filter(r => {
-            const str = `${r.ten || ''} ${r.dien_thoai || ''} ${r.dia_chi || ''} ${r.email || ''} ${r.ghi_chu || ''}`.toLowerCase();
+            const str = `${r.ten || ''} ${r.ma_so_thue || ''} ${r.id || ''} ${r.dien_thoai || ''} ${r.dia_chi || ''} ${r.email || ''} ${r.ghi_chu || ''}`.toLowerCase();
             return str.includes(q);
         });
     }
@@ -130,7 +130,7 @@ function renderDoiTuongTable(records) {
     if (!records.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="9" class="text-center text-muted py-5">
+                <td colspan="8" class="text-center text-muted py-5">
                     <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
                     Không tìm thấy đối tượng nào phù hợp
                 </td>
@@ -150,22 +150,20 @@ function renderDoiTuongTable(records) {
             badgeType = '<span class="badge bg-primary-subtle text-primary-emphasis border border-primary"><i class="bi bi-arrow-left-right me-1"></i>Cả Hai</span>';
         }
 
-        const hasNhap = (r.so_don_nhap || 0) > 0;
-        const hasXuat = (r.so_don_xuat || 0) > 0;
-
-        const nhapHtml = hasNhap
-            ? `<button class="btn btn-sm btn-outline-primary py-0 px-2 font-monospace small" onclick="viewDoiTuongHistory('${r.id}', 'nhap')" title="Xem phiếu nhập">
-                 ${r.so_don_nhap} đơn &bull; ${formatVND(r.tong_tien_nhap)}
-               </button>`
-            : '<span class="text-muted small">-</span>';
-
-        const xuatHtml = hasXuat
-            ? `<button class="btn btn-sm btn-outline-success py-0 px-2 font-monospace small" onclick="viewDoiTuongHistory('${r.id}', 'xuat')" title="Xem phiếu xuất">
-                 ${r.so_don_xuat} đơn &bull; ${formatVND(r.tong_tien_xuat)}
-               </button>`
-            : '<span class="text-muted small">-</span>';
-
         const initial = (r.ten || 'D').trim().charAt(0).toUpperCase();
+
+        const mstHtml = r.ma_so_thue
+            ? `<span class="badge bg-light text-dark font-monospace border px-2 py-1">${escapeHtml(r.ma_so_thue)}</span>`
+            : '<span class="text-muted small">-</span>';
+
+        const extraInfoHtml = [];
+        if (r.email) {
+            extraInfoHtml.push(`<span class="text-truncate d-inline-block small" style="max-width:180px;" title="${escapeHtml(r.email)}"><i class="bi bi-envelope text-info me-1"></i>${escapeHtml(r.email)}</span>`);
+        }
+        if (r.ghi_chu) {
+            extraInfoHtml.push(`<span class="text-muted small text-truncate d-inline-block" style="max-width:180px;" title="${escapeHtml(r.ghi_chu)}"><i class="bi bi-chat-left-text text-secondary me-1"></i>${escapeHtml(r.ghi_chu)}</span>`);
+        }
+        const extraColContent = extraInfoHtml.length ? extraInfoHtml.join('<br>') : '<span class="text-muted small">-</span>';
 
         return `
             <tr>
@@ -179,22 +177,19 @@ function renderDoiTuongTable(records) {
                             <a href="javascript:void(0)" onclick="viewDoiTuongHistory('${r.id}')" class="fw-bold text-dark text-decoration-none hover-primary" title="Bấm xem lịch sử mua / bán 2 chiều">
                                 ${escapeHtml(r.ten)}
                             </a>
-                            ${r.ghi_chu ? `<div class="text-muted small text-truncate" style="max-width:240px;">${escapeHtml(r.ghi_chu)}</div>` : ''}
+                            ${(r.id && r.id !== r.ten && r.id !== r.ma_so_thue) ? `<div class="text-secondary small font-monospace" style="font-size:11px;">Mã: ${escapeHtml(r.id)}</div>` : ''}
                         </div>
                     </div>
                 </td>
+                <td>${mstHtml}</td>
                 <td>${badgeType}</td>
                 <td class="font-monospace">
                     ${r.dien_thoai ? `<a href="tel:${r.dien_thoai}" class="text-decoration-none text-dark fw-semibold"><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(r.dien_thoai)}</a>` : '<span class="text-muted small">-</span>'}
                 </td>
                 <td>
-                    ${r.dia_chi ? `<span class="text-truncate d-inline-block small" style="max-width:220px;" title="${escapeHtml(r.dia_chi)}"><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(r.dia_chi)}</span>` : '<span class="text-muted small">-</span>'}
+                    ${r.dia_chi ? `<span class="text-truncate d-inline-block small" style="max-width:260px;" title="${escapeHtml(r.dia_chi)}"><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(r.dia_chi)}</span>` : '<span class="text-muted small">-</span>'}
                 </td>
-                <td>
-                    ${r.email ? `<span class="text-truncate d-inline-block small" style="max-width:160px;" title="${escapeHtml(r.email)}"><i class="bi bi-envelope text-info me-1"></i>${escapeHtml(r.email)}</span>` : '<span class="text-muted small">-</span>'}
-                </td>
-                <td class="text-end">${nhapHtml}</td>
-                <td class="text-end">${xuatHtml}</td>
+                <td>${extraColContent}</td>
                 <td class="text-center text-nowrap">
                     <button class="btn btn-sm btn-primary me-1 px-2 py-1" onclick="viewDoiTuongHistory('${r.id}')" title="Xem chi tiết lịch sử giao dịch 2 chiều">
                         <i class="bi bi-clock-history me-1"></i>Lịch sử
@@ -217,6 +212,7 @@ function openAddDoiTuong() {
     editingDtId = null;
     document.getElementById('dt-modal-title').innerHTML = '<i class="bi bi-person-plus me-2"></i>Thêm Đối Tượng Mới';
     document.getElementById('dt-form').reset();
+    document.getElementById('dt-mst').value = '';
     document.getElementById('dt-phan-loai').value = 'CA_HAI';
     openModal('dt-modal');
 }
@@ -227,6 +223,7 @@ function editDoiTuong(id) {
     editingDtId = id;
     document.getElementById('dt-modal-title').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Sửa Thông Tin Đối Tượng';
     document.getElementById('dt-ten').value = dt.ten || '';
+    document.getElementById('dt-mst').value = dt.ma_so_thue || '';
     document.getElementById('dt-phan-loai').value = dt.phan_loai || 'CA_HAI';
     document.getElementById('dt-dia-chi').value = dt.dia_chi || '';
     document.getElementById('dt-dt').value = dt.dien_thoai || '';
@@ -244,6 +241,7 @@ async function saveDoiTuong() {
 
     const payload = {
         ten: ten,
+        ma_so_thue: document.getElementById('dt-mst')?.value.trim() || '',
         phan_loai: document.getElementById('dt-phan-loai')?.value || 'CA_HAI',
         dia_chi: document.getElementById('dt-dia-chi')?.value.trim() || '',
         dien_thoai: document.getElementById('dt-dt')?.value.trim() || '',
@@ -316,6 +314,17 @@ async function viewDoiTuongHistory(id, defaultTab = 'all') {
         document.getElementById('hist-partner-phone').innerText = dt.dien_thoai || 'Chưa có SĐT';
         document.getElementById('hist-partner-address').innerText = dt.dia_chi || 'Chưa có địa chỉ';
         document.getElementById('hist-partner-email').innerText = dt.email || 'Chưa có email';
+
+        const mstWrap = document.getElementById('hist-partner-mst-wrap');
+        const mstEl = document.getElementById('hist-partner-mst');
+        if (mstWrap && mstEl) {
+            if (dt.ma_so_thue) {
+                mstEl.innerText = dt.ma_so_thue;
+                mstWrap.style.display = 'inline-block';
+            } else {
+                mstWrap.style.display = 'none';
+            }
+        }
 
         const noteWrap = document.getElementById('hist-partner-note-wrap');
         const noteEl = document.getElementById('hist-partner-note');
@@ -546,6 +555,7 @@ async function exportDoiTuongExcel() {
             { header: 'STT', key: 'stt', width: 6 },
             { header: 'Mã / ID', key: 'id', width: 16 },
             { header: 'Tên Đối Tượng', key: 'ten', width: 28 },
+            { header: 'Mã Số Thuế', key: 'ma_so_thue', width: 18 },
             { header: 'Phân Loại', key: 'phan_loai', width: 18 },
             { header: 'Điện Thoại', key: 'dien_thoai', width: 16 },
             { header: 'Địa Chỉ', key: 'dia_chi', width: 32 },
@@ -571,6 +581,7 @@ async function exportDoiTuongExcel() {
                 stt: idx + 1,
                 id: r.id,
                 ten: r.ten,
+                ma_so_thue: r.ma_so_thue || '',
                 phan_loai: typeStr,
                 dien_thoai: r.dien_thoai,
                 dia_chi: r.dia_chi,
