@@ -135,10 +135,6 @@ async def create_nhap_hang(
 
     if not ncc_ten and not ncc_id:
         raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Nhà Cung Cấp")
-    if not ncc_dia_chi:
-        raise HTTPException(status_code=400, detail="Vui lòng nhập Địa Chỉ Nhà Cung Cấp")
-    if not ncc_sdt:
-        raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Nhà Cung Cấp")
 
     try:
         # Tự động lưu/khớp Đối Tượng / Nhà Cung Cấp

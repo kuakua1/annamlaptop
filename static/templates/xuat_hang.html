@@ -22,23 +22,29 @@
                     <div class="row g-2">
                         <div class="col-md-5 position-relative">
                             <label class="form-label-compact">Tên Khách Hàng <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control form-control-sm" id="f-kh-ten"
-                                placeholder="Nhập tên khách hàng..."
-                                autocomplete="off"
-                                oninput="onKhInput(this)">
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" id="f-kh-ten"
+                                    placeholder="Gõ tên, mã, SĐT để tìm kiếm..."
+                                    autocomplete="off"
+                                    oninput="onKhInput(this)"
+                                    onfocus="onKhFocus(this)">
+                                <button class="btn btn-outline-danger" type="button" id="btn-toggle-kh-dropdown" onclick="toggleKhDropdown(event)" title="Bấm mở danh sách đối tác">
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                            </div>
                             <input type="hidden" id="f-kh-id">
                             <!-- Dropdown gợi ý -->
-                            <div id="kh-suggestions" class="autocomplete-dropdown d-none shadow"></div>
+                            <div id="kh-suggestions" class="autocomplete-dropdown d-none shadow" style="max-height: 280px; z-index: 1060;"></div>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label-compact">Số Điện Thoại <span class="text-danger">*</span></label>
+                            <label class="form-label-compact">Số Điện Thoại</label>
                             <input type="text" class="form-control form-control-sm" id="f-kh-sdt"
-                                placeholder="Số điện thoại...">
+                                placeholder="Số điện thoại (tùy chọn)...">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label-compact">Địa Chỉ <span class="text-danger">*</span></label>
+                            <label class="form-label-compact">Địa Chỉ</label>
                             <input type="text" class="form-control form-control-sm" id="f-kh-dia-chi"
-                                placeholder="Địa chỉ khách hàng...">
+                                placeholder="Địa chỉ (tùy chọn)...">
                         </div>
                     </div>
                 </div>

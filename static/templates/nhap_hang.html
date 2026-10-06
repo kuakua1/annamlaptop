@@ -22,22 +22,28 @@
                     <div class="row g-2">
                         <div class="col-md-5 position-relative">
                             <label class="form-label-compact">Tên Nhà Cung Cấp <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control form-control-sm" id="f-ncc-ten"
-                                placeholder="Nhập tên nhà cung cấp..."
-                                autocomplete="off"
-                                oninput="onNccInput(this)">
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" id="f-ncc-ten"
+                                    placeholder="Gõ tên, mã, SĐT để tìm kiếm..."
+                                    autocomplete="off"
+                                    oninput="onNccInput(this)"
+                                    onfocus="onNccFocus(this)">
+                                <button class="btn btn-outline-primary" type="button" id="btn-toggle-ncc-dropdown" onclick="toggleNccDropdown(event)" title="Bấm mở danh sách đối tác">
+                                    <i class="bi bi-chevron-down"></i>
+                                </button>
+                            </div>
                             <input type="hidden" id="f-ncc-id">
-                            <div id="ncc-suggestions" class="autocomplete-dropdown d-none shadow"></div>
+                            <div id="ncc-suggestions" class="autocomplete-dropdown d-none shadow" style="max-height: 280px; z-index: 1060;"></div>
                         </div>
                         <div class="col-md-3">
-                            <label class="form-label-compact">Số Điện Thoại <span class="text-danger">*</span></label>
+                            <label class="form-label-compact">Số Điện Thoại</label>
                             <input type="text" class="form-control form-control-sm" id="f-ncc-sdt"
-                                placeholder="Số điện thoại...">
+                                placeholder="Số điện thoại (tùy chọn)...">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label-compact">Địa Chỉ</label>
                             <input type="text" class="form-control form-control-sm" id="f-ncc-dia-chi"
-                                placeholder="Địa chỉ nhà cung cấp...">
+                                placeholder="Địa chỉ (tùy chọn)...">
                         </div>
                     </div>
                 </div>

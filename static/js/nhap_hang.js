@@ -17,6 +17,12 @@ let products = [];
 let suppliers = [];
 let itemCount = 0;
 
+window.addEventListener('message', (e) => {
+    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
+        loadData();
+    }
+});
+
 // ── State persistence ────────────────────────────────────────────────────────
 
 function saveState() {
@@ -92,39 +98,45 @@ function bindAutoSave() {
     document.getElementById('items-tbody').addEventListener('change', saveState);
 }
 
-// ── Autocomplete NCC ─────────────────────────────────────────────────────────
+// ── Autocomplete & Dropdown NCC ─────────────────────────────────────────────
 
-function onNccInput(input) {
-    const query = input.value.trim().toLowerCase();
+function renderNccSuggestions(matches) {
     const box = document.getElementById('ncc-suggestions');
-    document.getElementById('f-ncc-id').value = '';
+    if (!box) return;
 
-    if (!query || !suppliers.length) { box.classList.add('d-none'); return; }
-
-    const matches = suppliers.filter(s => {
-        const name = (s.ten || s.ten_ncc || s.ten_kh || '').toLowerCase();
-        const phone = (s.dien_thoai || '').toLowerCase();
-        return name.includes(query) || phone.includes(query);
-    }).slice(0, 8);
-
-    if (!matches.length) { box.classList.add('d-none'); return; }
+    if (!matches || !matches.length) {
+        box.innerHTML = `<div class="p-3 text-muted small text-center"><i class="bi bi-inbox me-1"></i>Không tìm thấy đối tác khớp</div>`;
+        box.classList.remove('d-none');
+        return;
+    }
 
     box.innerHTML = matches.map(s => {
         const name = s.ten || s.ten_ncc || s.ten_kh || '';
-        const type = (s.phan_loai || '').toUpperCase();
-        let badge = '<span class="badge bg-secondary-subtle text-secondary border small ms-1">Đối tác</span>';
+        const type = (s.phan_loai || 'CA_HAI').toUpperCase();
+        let badge = '<span class="badge bg-primary-subtle text-primary border small ms-1">Đối tác</span>';
         if (type === 'KHACH_HANG') badge = '<span class="badge bg-success-subtle text-success border small ms-1">Khách Hàng</span>';
         else if (type === 'NHA_CUNG_CAP') badge = '<span class="badge bg-info-subtle text-info border small ms-1">Nhà Cung Cấp</span>';
 
+        const codePart = (s.id && s.id !== name && s.id !== s.ma_so_thue) ? `<span class="badge bg-light text-secondary border font-monospace me-1">${escapeHtml(s.id)}</span>` : '';
+        const mstPart = s.ma_so_thue ? `<span class="badge bg-warning-subtle text-dark border font-monospace me-1">MST: ${escapeHtml(s.ma_so_thue)}</span>` : '';
+        const phonePart = s.dien_thoai ? `<span class="me-2"><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(s.dien_thoai)}</span>` : '';
+        const addrPart = s.dia_chi ? `<span><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(s.dia_chi)}</span>` : '';
+
         return `
-            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectNcc('${s.id}')">
+            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectNcc('${escapeHtml(String(s.id))}')">
                 <div class="d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold text-primary">${escapeHtml(name)}</span>
-                    ${badge}
+                    <div>
+                        ${codePart}
+                        <span class="fw-semibold text-primary">${escapeHtml(name)}</span>
+                    </div>
+                    <div>
+                        ${mstPart}
+                        ${badge}
+                    </div>
                 </div>
-                <div class="small text-muted mt-1">
-                    ${s.dien_thoai ? '📞 ' + escapeHtml(s.dien_thoai) : ''}
-                    ${s.dia_chi ? ' · ' + escapeHtml(s.dia_chi) : ''}
+                <div class="small text-muted mt-1 text-truncate">
+                    ${phonePart}
+                    ${addrPart}
                 </div>
             </div>
         `;
@@ -132,8 +144,59 @@ function onNccInput(input) {
     box.classList.remove('d-none');
 }
 
+function filterSuppliers(query) {
+    if (!suppliers || !suppliers.length) return [];
+    if (!query) {
+        // Trả về tối đa 60 đối tác để người dùng duyệt chọn khi bấm mũi tên
+        return suppliers.slice(0, 60);
+    }
+    const q = query.toLowerCase().trim();
+    return suppliers.filter(s => {
+        const name = (s.ten || s.ten_ncc || s.ten_kh || '').toLowerCase();
+        const code = (s.id || '').toLowerCase();
+        const phone = (s.dien_thoai || '').toLowerCase();
+        const mst = (s.ma_so_thue || '').toLowerCase();
+        const addr = (s.dia_chi || '').toLowerCase();
+        return name.includes(q) || code.includes(q) || phone.includes(q) || mst.includes(q) || addr.includes(q);
+    }).slice(0, 50);
+}
+
+function onNccInput(input) {
+    const query = input.value.trim();
+    document.getElementById('f-ncc-id').value = '';
+    const matches = filterSuppliers(query);
+    renderNccSuggestions(matches);
+}
+
+function onNccFocus(input) {
+    const query = input.value.trim();
+    const matches = filterSuppliers(query);
+    if (matches.length) {
+        renderNccSuggestions(matches);
+    }
+}
+
+function toggleNccDropdown(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    const box = document.getElementById('ncc-suggestions');
+    if (!box) return;
+
+    if (!box.classList.contains('d-none')) {
+        box.classList.add('d-none');
+    } else {
+        const input = document.getElementById('f-ncc-ten');
+        const query = (input?.value || '').trim();
+        const matches = filterSuppliers(query);
+        renderNccSuggestions(matches);
+        if (input) input.focus();
+    }
+}
+
 function selectNcc(sOrId) {
-    const s = typeof sOrId === 'object' ? sOrId : suppliers.find(x => x.id === sOrId);
+    const s = typeof sOrId === 'object' ? sOrId : suppliers.find(x => String(x.id) === String(sOrId));
     if (!s) return;
     const name = s.ten || s.ten_ncc || s.ten_kh || '';
     document.getElementById('f-ncc-ten').value = name;
@@ -224,7 +287,7 @@ function clearProductRow(id) {
 
 // Đóng dropdown khi click ra ngoài
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('#f-ncc-ten') && !e.target.closest('#ncc-suggestions')) {
+    if (!e.target.closest('#f-ncc-ten') && !e.target.closest('#ncc-suggestions') && !e.target.closest('#btn-toggle-ncc-dropdown')) {
         document.getElementById('ncc-suggestions')?.classList.add('d-none');
     }
     if (!e.target.closest('.autocomplete-dropdown') && !e.target.closest('input[id^="prod-input-"]')) {
@@ -417,17 +480,6 @@ async function saveReceipt() {
     if (!ncc_ten) {
         showToast('Vui lòng nhập Tên Nhà Cung Cấp', 'error');
         const el = document.getElementById('f-ncc-ten');
-        if (el) {
-            el.focus();
-            el.classList.add('is-invalid');
-            setTimeout(() => el.classList.remove('is-invalid'), 3000);
-        }
-        return;
-    }
-
-    if (!ncc_sdt) {
-        showToast('Vui lòng nhập Số Điện Thoại Nhà Cung Cấp', 'error');
-        const el = document.getElementById('f-ncc-sdt');
         if (el) {
             el.focus();
             el.classList.add('is-invalid');

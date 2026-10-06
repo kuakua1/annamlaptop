@@ -146,10 +146,6 @@ async def create_xuat_hang(
 
     if not kh_ten and not kh_id:
         raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Khách Hàng")
-    if not kh_dia_chi:
-        raise HTTPException(status_code=400, detail="Vui lòng nhập Địa Chỉ Khách Hàng")
-    if not kh_sdt:
-        raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Khách Hàng")
 
     for item in data.items:
         if item.gia_ban is None or item.gia_ban < 0:

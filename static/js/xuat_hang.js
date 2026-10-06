@@ -92,39 +92,45 @@ function bindAutoSave() {
     document.getElementById('items-tbody').addEventListener('change', saveState);
 }
 
-// ── Autocomplete KH ───────────────────────────────────────────────────────────
+// ── Autocomplete & Dropdown Khách Hàng ───────────────────────────────────────
 
-function onKhInput(input) {
-    const query = input.value.trim().toLowerCase();
+function renderKhSuggestions(matches) {
     const box = document.getElementById('kh-suggestions');
-    document.getElementById('f-kh-id').value = '';
+    if (!box) return;
 
-    if (!query || !customers.length) { box.classList.add('d-none'); return; }
-
-    const matches = customers.filter(c => {
-        const name = (c.ten || c.ten_kh || c.ten_ncc || '').toLowerCase();
-        const phone = (c.dien_thoai || '').toLowerCase();
-        return name.includes(query) || phone.includes(query);
-    }).slice(0, 8);
-
-    if (!matches.length) { box.classList.add('d-none'); return; }
+    if (!matches || !matches.length) {
+        box.innerHTML = `<div class="p-3 text-muted small text-center"><i class="bi bi-inbox me-1"></i>Không tìm thấy đối tác khớp</div>`;
+        box.classList.remove('d-none');
+        return;
+    }
 
     box.innerHTML = matches.map(c => {
         const name = c.ten || c.ten_kh || c.ten_ncc || '';
-        const type = (c.phan_loai || '').toUpperCase();
-        let badge = '<span class="badge bg-secondary-subtle text-secondary border small ms-1">Đối tác</span>';
+        const type = (c.phan_loai || 'CA_HAI').toUpperCase();
+        let badge = '<span class="badge bg-primary-subtle text-primary border small ms-1">Đối tác</span>';
         if (type === 'KHACH_HANG') badge = '<span class="badge bg-success-subtle text-success border small ms-1">Khách Hàng</span>';
         else if (type === 'NHA_CUNG_CAP') badge = '<span class="badge bg-info-subtle text-info border small ms-1">Nhà Cung Cấp</span>';
 
+        const codePart = (c.id && c.id !== name && c.id !== c.ma_so_thue) ? `<span class="badge bg-light text-secondary border font-monospace me-1">${escapeHtml(c.id)}</span>` : '';
+        const mstPart = c.ma_so_thue ? `<span class="badge bg-warning-subtle text-dark border font-monospace me-1">MST: ${escapeHtml(c.ma_so_thue)}</span>` : '';
+        const phonePart = c.dien_thoai ? `<span class="me-2"><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(c.dien_thoai)}</span>` : '';
+        const addrPart = c.dia_chi ? `<span><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(c.dia_chi)}</span>` : '';
+
         return `
-            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectKh('${c.id}')">
+            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectKh('${escapeHtml(String(c.id))}')">
                 <div class="d-flex justify-content-between align-items-center">
-                    <span class="fw-semibold text-danger">${escapeHtml(name)}</span>
-                    ${badge}
+                    <div>
+                        ${codePart}
+                        <span class="fw-semibold text-danger">${escapeHtml(name)}</span>
+                    </div>
+                    <div>
+                        ${mstPart}
+                        ${badge}
+                    </div>
                 </div>
-                <div class="small text-muted mt-1">
-                    ${c.dien_thoai ? '📞 ' + escapeHtml(c.dien_thoai) : ''}
-                    ${c.dia_chi ? ' · ' + escapeHtml(c.dia_chi) : ''}
+                <div class="small text-muted mt-1 text-truncate">
+                    ${phonePart}
+                    ${addrPart}
                 </div>
             </div>
         `;
@@ -132,8 +138,59 @@ function onKhInput(input) {
     box.classList.remove('d-none');
 }
 
+function filterCustomers(query) {
+    if (!customers || !customers.length) return [];
+    if (!query) {
+        // Trả về tối đa 60 đối tác để người dùng duyệt chọn khi bấm mũi tên
+        return customers.slice(0, 60);
+    }
+    const q = query.toLowerCase().trim();
+    return customers.filter(c => {
+        const name = (c.ten || c.ten_kh || c.ten_ncc || '').toLowerCase();
+        const code = (c.id || '').toLowerCase();
+        const phone = (c.dien_thoai || '').toLowerCase();
+        const mst = (c.ma_so_thue || '').toLowerCase();
+        const addr = (c.dia_chi || '').toLowerCase();
+        return name.includes(q) || code.includes(q) || phone.includes(q) || mst.includes(q) || addr.includes(q);
+    }).slice(0, 50);
+}
+
+function onKhInput(input) {
+    const query = input.value.trim();
+    document.getElementById('f-kh-id').value = '';
+    const matches = filterCustomers(query);
+    renderKhSuggestions(matches);
+}
+
+function onKhFocus(input) {
+    const query = input.value.trim();
+    const matches = filterCustomers(query);
+    if (matches.length) {
+        renderKhSuggestions(matches);
+    }
+}
+
+function toggleKhDropdown(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    const box = document.getElementById('kh-suggestions');
+    if (!box) return;
+
+    if (!box.classList.contains('d-none')) {
+        box.classList.add('d-none');
+    } else {
+        const input = document.getElementById('f-kh-ten');
+        const query = (input?.value || '').trim();
+        const matches = filterCustomers(query);
+        renderKhSuggestions(matches);
+        if (input) input.focus();
+    }
+}
+
 function selectKh(cOrId) {
-    const c = typeof cOrId === 'object' ? cOrId : customers.find(x => x.id === cOrId);
+    const c = typeof cOrId === 'object' ? cOrId : customers.find(x => String(x.id) === String(cOrId));
     if (!c) return;
     const name = c.ten || c.ten_kh || c.ten_ncc || '';
     document.getElementById('f-kh-ten').value = name;
@@ -265,7 +322,7 @@ function clearProductRow(id) {
 
 // Đóng dropdown khi click ra ngoài
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('#f-kh-ten') && !e.target.closest('#kh-suggestions')) {
+    if (!e.target.closest('#f-kh-ten') && !e.target.closest('#kh-suggestions') && !e.target.closest('#btn-toggle-kh-dropdown')) {
         document.getElementById('kh-suggestions')?.classList.add('d-none');
     }
     if (!e.target.closest('.autocomplete-dropdown') && !e.target.closest('input[id^="prod-input-"]')) {
@@ -300,7 +357,7 @@ try {
 } catch(e) {}
 
 window.addEventListener('message', (e) => {
-    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+    if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
         loadData();
     }
 });
@@ -451,28 +508,6 @@ async function saveReceipt() {
     if (!kh_ten) {
         showToast('Vui lòng nhập Tên Khách Hàng', 'error');
         const el = document.getElementById('f-kh-ten');
-        if (el) {
-            el.focus();
-            el.classList.add('is-invalid');
-            setTimeout(() => el.classList.remove('is-invalid'), 3000);
-        }
-        return;
-    }
-
-    if (!kh_dia_chi) {
-        showToast('Vui lòng nhập Địa Chỉ Khách Hàng', 'error');
-        const el = document.getElementById('f-kh-dia-chi');
-        if (el) {
-            el.focus();
-            el.classList.add('is-invalid');
-            setTimeout(() => el.classList.remove('is-invalid'), 3000);
-        }
-        return;
-    }
-
-    if (!kh_sdt) {
-        showToast('Vui lòng nhập Số Điện Thoại Khách Hàng', 'error');
-        const el = document.getElementById('f-kh-sdt');
         if (el) {
             el.focus();
             el.classList.add('is-invalid');
