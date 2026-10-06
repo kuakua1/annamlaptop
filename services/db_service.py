@@ -2216,7 +2216,7 @@ class DatabaseManager:
                     cursor.execute("SELECT id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu, cong_no FROM NhapHang")
                     rows = cursor.fetchall()
                     ws = sheets_service._sheet(SHEET_NHAP_HANG)
-                    header = ["ID", "Số Phiếu", "Ngày Nhập", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Nhập (đ)", "Thành Tiền (đ)", "Nhà Cung Cấp", "Ghi Chú", "Cộng Nợ (đ)"]
+                    header = ["ID", "Số Phiếu", "Ngày Nhập", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Nhập (đ)", "Thành Tiền (đ)", "Nhà Cung Cấp", "Ghi Chú", "Công Nợ (đ)"]
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([

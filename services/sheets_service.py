@@ -144,6 +144,8 @@ COLUMN_ALIAS_MAP = {
     "tiền khách nợ (đ)": "tien_khach_no",
     "tien_khach_no": "tien_khach_no",
     "khách nợ": "tien_khach_no",
+    "công nợ": "cong_no",
+    "công nợ (đ)": "cong_no",
     "cộng nợ": "cong_no",
     "cộng nợ (đ)": "cong_no",
     "cong_no": "cong_no",
