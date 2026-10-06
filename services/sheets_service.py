@@ -145,6 +145,17 @@ COLUMN_ALIAS_MAP = {
     "tien_khach_no": "tien_khach_no",
     "khách nợ": "tien_khach_no",
     # NhaCungCap & KhachHang & DoiTuong
+    "id": "id",
+    "mã đối tượng": "id",
+    "ma_doi_tuong": "id",
+    "mã đối tác": "id",
+    "ma_doi_tac": "id",
+    "mã dt": "id",
+    "ma_dt": "id",
+    "mã số thuế": "ma_so_thue",
+    "mã số thuế (mst)": "ma_so_thue",
+    "ma_so_thue": "ma_so_thue",
+    "mst": "ma_so_thue",
     "tên nhà cung cấp": "ten_ncc",
     "tên ncc": "ten_ncc",
     "ten_ncc": "ten_ncc",
@@ -279,22 +290,36 @@ class SheetsService:
         for attempt in range(max_retries):
             try:
                 ws = self._sheet(sheet_name)
-                raw_records = ws.get_all_records(empty2zero=False, default_blank="", value_render_option="UNFORMATTED_VALUE")
+                all_vals = ws.get_all_values()
+                if not all_vals or len(all_vals) <= 1:
+                    self._records_cache[sheet_name] = (time.time(), [])
+                    return []
+
+                headers = all_vals[0]
                 normalized = []
-                for r in raw_records:
+                for row in all_vals[1:]:
+                    if not any(str(c).strip() for c in row):
+                        continue
                     item = {}
-                    for k, v in r.items():
-                        item[k] = v
-                        clean_k = str(k).strip().lower()
+                    for col_idx, h in enumerate(headers):
+                        val = row[col_idx] if col_idx < len(row) else ""
+                        item[h] = val
+                        clean_k = str(h).strip().lower()
                         target_k = COLUMN_ALIAS_MAP.get(clean_k)
                         if target_k:
-                            item[target_k] = v
+                            item[target_k] = val
 
                     # Đồng bộ số lượng & tồn kho
                     if "ton_kho" in item and "so_luong" not in item:
                         item["so_luong"] = item["ton_kho"]
                     elif "so_luong" in item and "ton_kho" not in item:
                         item["ton_kho"] = item["so_luong"]
+
+                    # Đồng bộ mã & ID đối tượng
+                    if "id" in item and "ma_doi_tuong" not in item:
+                        item["ma_doi_tuong"] = item["id"]
+                    elif "ma_doi_tuong" in item and "id" not in item:
+                        item["id"] = item["ma_doi_tuong"]
 
                     # Đồng bộ tên nhà cung cấp / đối tác
                     if "nha_cung_cap_id" in item:
@@ -414,11 +439,14 @@ class SheetsService:
             ws = self._sheet(sheet_name)
             all_values = ws.get_all_values()
             col_idx = col - 1  # convert to 0-based
+            target_str = str(value).strip().lstrip("'")
             for i, row in enumerate(all_values):
                 if i == 0:
                     continue  # skip header
-                if col_idx < len(row) and str(row[col_idx]) == str(value):
-                    return i + 1  # 1-based
+                if col_idx < len(row):
+                    cell_val = str(row[col_idx]).strip().lstrip("'")
+                    if cell_val == target_str:
+                        return i + 1  # 1-based
             return -1
         except Exception as e:
             raise RuntimeError(f"Lỗi khi tìm kiếm trong sheet {sheet_name}: {str(e)}")

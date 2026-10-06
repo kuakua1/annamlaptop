@@ -618,3 +618,28 @@ async function exportDoiTuongExcel() {
         hideLoading();
     }
 }
+
+// ── Đồng Bộ Trực Tiếp Từ Google Sheets ───────────────────────────────────────
+async function syncDoiTuongFromSheets() {
+    const btn = document.getElementById('btn-sync-doituong');
+    const originalHtml = btn ? btn.innerHTML : '';
+    try {
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang đồng bộ...';
+        }
+        showLoading();
+        const res = await apiRequest('/api/system/sync-sheets?table=doituong', 'POST');
+        showToast(res.message || 'Đồng bộ danh mục đối tượng từ Google Sheet thành công!', 'success');
+        await loadDoiTuong(true);
+    } catch (err) {
+        showToast('Lỗi đồng bộ: ' + (err.message || err), 'error');
+    } finally {
+        hideLoading();
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    }
+}
+

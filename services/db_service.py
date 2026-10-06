@@ -1699,8 +1699,8 @@ class DatabaseManager:
                     except Exception as e:
                         counts["HangHoa_err"] = str(e)
 
-                # 2. Đồng bộ Khách Hàng
-                if do_all or target in ("khachhang", "kh"):
+                # 2. Đồng bộ Khách Hàng (chỉ khi có yêu cầu riêng và sheet còn tồn tại)
+                if target in ("khachhang", "kh"):
                     try:
                         records = sheets_service.get_all_records(SHEET_KHACH_HANG, force_refresh=True)
                         cursor.execute("DELETE FROM KhachHang")
@@ -1721,8 +1721,8 @@ class DatabaseManager:
                     except Exception as e:
                         counts["KhachHang_err"] = str(e)
 
-                # 3. Đồng bộ Nhà Cung Cấp
-                if do_all or target in ("nhacungcap", "ncc"):
+                # 3. Đồng bộ Nhà Cung Cấp (chỉ khi có yêu cầu riêng và sheet còn tồn tại)
+                if target in ("nhacungcap", "ncc"):
                     try:
                         records = sheets_service.get_all_records(SHEET_NHA_CUNG_CAP, force_refresh=True)
                         cursor.execute("DELETE FROM NhaCungCap")
@@ -1743,26 +1743,33 @@ class DatabaseManager:
                     except Exception as e:
                         counts["NhaCungCap_err"] = str(e)
 
-                # 3.1. Đồng bộ Danh Mục Đối Tượng
-                if do_all or target in ("doituong", "doitac"):
+                # 3.1. Đồng bộ Danh Mục Đối Tượng (Nguồn dữ liệu đối tác chính thức)
+                if do_all or target in ("doituong", "doitac", "danhsachdoituong"):
                     try:
                         records = sheets_service.get_all_records(SHEET_DOI_TUONG, force_refresh=True)
                         if records:
                             cursor.execute("DELETE FROM DoiTuong")
-                            for r in records:
+                            for idx, r in enumerate(records):
+                                dt_id = str(r.get("id") or r.get("ma_doi_tuong") or r.get("Mã Đối Tượng") or "").strip()
+                                dt_ten = str(r.get("ten") or r.get("ten_doi_tuong") or r.get("Tên Đối Tượng") or "").strip()
+                                if not dt_id:
+                                    dt_id = dt_ten or f"DT_{idx+1:04d}"
+                                if not dt_ten:
+                                    dt_ten = dt_id
+
                                 cursor.execute("""
                                     INSERT OR REPLACE INTO DoiTuong 
                                     (id, ten, phan_loai, ma_so_thue, dia_chi, dien_thoai, email, ghi_chu)
                                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 """, (
-                                    str(r.get("id") or r.get("ma_doi_tuong") or ""),
-                                    str(r.get("ten") or r.get("ten_doi_tuong") or ""),
-                                    str(r.get("phan_loai") or "CA_HAI"),
-                                    str(r.get("ma_so_thue") or r.get("mst") or ""),
-                                    str(r.get("dia_chi") or ""),
-                                    str(r.get("dien_thoai") or ""),
-                                    str(r.get("email") or ""),
-                                    str(r.get("ghi_chu") or "")
+                                    dt_id,
+                                    dt_ten,
+                                    str(r.get("phan_loai") or r.get("Phân Loại") or "CA_HAI").strip(),
+                                    str(r.get("ma_so_thue") or r.get("mst") or r.get("Mã Số Thuế") or "").strip(),
+                                    str(r.get("dia_chi") or r.get("Địa Chỉ") or "").strip(),
+                                    str(r.get("dien_thoai") or r.get("Điện Thoại") or "").strip(),
+                                    str(r.get("email") or r.get("Email") or "").strip(),
+                                    str(r.get("ghi_chu") or r.get("Ghi Chú") or "").strip()
                                 ))
                             counts["DoiTuong"] = len(records)
                     except Exception as e:
@@ -1902,45 +1909,7 @@ class DatabaseManager:
                 except Exception as e:
                     counts["HangHoa_err"] = str(e)
 
-                # 2. Đẩy KhachHang
-                try:
-                    cursor.execute("SELECT id, ten_kh, dia_chi, dien_thoai, email, ghi_chu FROM KhachHang")
-                    rows = cursor.fetchall()
-                    ws = sheets_service._sheet(SHEET_KHACH_HANG)
-                    header = ["ID", "Tên Khách Hàng", "Địa Chỉ", "Số Điện Thoại", "Email", "Ghi Chú"]
-                    sheet_data = [header]
-                    for r in rows:
-                        sheet_data.append([
-                            r["id"], r["ten_kh"], r["dia_chi"],
-                            r["dien_thoai"], r["email"], r["ghi_chu"]
-                        ])
-                    ws.clear()
-                    ws.update("A1", sheet_data)
-                    sheets_service.invalidate_records_cache(SHEET_KHACH_HANG)
-                    counts["KhachHang"] = len(rows)
-                except Exception as e:
-                    counts["KhachHang_err"] = str(e)
-
-                # 3. Đẩy NhaCungCap
-                try:
-                    cursor.execute("SELECT id, ten_ncc, dia_chi, dien_thoai, email, ghi_chu FROM NhaCungCap")
-                    rows = cursor.fetchall()
-                    ws = sheets_service._sheet(SHEET_NHA_CUNG_CAP)
-                    header = ["ID", "Tên Nhà Cung Cấp", "Địa Chỉ", "Số Điện Thoại", "Email", "Ghi Chú"]
-                    sheet_data = [header]
-                    for r in rows:
-                        sheet_data.append([
-                            r["id"], r["ten_ncc"], r["dia_chi"],
-                            r["dien_thoai"], r["email"], r["ghi_chu"]
-                        ])
-                    ws.clear()
-                    ws.update("A1", sheet_data)
-                    sheets_service.invalidate_records_cache(SHEET_NHA_CUNG_CAP)
-                    counts["NhaCungCap"] = len(rows)
-                except Exception as e:
-                    counts["NhaCungCap_err"] = str(e)
-
-                # 3.1. Đẩy DoiTuong
+                # 2. Đẩy DoiTuong (Danh Mục Đối Tượng Doanh Nghiệp)
                 try:
                     cursor.execute("SELECT id, ten, phan_loai, ma_so_thue, dia_chi, dien_thoai, email, ghi_chu FROM DoiTuong")
                     rows = cursor.fetchall()
@@ -1948,18 +1917,24 @@ class DatabaseManager:
                     header = ["Mã Đối Tượng", "Tên Đối Tượng", "Mã Số Thuế", "Điện Thoại", "Địa Chỉ", "Phân Loại", "Email", "Ghi Chú"]
                     sheet_data = [header]
                     for r in rows:
+                        rid = str(r["id"] or "")
+                        mst = str(r["ma_so_thue"] or "")
+                        phone = str(r["dien_thoai"] or "")
+                        rid_val = f"'{rid}" if (rid.isdigit() and rid.startswith("0")) else rid
+                        mst_val = f"'{mst}" if (mst.isdigit() and mst.startswith("0")) else mst
+                        phone_val = f"'{phone}" if (phone.isdigit() and phone.startswith("0")) else phone
                         sheet_data.append([
-                            str(r["id"] or ""),
+                            rid_val,
                             str(r["ten"] or ""),
-                            str(r["ma_so_thue"] or ""),
-                            str(r["dien_thoai"] or ""),
+                            mst_val,
+                            phone_val,
                             str(r["dia_chi"] or ""),
                             str(r["phan_loai"] or "CA_HAI"),
                             str(r["email"] or ""),
                             str(r["ghi_chu"] or "")
                         ])
                     ws.clear()
-                    ws.update("A1", sheet_data)
+                    ws.update("A1", sheet_data, value_input_option="USER_ENTERED")
                     sheets_service.invalidate_records_cache(SHEET_DOI_TUONG)
                     counts["DoiTuong"] = len(rows)
                 except Exception as e:

@@ -70,6 +70,8 @@ async def sync_from_sheets(
             "hanghoa": "Hàng Hóa & Tồn Kho",
             "nhaphang": "Nhập Hàng",
             "xuathang": "Xuất Hàng",
+            "doituong": "Danh Mục Đối Tượng",
+            "doitac": "Danh Mục Đối Tượng",
             "nhacungcap": "Nhà Cung Cấp",
             "khachhang": "Khách Hàng",
             "config": "Cấu hình"
