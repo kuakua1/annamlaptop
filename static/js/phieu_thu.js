@@ -11,10 +11,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     const ngayEl = document.getElementById('f-thu-ngay');
     if (ngayEl) ngayEl.value = today;
 
-    // 2. Tải mã phiếu dự kiến & danh sách khách hàng & phiếu thu gần đây
-    await fetchNextCode();
-    await loadCustomers();
-    await loadRecentReceipts();
+    // 2. Tải song song mã phiếu dự kiến & danh sách khách hàng & phiếu thu gần đây
+    await Promise.all([
+        fetchNextCode(),
+        loadCustomers(),
+        loadRecentReceipts()
+    ]);
 
     // 3. Kiểm tra tham số URL (kh_id, kh_ten, sdt, so_tien, so_phieu) để tự động điền khách hàng
     const urlParams = new URLSearchParams(window.location.search);

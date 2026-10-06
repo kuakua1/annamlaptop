@@ -11,12 +11,12 @@ function getCurrentMonthStr() {
     return `${y}-${m}`;
 }
 
+let allMonthExportRecords = [];
+
 async function loadExportData(silent = false) {
     try {
         const monthInput = document.getElementById('filter-month');
         const month = monthInput ? monthInput.value : '';
-        const searchInput = document.getElementById('search-input');
-        const search = searchInput ? searchInput.value.trim() : '';
 
         const tbody = document.getElementById('export-tbody');
         if (!silent && tbody) {
@@ -25,17 +25,39 @@ async function loadExportData(silent = false) {
 
         let url = '/api/xuat-hang?';
         if (month) url += `month=${encodeURIComponent(month)}&`;
-        if (search) url += `search=${encodeURIComponent(search)}&`;
 
         const res = await apiRequest(url);
-        exportRecords = res.data || [];
+        allMonthExportRecords = res.data || [];
 
-        renderExportTable(res);
+        filterAndRenderExportTable();
     } catch (e) {
         if (!silent) {
             showToast('Lỗi khi tải dữ liệu xuất kho: ' + e.message, 'error');
         }
     }
+}
+
+function filterAndRenderExportTable() {
+    const searchInput = document.getElementById('search-input');
+    const search = (searchInput ? searchInput.value : '').toLowerCase().trim();
+
+    if (!search) {
+        exportRecords = allMonthExportRecords;
+    } else {
+        exportRecords = allMonthExportRecords.filter(r => {
+            const ma = (r.ma_hang || '').toLowerCase();
+            const ten = (r.ten_hang || '').toLowerCase();
+            const so_phieu = (r.so_phieu || '').toLowerCase();
+            const kh_ten = (r.kh_ten || r.khach_hang_id || '').toLowerCase();
+            const kh_sdt = (r.kh_sdt || '').toLowerCase();
+            const kh_dia_chi = (r.kh_dia_chi || '').toLowerCase();
+            const ghi_chu = (r.ghi_chu || '').toLowerCase();
+            return ma.includes(search) || ten.includes(search) || so_phieu.includes(search) ||
+                   kh_ten.includes(search) || kh_sdt.includes(search) || kh_dia_chi.includes(search) || ghi_chu.includes(search);
+        });
+    }
+
+    renderExportTable();
 }
 
 function renderExportTable(apiRes) {
@@ -44,10 +66,10 @@ function renderExportTable(apiRes) {
     document.getElementById('stat-month-label').textContent = monthLabel;
 
     const count = exportRecords.length;
-    const totalQty = apiRes.tong_so_luong || exportRecords.reduce((sum, r) => sum + (parseInt(r.so_luong) || 0), 0);
-    const totalRevenue = apiRes.tong_thanh_tien || exportRecords.reduce((sum, r) => sum + (parseFloat(r.thanh_tien) || 0), 0);
-    const totalProfit = apiRes.tong_loi_nhuan || exportRecords.reduce((sum, r) => sum + (parseFloat(r.loi_nhuan) || 0), 0);
-    const totalDebt = apiRes.tong_khach_no !== undefined ? apiRes.tong_khach_no : exportRecords.reduce((sum, r) => sum + (parseFloat(r.tien_khach_no !== undefined ? r.tien_khach_no : (r.cong_no !== undefined ? r.cong_no : r.thanh_tien)) || 0), 0);
+    const totalQty = (apiRes && apiRes.tong_so_luong !== undefined) ? apiRes.tong_so_luong : exportRecords.reduce((sum, r) => sum + (parseInt(r.so_luong) || 0), 0);
+    const totalRevenue = (apiRes && apiRes.tong_thanh_tien !== undefined) ? apiRes.tong_thanh_tien : exportRecords.reduce((sum, r) => sum + (parseFloat(r.thanh_tien) || 0), 0);
+    const totalProfit = (apiRes && apiRes.tong_loi_nhuan !== undefined) ? apiRes.tong_loi_nhuan : exportRecords.reduce((sum, r) => sum + (parseFloat(r.loi_nhuan) || 0), 0);
+    const totalDebt = (apiRes && apiRes.tong_khach_no !== undefined) ? apiRes.tong_khach_no : exportRecords.reduce((sum, r) => sum + (parseFloat(r.tien_khach_no !== undefined ? r.tien_khach_no : (r.cong_no !== undefined ? r.cong_no : r.thanh_tien)) || 0), 0);
 
     // Cập nhật card trên đầu
     document.getElementById('stat-count').textContent = formatNumber(count);
@@ -231,11 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     monthInput?.addEventListener('change', loadExportData);
 
-    let debounceTimer;
-    document.getElementById('search-input')?.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(loadExportData, 300);
-    });
+    document.getElementById('search-input')?.addEventListener('input', filterAndRenderExportTable);
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
     window.addEventListener('message', (e) => {

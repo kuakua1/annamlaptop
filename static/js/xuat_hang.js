@@ -373,6 +373,7 @@ try {
 
 window.addEventListener('message', (e) => {
     if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
+        if (e.data.type === 'TAB_ACTIVATED' && Date.now() - lastLoadTime < 15000) return;
         loadData();
     }
 });
@@ -786,9 +787,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {}
 
     try {
-        await loadData();
+        await Promise.all([
+            loadData(),
+            loadReceipts()
+        ]);
     } catch (e) {
-        console.error('Lỗi loadData:', e);
+        console.error('Lỗi tải dữ liệu ban đầu:', e);
     }
 
     try {
@@ -830,10 +834,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
         bindAutoSave();
     } catch (e) {}
-
-    try {
-        await loadReceipts();
-    } catch (e) {
-        console.error('Lỗi loadReceipts:', e);
-    }
 });

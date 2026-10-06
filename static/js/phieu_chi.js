@@ -12,11 +12,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     const ngayEl = document.getElementById('f-chi-ngay');
     if (ngayEl) ngayEl.value = today;
 
-    // 2. Tải số dư công ty, mã phiếu chi dự kiến, danh sách đối tác & phiếu chi gần đây
-    await loadCompanyBalances();
-    await fetchNextCodeChi();
-    await loadSuppliers();
-    await loadRecentChi();
+    // 2. Tải song song số dư công ty, mã phiếu chi dự kiến, danh sách đối tác & phiếu chi gần đây
+    await Promise.all([
+        loadCompanyBalances(),
+        fetchNextCodeChi(),
+        loadSuppliers(),
+        loadRecentChi()
+    ]);
 
     // 3. Kiểm tra tham số URL (ncc_id, ncc_ten, sdt, so_tien, so_phieu) để tự động điền đối tác
     const urlParams = new URLSearchParams(window.location.search);

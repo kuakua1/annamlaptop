@@ -29,22 +29,41 @@ function populateDanhMucDropdowns() {
     }
 }
 
+let allProductsCache = [];
+
 async function loadProducts(silent = false) {
     try {
         if (!silent) showLoading();
-        const search = document.getElementById('search-input')?.value || '';
-        const danhMuc = document.getElementById('filter-danh-muc')?.value || '';
-        let url = `/api/hang-hoa?search=${encodeURIComponent(search)}&danh_muc=${encodeURIComponent(danhMuc)}`;
-        const res = await apiRequest(url);
-        allProducts = res.data || [];
-        renderTable(allProducts);
-        const countEl = document.getElementById('total-count');
-        if (countEl) countEl.textContent = allProducts.length;
+        const res = await apiRequest('/api/hang-hoa');
+        allProductsCache = res.data || [];
+        applyFilters();
     } catch (e) {
         if (!silent) showToast(e.message, 'error');
     } finally {
         if (!silent) hideLoading();
     }
+}
+
+function applyFilters() {
+    const search = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+    const danhMuc = document.getElementById('filter-danh-muc')?.value || '';
+
+    let filtered = allProductsCache;
+    if (danhMuc) {
+        filtered = filtered.filter(p => p.danh_muc === danhMuc);
+    }
+    if (search) {
+        filtered = filtered.filter(p => {
+            const m = (p.ma_hang || '').toLowerCase();
+            const t = (p.ten_hang || '').toLowerCase();
+            return m.includes(search) || t.includes(search);
+        });
+    }
+
+    allProducts = filtered;
+    renderTable(allProducts);
+    const countEl = document.getElementById('total-count');
+    if (countEl) countEl.textContent = allProducts.length;
 }
 
 function renderTonKhoCell(p) {
@@ -245,12 +264,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateDanhMucDropdowns();
     await loadProducts();
 
-    let debounceTimer;
-    document.getElementById('search-input')?.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(loadProducts, 300);
-    });
-    document.getElementById('filter-danh-muc')?.addEventListener('change', loadProducts);
+    document.getElementById('search-input')?.addEventListener('input', applyFilters);
+    document.getElementById('filter-danh-muc')?.addEventListener('change', applyFilters);
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
     window.addEventListener('message', (e) => {

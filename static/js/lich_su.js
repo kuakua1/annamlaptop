@@ -17,6 +17,9 @@ function getCurrentMonthStr() {
     return `${y}-${m}`;
 }
 
+let filteredHistoryRecords = [];
+const HISTORY_PAGE_SIZE = 50;
+
 async function loadHistory(silent = false) {
     try {
         if (!silent) showLoading();
@@ -24,127 +27,145 @@ async function loadHistory(silent = false) {
         const monthInput = document.getElementById('filter-month');
         if (monthInput) currentMonth = monthInput.value;
 
-        const searchInput = document.getElementById('search-input');
-        if (searchInput) currentSearch = searchInput.value.trim();
-
         const params = new URLSearchParams({
             loai: currentLoai,
             month: currentMonth,
-            search: currentSearch,
-            page: currentPage,
-            page_size: 50
+            page: 1,
+            page_size: 1000
         });
 
         const res = await apiRequest(`/api/lich-su?${params}`);
-        const records = res.data || [];
-        currentRecords = records;
-        allHistoryRecords = res.all_data || records;
+        allHistoryRecords = res.all_data || res.data || [];
 
-        // Cập nhật Thống kê
-        const totalCount = res.total || 0;
-        const totalQty = res.tong_so_luong || 0;
-        const totalCost = res.tong_thanh_tien || 0;
-        const totalDebt = res.tong_tien_no || 0;
-
-        document.getElementById('total-count').textContent = formatNumber(totalCount);
-        if (document.getElementById('stat-count')) document.getElementById('stat-count').textContent = formatNumber(totalCount);
-        if (document.getElementById('stat-qty')) document.getElementById('stat-qty').textContent = formatNumber(totalQty);
-        if (document.getElementById('stat-cost')) document.getElementById('stat-cost').textContent = formatVND(totalCost);
-        if (document.getElementById('stat-debt')) document.getElementById('stat-debt').textContent = formatVND(totalDebt);
-
-        const pageInfoEl = document.getElementById('page-info');
-        if (pageInfoEl) {
-            pageInfoEl.textContent = totalCount > 0 ? `Trang ${res.page}/${res.total_pages} (${totalCount} bản ghi)` : '';
-        }
-
-        // Cập nhật tfoot
-        const tfoot = document.getElementById('history-tfoot');
-        if (tfoot) {
-            if (totalCount > 0) {
-                tfoot.style.display = '';
-                const tfQty = document.getElementById('tf-qty');
-                if (tfQty) tfQty.textContent = formatNumber(totalQty);
-                const tfVal = document.getElementById('tf-val');
-                if (tfVal) tfVal.textContent = formatVND(totalCost);
-                const tfDebt = document.getElementById('tf-debt');
-                if (tfDebt) tfDebt.textContent = formatVND(totalDebt);
-            } else {
-                tfoot.style.display = 'none';
-            }
-        }
-
-        // Render tbody
-        const tbody = document.getElementById('history-tbody');
-        if (!records.length) {
-            tbody.innerHTML = `<tr><td colspan="13" class="text-center text-muted py-5">
-                <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
-                Không tìm thấy dữ liệu giao dịch phù hợp
-            </td></tr>`;
-        } else {
-            const startIdx = (res.page - 1) * res.page_size;
-            tbody.innerHTML = records.map((r, i) => {
-                const idx = startIdx + i + 1;
-                const sl = parseInt(r.so_luong) || 0;
-                const donGia = parseFloat(r.don_gia) || 0;
-                const thanhTien = parseFloat(r.thanh_tien) || 0;
-                const tienNo = parseFloat(r.tien_no !== undefined ? r.tien_no : (r.cong_no !== undefined ? r.cong_no : 0)) || 0;
-                const isNhap = (r.loai || '').toLowerCase().includes('nhập') || r.loai_code === 'nhap';
-
-                const debtHtml = tienNo > 0
-                    ? `<span class="fw-bold text-danger font-monospace">${formatVND(tienNo)}</span>`
-                    : `<span class="text-muted font-monospace">0 đ</span>`;
-
-                const typeBadge = isNhap
-                    ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill"><i class="bi bi-arrow-down-left me-1"></i>Nhập</span>`
-                    : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill"><i class="bi bi-arrow-up-right me-1"></i>Xuất</span>`;
-
-                const doiTacInfo = r.doi_tac || (isNhap ? 'Nhà cung cấp lẻ' : 'Khách lẻ');
-
-                return `
-                    <tr>
-                        <td class="text-center text-muted small">${idx}</td>
-                        <td class="text-center">${typeBadge}</td>
-                        <td><span class="badge bg-light text-secondary border font-monospace">${formatDate(r.ngay)}</span></td>
-                        <td>
-                            <button class="btn btn-sm btn-link p-0 ${isNhap ? 'text-primary' : 'text-danger'} fw-bold font-monospace text-decoration-none" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')">
-                                <i class="bi bi-file-earmark-text me-1"></i>${escapeHtml(r.so_phieu)}
-                            </button>
-                        </td>
-                        <td><span class="badge bg-secondary font-monospace">${escapeHtml(r.ma_hang)}</span></td>
-                        <td class="fw-semibold text-dark">${escapeHtml(r.ten_hang)}</td>
-                        <td class="text-center text-muted small">${escapeHtml(r.don_vi_tinh || 'Cái')}</td>
-                        <td class="text-center fw-bold fs-6 ${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatNumber(sl)}</td>
-                        <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(donGia)}</td>
-                        <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
-                        <td class="text-end font-monospace text-nowrap" style="white-space: nowrap; min-width: 145px;">${debtHtml}</td>
-                        <td>
-                            <div class="fw-medium text-dark text-truncate" style="max-width: 220px;" title="${escapeHtml(doiTacInfo)}">${escapeHtml(doiTacInfo)}</div>
-                            ${r.dien_thoai ? `<div class="small text-muted font-monospace"><i class="bi bi-telephone me-1"></i>${escapeHtml(r.dien_thoai)}</div>` : ''}
-                        </td>
-                        <td class="text-center no-print">
-                            <div class="d-flex justify-content-center gap-1">
-                                <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                                <button class="btn btn-xs btn-outline-danger btn-sm" onclick="confirmDeleteReceipt('${escapeHtml(r.so_phieu)}', '${isNhap ? 'nhap' : 'xuat'}', () => loadHistory())" title="Xóa phiếu">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        renderPagination('pagination-container', currentPage, res.total_pages, (p) => {
-            currentPage = p;
-            loadHistory();
-        });
+        filterAndRenderHistory(1);
     } catch (e) {
         if (!silent) showToast(e.message, 'error');
     } finally {
         if (!silent) hideLoading();
     }
+}
+
+function filterAndRenderHistory(page = 1) {
+    currentPage = page;
+    const searchInput = document.getElementById('search-input');
+    const q = (searchInput ? searchInput.value : '').toLowerCase().trim();
+
+    if (!q) {
+        filteredHistoryRecords = allHistoryRecords;
+    } else {
+        filteredHistoryRecords = allHistoryRecords.filter(r => {
+            const fullText = `${r.ma_hang || ''} ${r.ten_hang || ''} ${r.so_phieu || ''} ${r.doi_tac || ''} ${r.dien_thoai || ''} ${r.dia_chi || ''} ${r.ghi_chu || ''}`.toLowerCase();
+            return fullText.includes(q);
+        });
+    }
+
+    // Cập nhật Thống kê
+    const totalCount = filteredHistoryRecords.length;
+    const totalQty = filteredHistoryRecords.reduce((s, r) => s + (parseInt(r.so_luong) || 0), 0);
+    const totalCost = filteredHistoryRecords.reduce((s, r) => s + (parseFloat(r.thanh_tien) || 0), 0);
+    const totalDebt = filteredHistoryRecords.reduce((s, r) => s + (parseFloat(r.tien_no !== undefined ? r.tien_no : (r.cong_no !== undefined ? r.cong_no : 0)) || 0), 0);
+
+    document.getElementById('total-count').textContent = formatNumber(totalCount);
+    if (document.getElementById('stat-count')) document.getElementById('stat-count').textContent = formatNumber(totalCount);
+    if (document.getElementById('stat-qty')) document.getElementById('stat-qty').textContent = formatNumber(totalQty);
+    if (document.getElementById('stat-cost')) document.getElementById('stat-cost').textContent = formatVND(totalCost);
+    if (document.getElementById('stat-debt')) document.getElementById('stat-debt').textContent = formatVND(totalDebt);
+
+    const totalPages = Math.ceil(totalCount / HISTORY_PAGE_SIZE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+
+    const pageInfoEl = document.getElementById('page-info');
+    if (pageInfoEl) {
+        pageInfoEl.textContent = totalCount > 0 ? `Trang ${currentPage}/${totalPages} (${totalCount} bản ghi)` : '';
+    }
+
+    // Cập nhật tfoot
+    const tfoot = document.getElementById('history-tfoot');
+    if (tfoot) {
+        if (totalCount > 0) {
+            tfoot.style.display = '';
+            const tfQty = document.getElementById('tf-qty');
+            if (tfQty) tfQty.textContent = formatNumber(totalQty);
+            const tfVal = document.getElementById('tf-val');
+            if (tfVal) tfVal.textContent = formatVND(totalCost);
+            const tfDebt = document.getElementById('tf-debt');
+            if (tfDebt) tfDebt.textContent = formatVND(totalDebt);
+        } else {
+            tfoot.style.display = 'none';
+        }
+    }
+
+    // Slicing for page
+    const startIdx = (currentPage - 1) * HISTORY_PAGE_SIZE;
+    const records = filteredHistoryRecords.slice(startIdx, startIdx + HISTORY_PAGE_SIZE);
+    currentRecords = records;
+
+    // Render tbody
+    const tbody = document.getElementById('history-tbody');
+    if (!records.length) {
+        tbody.innerHTML = `<tr><td colspan="13" class="text-center text-muted py-5">
+            <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
+            Không tìm thấy dữ liệu giao dịch phù hợp
+        </td></tr>`;
+    } else {
+        tbody.innerHTML = records.map((r, i) => {
+            const idx = startIdx + i + 1;
+            const sl = parseInt(r.so_luong) || 0;
+            const donGia = parseFloat(r.don_gia) || 0;
+            const thanhTien = parseFloat(r.thanh_tien) || 0;
+            const tienNo = parseFloat(r.tien_no !== undefined ? r.tien_no : (r.cong_no !== undefined ? r.cong_no : 0)) || 0;
+            const isNhap = (r.loai || '').toLowerCase().includes('nhập') || r.loai_code === 'nhap';
+
+            const debtHtml = tienNo > 0
+                ? `<span class="fw-bold text-danger font-monospace">${formatVND(tienNo)}</span>`
+                : `<span class="text-muted font-monospace">0 đ</span>`;
+
+            const typeBadge = isNhap
+                ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill"><i class="bi bi-arrow-down-left me-1"></i>Nhập</span>`
+                : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill"><i class="bi bi-arrow-up-right me-1"></i>Xuất</span>`;
+
+            const doiTacInfo = r.doi_tac || (isNhap ? 'Nhà cung cấp lẻ' : 'Khách lẻ');
+
+            return `
+                <tr>
+                    <td class="text-center text-muted small">${idx}</td>
+                    <td class="text-center">${typeBadge}</td>
+                    <td><span class="badge bg-light text-secondary border font-monospace">${formatDate(r.ngay)}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-link p-0 ${isNhap ? 'text-primary' : 'text-danger'} fw-bold font-monospace text-decoration-none" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')">
+                            <i class="bi bi-file-earmark-text me-1"></i>${escapeHtml(r.so_phieu)}
+                        </button>
+                    </td>
+                    <td><span class="badge bg-secondary font-monospace">${escapeHtml(r.ma_hang)}</span></td>
+                    <td class="fw-semibold text-dark">${escapeHtml(r.ten_hang)}</td>
+                    <td class="text-center text-muted small">${escapeHtml(r.don_vi_tinh || 'Cái')}</td>
+                    <td class="text-center fw-bold fs-6 ${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatNumber(sl)}</td>
+                    <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(donGia)}</td>
+                    <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
+                    <td class="text-end font-monospace text-nowrap" style="white-space: nowrap; min-width: 145px;">${debtHtml}</td>
+                    <td>
+                        <div class="fw-medium text-dark text-truncate" style="max-width: 220px;" title="${escapeHtml(doiTacInfo)}">${escapeHtml(doiTacInfo)}</div>
+                        ${r.dien_thoai ? `<div class="small text-muted font-monospace"><i class="bi bi-telephone me-1"></i>${escapeHtml(r.dien_thoai)}</div>` : ''}
+                    </td>
+                    <td class="text-center no-print">
+                        <div class="d-flex justify-content-center gap-1">
+                            <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <button class="btn btn-xs btn-outline-danger btn-sm" onclick="confirmDeleteReceipt('${escapeHtml(r.so_phieu)}', '${isNhap ? 'nhap' : 'xuat'}', () => loadHistory())" title="Xóa phiếu">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    renderPagination('pagination-container', currentPage, totalPages, (p) => {
+        filterAndRenderHistory(p);
+    });
 }
 
 function setTab(loai) {
@@ -180,7 +201,7 @@ function clearSearch() {
     if (input) input.value = '';
     currentSearch = '';
     currentPage = 1;
-    loadHistory();
+    filterAndRenderHistory(1);
 }
 
 function printHistoryReport() {
@@ -304,20 +325,8 @@ function initLichSu() {
 
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
-        let debounceTimer;
         searchInput.addEventListener('input', () => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                currentPage = 1;
-                loadHistory();
-            }, 300);
-        });
-        searchInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') {
-                clearTimeout(debounceTimer);
-                currentPage = 1;
-                loadHistory();
-            }
+            filterAndRenderHistory(1);
         });
     }
 

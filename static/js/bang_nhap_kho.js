@@ -11,12 +11,12 @@ function getCurrentMonthStr() {
     return `${y}-${m}`;
 }
 
+let allMonthImportRecords = [];
+
 async function loadImportData(silent = false) {
     try {
         const monthInput = document.getElementById('filter-month');
         const month = monthInput ? monthInput.value : '';
-        const searchInput = document.getElementById('search-input');
-        const search = searchInput ? searchInput.value.trim() : '';
 
         const tbody = document.getElementById('import-tbody');
         if (!silent && tbody) {
@@ -25,17 +25,39 @@ async function loadImportData(silent = false) {
 
         let url = '/api/nhap-hang?';
         if (month) url += `month=${encodeURIComponent(month)}&`;
-        if (search) url += `search=${encodeURIComponent(search)}&`;
 
         const res = await apiRequest(url);
-        importRecords = res.data || [];
+        allMonthImportRecords = res.data || [];
 
-        renderImportTable(res);
+        filterAndRenderImportTable();
     } catch (e) {
         if (!silent) {
             showToast('Lỗi khi tải dữ liệu nhập kho: ' + e.message, 'error');
         }
     }
+}
+
+function filterAndRenderImportTable() {
+    const searchInput = document.getElementById('search-input');
+    const search = (searchInput ? searchInput.value : '').toLowerCase().trim();
+
+    if (!search) {
+        importRecords = allMonthImportRecords;
+    } else {
+        importRecords = allMonthImportRecords.filter(r => {
+            const ma = (r.ma_hang || '').toLowerCase();
+            const ten = (r.ten_hang || '').toLowerCase();
+            const so_phieu = (r.so_phieu || '').toLowerCase();
+            const ncc_ten = (r.ncc_ten || r.nha_cung_cap_id || '').toLowerCase();
+            const ncc_sdt = (r.ncc_sdt || '').toLowerCase();
+            const ncc_dia_chi = (r.ncc_dia_chi || '').toLowerCase();
+            const ghi_chu = (r.ghi_chu || '').toLowerCase();
+            return ma.includes(search) || ten.includes(search) || so_phieu.includes(search) ||
+                   ncc_ten.includes(search) || ncc_sdt.includes(search) || ncc_dia_chi.includes(search) || ghi_chu.includes(search);
+        });
+    }
+
+    renderImportTable();
 }
 
 function renderImportTable(apiRes) {
@@ -44,9 +66,9 @@ function renderImportTable(apiRes) {
     document.getElementById('stat-month-label').textContent = monthLabel;
 
     const count = importRecords.length;
-    const totalQty = apiRes.tong_so_luong || importRecords.reduce((sum, r) => sum + (parseInt(r.so_luong) || 0), 0);
-    const totalCost = apiRes.tong_thanh_tien || importRecords.reduce((sum, r) => sum + (parseFloat(r.thanh_tien) || 0), 0);
-    const totalDebt = apiRes.tong_cong_no !== undefined ? apiRes.tong_cong_no : importRecords.reduce((sum, r) => sum + (parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0), 0);
+    const totalQty = (apiRes && apiRes.tong_so_luong !== undefined) ? apiRes.tong_so_luong : importRecords.reduce((sum, r) => sum + (parseInt(r.so_luong) || 0), 0);
+    const totalCost = (apiRes && apiRes.tong_thanh_tien !== undefined) ? apiRes.tong_thanh_tien : importRecords.reduce((sum, r) => sum + (parseFloat(r.thanh_tien) || 0), 0);
+    const totalDebt = (apiRes && apiRes.tong_cong_no !== undefined) ? apiRes.tong_cong_no : importRecords.reduce((sum, r) => sum + (parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0), 0);
 
     // Cập nhật card trên đầu
     document.getElementById('stat-count').textContent = formatNumber(count);
@@ -229,11 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     monthInput?.addEventListener('change', loadImportData);
 
-    let debounceTimer;
-    document.getElementById('search-input')?.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(loadImportData, 300);
-    });
+    document.getElementById('search-input')?.addEventListener('input', filterAndRenderImportTable);
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
     window.addEventListener('message', (e) => {
