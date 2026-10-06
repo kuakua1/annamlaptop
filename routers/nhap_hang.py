@@ -201,7 +201,8 @@ async def create_nhap_hang(
             ngay_nhap=data.ngay_nhap,
             ncc_save_ref=ncc_save_ref,
             ghi_chu=data.ghi_chu or "",
-            items=items_payload
+            items=items_payload,
+            cong_no=data.cong_no
         )
 
         return {
@@ -224,12 +225,13 @@ async def get_nhap_hang_detail(
 ):
     try:
         records = db_manager.get_all("NhapHang")
-        ncc_records = db_manager.get_all("NhaCungCap")
+        ncc_records = db_manager.get_all("DoiTuong") or db_manager.get_all("NhaCungCap")
         hang_records = db_manager.get_all("HangHoa")
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
         items = []
         total = 0.0
+        total_no = 0.0
         total_sl = 0
         ngay_nhap = ""
         ncc_name = ""
@@ -239,7 +241,10 @@ async def get_nhap_hang_detail(
             if str(rec.get("so_phieu", "")) == so_phieu:
                 thanh_tien = float(rec.get("thanh_tien", 0) or 0)
                 sl = int(rec.get("so_luong", 0) or 0)
+                raw_no = rec.get("cong_no")
+                line_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
                 total += thanh_tien
+                total_no += line_no
                 total_sl += sl
                 if not ngay_nhap:
                     ngay_nhap = str(rec.get("ngay_nhap", ""))
@@ -258,17 +263,30 @@ async def get_nhap_hang_detail(
                     "so_luong": sl,
                     "gia_nhap": float(rec.get("gia_nhap", 0) or 0),
                     "thanh_tien": thanh_tien,
+                    "cong_no": line_no,
                     "nha_cung_cap_id": ncc_name,
                     "ghi_chu": str(rec.get("ghi_chu", "")),
                 })
         if not items:
             raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu {so_phieu}")
 
+        # Kiểm tra phiếu chi liên quan trong Sổ Quỹ
+        so_quy_records = db_manager.get_all("SoQuy")
+        phieu_chi_list = [
+            sq for sq in so_quy_records
+            if str(sq.get("loai_phieu", "")).upper() == "CHI" and str(sq.get("phieu_lien_quan", "")).strip() == so_phieu
+        ]
+        so_tien_da_chi = sum(float(sq.get("so_tien", 0) or 0) for sq in phieu_chi_list)
+        ma_phieu_chi = phieu_chi_list[0].get("ma_phieu") if phieu_chi_list else None
+        da_thanh_toan = (total_no <= 0) or (len(phieu_chi_list) > 0 and (so_tien_da_chi >= total or total_no <= 0))
+
         ncc_info = {"ten_ncc": ncc_name, "dien_thoai": "", "dia_chi": ""}
         if ncc_name:
             for n in ncc_records:
-                if str(n.get("ten_ncc", "")).strip().lower() == ncc_name.lower() or str(n.get("id", "")) == ncc_name:
-                    ncc_info["ten_ncc"] = str(n.get("ten_ncc", "")) or ncc_name
+                n_ten = str(n.get("ten") or n.get("ten_ncc") or "")
+                n_id = str(n.get("id") or "")
+                if n_ten.strip().lower() == ncc_name.lower() or n_id == ncc_name:
+                    ncc_info["ten_ncc"] = n_ten or ncc_name
                     ncc_info["dien_thoai"] = str(n.get("dien_thoai", ""))
                     ncc_info["dia_chi"] = str(n.get("dia_chi", ""))
                     break
@@ -282,7 +300,11 @@ async def get_nhap_hang_detail(
             "tong_so_luong": total_sl,
             "so_mat_hang": len(items),
             "items": items,
-            "total": total
+            "total": total,
+            "total_no": total_no,
+            "da_thanh_toan": da_thanh_toan,
+            "ma_phieu_chi": ma_phieu_chi,
+            "so_tien_da_chi": so_tien_da_chi,
         }
     except HTTPException:
         raise
@@ -377,7 +399,8 @@ async def update_nhap_hang(
             ngay_nhap=ngay_nhap,
             ncc_save_ref=ncc_save_ref,
             ghi_chu=data.ghi_chu or "",
-            items=items_payload
+            items=items_payload,
+            cong_no=data.cong_no
         )
 
         return {

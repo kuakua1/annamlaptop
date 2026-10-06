@@ -127,9 +127,16 @@ class DatabaseManager:
                     nha_cung_cap_id TEXT,
                     dia_chi TEXT,
                     dien_thoai TEXT,
-                    ghi_chu TEXT
+                    ghi_chu TEXT,
+                    cong_no REAL DEFAULT 0
                 )
             """)
+
+            # Kiểm tra và thêm cột cong_no nếu bảng NhapHang cũ chưa có
+            cursor.execute("PRAGMA table_info(NhapHang)")
+            nhap_cols = [c["name"] for c in cursor.fetchall()]
+            if "cong_no" not in nhap_cols:
+                cursor.execute("ALTER TABLE NhapHang ADD COLUMN cong_no REAL DEFAULT 0")
 
             # 3. Bảng XuatHang
             cursor.execute("""
@@ -864,21 +871,27 @@ class DatabaseManager:
         })
         return new_total_sl, new_lo_str
 
-    def create_nhap_hang_transaction(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict]) -> list[dict]:
+    def create_nhap_hang_transaction(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict], cong_no: float = None) -> list[dict]:
         """Lưu toàn bộ dòng phiếu nhập vào SQLite và enqueue lên Sheet."""
         created_rows = []
+        tong_tien = sum(float(it["so_luong"] * it["gia_nhap"]) for it in items)
+        rem_no = tong_tien if cong_no is None else float(cong_no)
+
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 for it in items:
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
-                    thanh_tien = it["so_luong"] * it["gia_nhap"]
+                    thanh_tien = float(it["so_luong"] * it["gia_nhap"])
+                    line_no = min(thanh_tien, max(0.0, rem_no))
+                    rem_no -= line_no
+
                     cursor.execute("""
-                        INSERT INTO NhapHang (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO NhapHang (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu, cong_no)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         new_id, so_phieu, ngay_nhap, it["ma_hang"], it["ten_hang"],
-                        it["so_luong"], it["gia_nhap"], thanh_tien, ncc_save_ref, ghi_chu
+                        it["so_luong"], it["gia_nhap"], thanh_tien, ncc_save_ref, ghi_chu, line_no
                     ))
 
                     created_rows.append({
@@ -891,7 +904,8 @@ class DatabaseManager:
                         "gia_nhap": it["gia_nhap"],
                         "thanh_tien": thanh_tien,
                         "nha_cung_cap_id": ncc_save_ref,
-                        "ghi_chu": ghi_chu
+                        "ghi_chu": ghi_chu,
+                        "cong_no": line_no
                     })
                 conn.commit()
 
@@ -902,7 +916,7 @@ class DatabaseManager:
         for r in created_rows:
             sheet_row = [
                 r["id"], r["so_phieu"], r["ngay_nhap"], r["ma_hang"], r["ten_hang"],
-                r["so_luong"], r["gia_nhap"], r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"]
+                r["so_luong"], r["gia_nhap"], r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"], r["cong_no"]
             ]
             self._enqueue_task("APPEND_ROW", SHEET_NHAP_HANG, {"row": sheet_row})
 
@@ -984,7 +998,7 @@ class DatabaseManager:
         self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_NHAP_HANG, {"so_phieu": so_phieu})
         return True
 
-    def update_nhap_hang_receipt(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict]) -> list[dict]:
+    def update_nhap_hang_receipt(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict], cong_no: float = None) -> list[dict]:
         """Cập nhật phiếu nhập kho: hoàn trả kho cũ, nạp kho mới, cập nhật NhapHang."""
         # 1. Lấy và hoàn trả các món cũ
         with self._lock:
@@ -993,6 +1007,14 @@ class DatabaseManager:
                 cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (so_phieu,))
                 old_rows = cursor.fetchall()
                 old_items = [dict(r) for r in old_rows]
+
+                # Nếu cong_no không truyền, tính tổng nợ cũ còn lại
+                if cong_no is None and old_items:
+                    old_cong_no = sum(float(r["cong_no"] if r["cong_no"] is not None else r["thanh_tien"] or 0) for r in old_items)
+                    rem_no = old_cong_no
+                else:
+                    tong_tien = sum(float(it["so_luong"] * it["gia_nhap"]) for it in items)
+                    rem_no = tong_tien if cong_no is None else float(cong_no)
 
                 cursor.execute("DELETE FROM NhapHang WHERE so_phieu = ?", (so_phieu,))
                 conn.commit()
@@ -1014,13 +1036,16 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 for it in items:
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
-                    thanh_tien = it["so_luong"] * it["gia_nhap"]
+                    thanh_tien = float(it["so_luong"] * it["gia_nhap"])
+                    line_no = min(thanh_tien, max(0.0, rem_no))
+                    rem_no -= line_no
+
                     cursor.execute("""
-                        INSERT INTO NhapHang (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO NhapHang (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu, cong_no)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         new_id, so_phieu, ngay_nhap, it["ma_hang"], it["ten_hang"],
-                        it["so_luong"], it["gia_nhap"], thanh_tien, ncc_save_ref, ghi_chu
+                        it["so_luong"], it["gia_nhap"], thanh_tien, ncc_save_ref, ghi_chu, line_no
                     ))
                     created_rows.append({
                         "id": new_id,
@@ -1032,7 +1057,8 @@ class DatabaseManager:
                         "gia_nhap": it["gia_nhap"],
                         "thanh_tien": thanh_tien,
                         "nha_cung_cap_id": ncc_save_ref,
-                        "ghi_chu": ghi_chu
+                        "ghi_chu": ghi_chu,
+                        "cong_no": line_no
                     })
                 conn.commit()
 
@@ -1043,7 +1069,7 @@ class DatabaseManager:
         for r in created_rows:
             sheet_row = [
                 r["id"], r["so_phieu"], r["ngay_nhap"], r["ma_hang"], r["ten_hang"],
-                r["so_luong"], r["gia_nhap"], r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"]
+                r["so_luong"], r["gia_nhap"], r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"], r["cong_no"]
             ]
             self._enqueue_task("APPEND_ROW", SHEET_NHAP_HANG, {"row": sheet_row})
 
@@ -1437,10 +1463,38 @@ class DatabaseManager:
                     INSERT INTO SoQuy (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu))
+
+                # Nếu có phiếu liên quan (phiếu nhập kho), trừ dần công nợ
+                if phieu_lien_quan:
+                    cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (phieu_lien_quan,))
+                    nhap_rows = cursor.fetchall()
+                    if nhap_rows:
+                        rem_payment = so_tien
+                        for nr in nhap_rows:
+                            cur_no = float(nr["cong_no"] if nr["cong_no"] is not None else nr["thanh_tien"] or 0)
+                            deduct = min(cur_no, rem_payment)
+                            new_no = max(0.0, cur_no - deduct)
+                            rem_payment -= deduct
+                            cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (new_no, nr["id"]))
+
                 conn.commit()
 
         sheet_row = [record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu]
         self._enqueue_task("APPEND_ROW", SHEET_SO_QUY, {"row": sheet_row})
+
+        # Cập nhật các dòng phiếu nhập tương ứng trên Google Sheets
+        if phieu_lien_quan:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (phieu_lien_quan,))
+                updated_nhap = cursor.fetchall()
+                for un in updated_nhap:
+                    u_row = [
+                        un["id"], un["so_phieu"], un["ngay_nhap"], un["ma_hang"], un["ten_hang"],
+                        un["so_luong"], un["gia_nhap"], un["thanh_tien"], un["nha_cung_cap_id"],
+                        un["ghi_chu"], un["cong_no"]
+                    ]
+                    self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
 
         return {
             "id": record_id,
@@ -1465,10 +1519,68 @@ class DatabaseManager:
                 if not rec:
                     return False
                 rec_id = str(rec["id"])
+                loai_phieu = str(rec["loai_phieu"] or "").upper()
+                phieu_lq = str(rec["phieu_lien_quan"] or "").strip()
+                so_tien = float(rec["so_tien"] or 0)
+
+                # Nếu xóa phiếu chi có liên quan đến phiếu nhập, hoàn trả nợ
+                if loai_phieu == "CHI" and phieu_lq:
+                    cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (phieu_lq,))
+                    nhap_rows = cursor.fetchall()
+                    if nhap_rows:
+                        rem_refund = so_tien
+                        for nr in nhap_rows:
+                            cur_no = float(nr["cong_no"] if nr["cong_no"] is not None else 0.0)
+                            max_no = float(nr["thanh_tien"] or 0.0)
+                            refund = min(max_no - cur_no, rem_refund)
+                            if refund > 0:
+                                cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (cur_no + refund, nr["id"]))
+                                rem_refund -= refund
+
+                # Nếu xóa phiếu thu có liên quan đến phiếu xuất, hoàn trả nợ
+                elif loai_phieu == "THU" and phieu_lq:
+                    cursor.execute("SELECT * FROM XuatHang WHERE so_phieu = ?", (phieu_lq,))
+                    xuat_rows = cursor.fetchall()
+                    if xuat_rows:
+                        rem_refund = so_tien
+                        for xr in xuat_rows:
+                            cur_no = float(xr["tien_khach_no"] if xr["tien_khach_no"] is not None else 0.0)
+                            max_no = float(xr["thanh_tien"] or 0.0)
+                            refund = min(max_no - cur_no, rem_refund)
+                            if refund > 0:
+                                cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (cur_no + refund, xr["id"]))
+                                rem_refund -= refund
+
                 cursor.execute("DELETE FROM SoQuy WHERE id = ?", (rec_id,))
                 conn.commit()
 
         self._enqueue_task("DELETE_ROW", SHEET_SO_QUY, {"id": rec_id})
+
+        # Đồng bộ cập nhật lại dòng phiếu nhập/xuất trên Google Sheets nếu có
+        if phieu_lq:
+            if loai_phieu == "CHI":
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (phieu_lq,))
+                    for un in cursor.fetchall():
+                        u_row = [
+                            un["id"], un["so_phieu"], un["ngay_nhap"], un["ma_hang"], un["ten_hang"],
+                            un["so_luong"], un["gia_nhap"], un["thanh_tien"], un["nha_cung_cap_id"],
+                            un["ghi_chu"], un["cong_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
+            elif loai_phieu == "THU":
+                with self._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM XuatHang WHERE so_phieu = ?", (phieu_lq,))
+                    for ux in cursor.fetchall():
+                        u_row = [
+                            ux["id"], ux["so_phieu"], ux["ngay_xuat"], ux["ma_hang"], ux["ten_hang"],
+                            ux["so_luong"], ux["gia_ban"], ux["thanh_tien"], ux["khach_hang_id"],
+                            ux["ghi_chu"], ux["gia_von"], ux["loi_nhuan"], ux["tien_khach_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
+
         return True
 
     def get_customer_unpaid_invoices(self, kh_id_or_name: str, dien_thoai: str = "") -> list[dict]:
@@ -1580,6 +1692,144 @@ class DatabaseManager:
             if not is_match and inv_kh in kh_lookup_by_id:
                 c = kh_lookup_by_id[inv_kh]
                 if c["id"] in target_ids or c["ten_kh"].lower() in target_names:
+                    is_match = True
+
+            if is_match:
+                matched_invoices.append(inv)
+
+        return matched_invoices
+
+    def get_supplier_unpaid_invoices(self, ncc_id_or_name: str, dien_thoai: str = "") -> list[dict]:
+        """Lấy danh sách các phiếu nhập mà công ty còn nợ nhà cung cấp / đối tác (cong_no > 0)."""
+        def _clean_p(p):
+            p = str(p or "").replace("None", "").strip()
+            if p.endswith(".0"):
+                p = p[:-2]
+            if len(p) == 9 and p.isdigit() and not p.startswith("0"):
+                p = "0" + p
+            return p
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM NhapHang ORDER BY ngay_nhap DESC, id DESC")
+            all_rows = cursor.fetchall()
+            cursor.execute("SELECT * FROM DoiTuong")
+            dt_rows = cursor.fetchall()
+            cursor.execute("SELECT * FROM NhaCungCap")
+            ncc_rows = cursor.fetchall()
+
+        # Map danh mục DoiTuong & NhaCungCap tra cứu chéo
+        ncc_lookup_by_id = {}
+        ncc_lookup_by_name = {}
+        ncc_lookup_by_phone = {}
+
+        for n in ncc_rows:
+            nid = str(n["id"] or "").strip()
+            nname = str(n["ten_ncc"] or "").strip()
+            nphone = _clean_p(n["dien_thoai"])
+            ninfo = {
+                "id": nid,
+                "ten_ncc": nname,
+                "dia_chi": str(n["dia_chi"] or "").strip(),
+                "dien_thoai": nphone
+            }
+            if nid:
+                ncc_lookup_by_id[nid] = ninfo
+            if nname:
+                ncc_lookup_by_name[nname.lower()] = ninfo
+            if nphone:
+                ncc_lookup_by_phone[nphone] = ninfo
+                if nphone.startswith("0"):
+                    ncc_lookup_by_phone[nphone[1:]] = ninfo
+
+        for d in dt_rows:
+            did = str(d["id"] or "").strip()
+            dname = str(d["ten"] or "").strip()
+            dphone = _clean_p(d["dien_thoai"])
+            dinfo = {
+                "id": did,
+                "ten_ncc": dname,
+                "dia_chi": str(d["dia_chi"] or "").strip(),
+                "dien_thoai": dphone
+            }
+            if did:
+                ncc_lookup_by_id[did] = dinfo
+            if dname:
+                ncc_lookup_by_name[dname.lower()] = dinfo
+            if dphone:
+                ncc_lookup_by_phone[dphone] = dinfo
+                if dphone.startswith("0"):
+                    ncc_lookup_by_phone[dphone[1:]] = dinfo
+
+        q_raw = str(ncc_id_or_name or "").strip()
+        q_phone = _clean_p(dien_thoai)
+
+        target_ncc = None
+        if q_raw:
+            target_ncc = ncc_lookup_by_id.get(q_raw) or ncc_lookup_by_name.get(q_raw.lower())
+        if not target_ncc and q_phone:
+            target_ncc = ncc_lookup_by_phone.get(q_phone)
+
+        target_ids = {x for x in [q_raw, target_ncc.get("id") if target_ncc else None] if x}
+        target_names = {x.lower() for x in [q_raw, target_ncc.get("ten_ncc") if target_ncc else None] if x}
+        target_phones = {x for x in [q_phone, target_ncc.get("dien_thoai") if target_ncc else None] if x}
+        if q_phone and q_phone.startswith("0"):
+            target_phones.add(q_phone[1:])
+
+        receipt_map = {}
+        for r in all_rows:
+            sp = str(r["so_phieu"] or "").strip()
+            if not sp:
+                continue
+
+            tt = float(r["thanh_tien"] or 0)
+            no = float(r["cong_no"] if r["cong_no"] is not None else tt)
+
+            if sp not in receipt_map:
+                inv_ncc_ref = str(r["nha_cung_cap_id"] or "").strip()
+                inv_phone = _clean_p(r["dien_thoai"])
+                inv_dia_chi = str(r["dia_chi"] or "").strip()
+
+                ncc_info = ncc_lookup_by_id.get(inv_ncc_ref) or ncc_lookup_by_name.get(inv_ncc_ref.lower()) or target_ncc or {}
+                disp_ten_ncc = ncc_info.get("ten_ncc") or inv_ncc_ref
+                disp_phone = ncc_info.get("dien_thoai") or inv_phone
+                disp_dia_chi = ncc_info.get("dia_chi") or inv_dia_chi
+
+                receipt_map[sp] = {
+                    "so_phieu": sp,
+                    "ngay_nhap": str(r["ngay_nhap"] or ""),
+                    "nha_cung_cap_id": inv_ncc_ref,
+                    "ten_ncc": disp_ten_ncc,
+                    "dia_chi": disp_dia_chi,
+                    "dien_thoai": disp_phone,
+                    "ghi_chu": str(r["ghi_chu"] or ""),
+                    "tong_tien": 0.0,
+                    "tong_no": 0.0,
+                    "cong_no": 0.0,
+                    "items": []
+                }
+
+            receipt_map[sp]["tong_tien"] += tt
+            receipt_map[sp]["tong_no"] += no
+            receipt_map[sp]["cong_no"] += no
+            receipt_map[sp]["items"].append(dict(r))
+
+        matched_invoices = []
+        for sp, inv in receipt_map.items():
+            if inv["tong_no"] <= 0:
+                continue  # Đã thanh toán hết
+
+            inv_ncc = str(inv["nha_cung_cap_id"] or "").strip()
+            inv_phone = _clean_p(inv["dien_thoai"])
+
+            is_match = (
+                inv_ncc in target_ids or
+                inv_ncc.lower() in target_names or
+                (inv_phone and inv_phone in target_phones)
+            )
+            if not is_match and inv_ncc in ncc_lookup_by_id:
+                c = ncc_lookup_by_id[inv_ncc]
+                if c["id"] in target_ids or c["ten_ncc"].lower() in target_names:
                     is_match = True
 
             if is_match:
@@ -1798,10 +2048,13 @@ class DatabaseManager:
                         records = sheets_service.get_all_records(SHEET_NHAP_HANG, force_refresh=True)
                         cursor.execute("DELETE FROM NhapHang")
                         for r in records:
+                            thanh_tien_val = _safe_float(r.get("thanh_tien"))
+                            raw_no = r.get("cong_no")
+                            cong_no_val = _safe_float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien_val
                             cursor.execute("""
                                 INSERT OR REPLACE INTO NhapHang 
-                                (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, dia_chi, dien_thoai, ghi_chu)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, dia_chi, dien_thoai, ghi_chu, cong_no)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
                                 str(r.get("id") or ""),
                                 str(r.get("so_phieu") or ""),
@@ -1810,11 +2063,12 @@ class DatabaseManager:
                                 str(r.get("ten_hang") or ""),
                                 _safe_int(r.get("so_luong")),
                                 _safe_float(r.get("gia_nhap")),
-                                _safe_float(r.get("thanh_tien")),
+                                thanh_tien_val,
                                 str(r.get("nha_cung_cap_id") or r.get("ten_ncc") or ""),
                                 str(r.get("dia_chi") or ""),
                                 str(r.get("dien_thoai") or ""),
-                                str(r.get("ghi_chu") or "")
+                                str(r.get("ghi_chu") or ""),
+                                cong_no_val
                             ))
                         counts["NhapHang"] = len(records)
                     except Exception as e:
@@ -1959,16 +2213,17 @@ class DatabaseManager:
 
                 # 4. Đẩy NhapHang
                 try:
-                    cursor.execute("SELECT id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu FROM NhapHang")
+                    cursor.execute("SELECT id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu, cong_no FROM NhapHang")
                     rows = cursor.fetchall()
                     ws = sheets_service._sheet(SHEET_NHAP_HANG)
-                    header = ["ID", "Số Phiếu", "Ngày Nhập", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Nhập (đ)", "Thành Tiền (đ)", "Nhà Cung Cấp", "Ghi Chú"]
+                    header = ["ID", "Số Phiếu", "Ngày Nhập", "Mã Hàng", "Tên Hàng Hóa", "SL", "Giá Nhập (đ)", "Thành Tiền (đ)", "Nhà Cung Cấp", "Ghi Chú", "Cộng Nợ (đ)"]
                     sheet_data = [header]
                     for r in rows:
                         sheet_data.append([
                             r["id"], r["so_phieu"], r["ngay_nhap"], r["ma_hang"],
                             r["ten_hang"], r["so_luong"], r["gia_nhap"],
-                            r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"]
+                            r["thanh_tien"], r["nha_cung_cap_id"], r["ghi_chu"],
+                            r["cong_no"]
                         ])
                     ws.clear()
                     ws.update("A1", sheet_data)

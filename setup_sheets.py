@@ -17,7 +17,7 @@ from config import (
 
 SHEET_HEADERS = {
     SHEET_HANG_HOA: ["id", "ma_hang", "ten_hang", "danh_muc", "don_vi_tinh", "gia_nhap", "ton_kho", "chi_tiet_lo", "ghi_chu"],
-    SHEET_NHAP_HANG: ["id", "so_phieu", "ngay_nhap", "ma_hang", "ten_hang", "so_luong", "gia_nhap", "thanh_tien", "nha_cung_cap_id", "ghi_chu"],
+    SHEET_NHAP_HANG: ["id", "so_phieu", "ngay_nhap", "ma_hang", "ten_hang", "so_luong", "gia_nhap", "thanh_tien", "nha_cung_cap_id", "ghi_chu", "cong_no"],
     SHEET_XUAT_HANG: ["id", "so_phieu", "ngay_xuat", "ma_hang", "ten_hang", "so_luong", "gia_ban", "thanh_tien", "khach_hang_id", "ghi_chu", "gia_von", "loi_nhuan", "tien_khach_no"],
     "DoiTuong": ["id", "ten_doi_tuong", "ma_so_thue", "dien_thoai", "dia_chi", "phan_loai", "email", "ghi_chu"],
     SHEET_CONFIG: ["key", "value"],

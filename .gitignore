@@ -15,3 +15,5 @@ inventory.db
 *.db
 *.sqlite
 *.sqlite3
+*.db-*
+scratch/

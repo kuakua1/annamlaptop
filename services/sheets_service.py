@@ -144,6 +144,12 @@ COLUMN_ALIAS_MAP = {
     "tiền khách nợ (đ)": "tien_khach_no",
     "tien_khach_no": "tien_khach_no",
     "khách nợ": "tien_khach_no",
+    "cộng nợ": "cong_no",
+    "cộng nợ (đ)": "cong_no",
+    "cong_no": "cong_no",
+    "tiền nợ": "cong_no",
+    "nợ ncc": "cong_no",
+    "tiền ncc nợ": "cong_no",
     # NhaCungCap & KhachHang & DoiTuong
     "id": "id",
     "mã đối tượng": "id",

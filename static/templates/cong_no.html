@@ -14,7 +14,6 @@
                             <div>
                                 <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Công Nợ Phải Thu (Khách Hàng Nợ)</h6>
                                 <h3 class="mb-0 text-warning fw-bold" id="card-cong-no-thu">0 đ</h3>
-                                <small class="text-muted">Tổng số tiền khách mua hàng còn nợ chưa thu</small>
                             </div>
                             <div class="bg-warning bg-opacity-10 p-3 rounded-circle text-warning fs-3">
                                 <i class="bi bi-person-check-fill"></i>
@@ -30,7 +29,6 @@
                             <div>
                                 <h6 class="text-muted text-uppercase mb-1 small fw-semibold">Công Nợ Phải Trả (Nợ Nhà Cung Cấp)</h6>
                                 <h3 class="mb-0 text-danger fw-bold" id="card-cong-no-chi">0 đ</h3>
-                                <small class="text-muted">Tổng số tiền cần trả cho các đối tác, NCC</small>
                             </div>
                             <div class="bg-danger bg-opacity-10 p-3 rounded-circle text-danger fs-3">
                                 <i class="bi bi-truck-flatbed"></i>
@@ -106,30 +104,34 @@
                         <div class="p-3 bg-light border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
                             <div class="input-group input-group-sm" style="max-width: 350px;">
                                 <span class="input-group-text"><i class="bi bi-search"></i></span>
-                                <input type="text" class="form-control" placeholder="Tìm kiếm nhà cung cấp...">
+                                <input type="text" class="form-control" id="search-ncc-no" placeholder="Tìm ID, tên nhà cung cấp, số điện thoại..." oninput="filterNccNo()">
                             </div>
-                            <button class="btn btn-sm btn-outline-primary" onclick="loadCongNo()">
-                                <i class="bi bi-arrow-repeat me-1"></i>Làm mới
-                            </button>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-sm btn-danger" onclick="TabManager.openTab('phieu-chi')">
+                                    <i class="bi bi-plus-circle me-1"></i>Tạo Phiếu Chi Tiền
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary" onclick="loadCongNo()">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Làm mới
+                                </button>
+                            </div>
                         </div>
                         <div class="table-responsive">
                             <table class="table table-hover align-middle mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Mã NCC</th>
-                                        <th>Tên Nhà Cung Cấp</th>
-                                        <th>Số Điện Thoại</th>
-                                        <th class="text-end">Tổng Tiền Nhập</th>
-                                        <th class="text-end">Đã Thanh Toán</th>
-                                        <th class="text-end">Còn Nợ</th>
-                                        <th class="text-center">Hành Động</th>
+                                        <th style="width: 120px;">Mã ĐT / NCC</th>
+                                        <th>Tên Nhà Cung Cấp / Đối Tác</th>
+                                        <th style="width: 130px;">Số Điện Thoại</th>
+                                        <th class="text-end" style="width: 160px;">Tổng Tiền Đã Nhập</th>
+                                        <th class="text-end" style="width: 170px;">Còn Nợ (Phải Trả)</th>
+                                        <th>Phiếu Nhập Kho</th>
+                                        <th class="text-center" style="width: 120px;">Thao Tác</th>
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody id="tbody-cong-no-chi">
                                     <tr>
                                         <td colspan="7" class="text-center py-4 text-muted">
-                                            <i class="bi bi-building fs-3 d-block mb-1"></i>
-                                            Hiện tại chưa có công nợ nhà cung cấp quá hạn.
+                                            <div class="spinner-border spinner-border-sm text-danger me-2"></div> Đang tính toán công nợ...
                                         </td>
                                     </tr>
                                 </tbody>
@@ -144,6 +146,7 @@
 
 <script>
 let danhSachThu = [];
+let danhSachChi = [];
 
 document.addEventListener('DOMContentLoaded', function () {
     loadCongNo();
@@ -157,7 +160,9 @@ async function loadCongNo() {
             document.getElementById('card-cong-no-chi').innerText = formatVND(res.phai_chi);
 
             danhSachThu = res.danh_sach_thu || [];
+            danhSachChi = res.danh_sach_chi || [];
             renderKhachNoTable(danhSachThu);
+            renderNccNoTable(danhSachChi);
         }
     } catch (e) {
         showToast('Lỗi tải công nợ: ' + e.message, 'error');
@@ -173,6 +178,17 @@ function filterKhachNo() {
                (c.dien_thoai || '').includes(q);
     });
     renderKhachNoTable(filtered);
+}
+
+function filterNccNo() {
+    const q = document.getElementById('search-ncc-no').value.trim().toLowerCase();
+    let filtered = danhSachChi.filter(c => {
+        if (!q) return true;
+        return (c.id || '').toLowerCase().includes(q) ||
+               (c.ten_ncc || '').toLowerCase().includes(q) ||
+               (c.dien_thoai || '').includes(q);
+    });
+    renderNccNoTable(filtered);
 }
 
 function renderKhachNoTable(list) {
@@ -217,9 +233,56 @@ function renderKhachNoTable(list) {
     }).join('');
 }
 
+function renderNccNoTable(list) {
+    const tbody = document.getElementById('tbody-cong-no-chi');
+    if (!list || list.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-5 text-muted">
+                    <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
+                    Tuyệt vời! Công ty hiện không nợ tiền nhà cung cấp nào.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = list.map(c => {
+        const phieuBadges = (c.so_phieu_list || []).map(sp => 
+            `<span class="badge bg-light text-primary border font-monospace me-1">${escapeHtml(sp)}</span>`
+        ).join('');
+        const idDisplay = escapeHtml(c.id || '');
+        const nameDisplay = escapeHtml(c.ten_ncc || 'Nhà cung cấp');
+        const phoneDisplay = c.dien_thoai ? escapeHtml(c.dien_thoai) : '<span class="text-muted fst-italic">Chưa có</span>';
+
+        return `
+            <tr>
+                <td>
+                    <span class="badge bg-secondary-subtle text-secondary border font-monospace">${idDisplay || '---'}</span>
+                </td>
+                <td class="fw-semibold text-dark">${nameDisplay}</td>
+                <td class="small font-monospace">${phoneDisplay}</td>
+                <td class="text-end fw-semibold">${formatVND(c.tong_nhap)}</td>
+                <td class="text-end fw-bold text-danger fs-6 font-monospace">${formatVND(c.con_no)}</td>
+                <td>${phieuBadges || '<span class="text-muted small fst-italic">---</span>'}</td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-outline-danger py-1 px-2" onclick="chiTienNcc('${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}')">
+                        <i class="bi bi-cash-stack me-1"></i> Chi tiền
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
 function thuTienKhach(khId, khTen, sdt) {
     const url = `/phieu-thu?embed=1&kh_id=${encodeURIComponent(khId || '')}&kh_ten=${encodeURIComponent(khTen || '')}&sdt=${encodeURIComponent(sdt || '')}`;
     TabManager.openTab('phieu-thu', url, true);
+}
+
+function chiTienNcc(nccId, nccTen, sdt) {
+    const url = `/phieu-chi?embed=1&ncc_id=${encodeURIComponent(nccId || '')}&ncc_ten=${encodeURIComponent(nccTen || '')}&sdt=${encodeURIComponent(sdt || '')}`;
+    TabManager.openTab('phieu-chi', url, true);
 }
 
 function escapeHtml(text) {

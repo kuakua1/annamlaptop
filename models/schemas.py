@@ -159,6 +159,7 @@ class NhapHangCreate(BaseModel):
     dien_thoai: Optional[str] = ""
     items: List[NhapHangItem]
     ghi_chu: Optional[str] = ""
+    cong_no: Optional[float] = None
 
 
 class NhapHang(BaseModel):
@@ -172,6 +173,7 @@ class NhapHang(BaseModel):
     thanh_tien: float
     nha_cung_cap_id: str
     ghi_chu: str
+    cong_no: Optional[float] = 0
     row_num: Optional[int] = None
 
 
@@ -220,6 +222,7 @@ class NhapHangUpdate(BaseModel):
     dia_chi: Optional[str] = ""
     dien_thoai: Optional[str] = ""
     ghi_chu: Optional[str] = ""
+    cong_no: Optional[float] = None
     items: List[NhapHangItem]
 
 
@@ -255,6 +258,8 @@ class PhieuChiCreate(BaseModel):
     doi_tuong: str
     dien_thoai: Optional[str] = ""
     dia_chi: Optional[str] = ""
+    doi_tuong_id: Optional[str] = ""
+    nha_cung_cap_id: Optional[str] = ""
     so_tien: float
     phieu_lien_quan: Optional[str] = ""
     ghi_chu: Optional[str] = ""

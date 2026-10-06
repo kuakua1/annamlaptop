@@ -91,6 +91,33 @@ async def get_customer_unpaid_invoices(
     }
 
 
+@router.get("/api/nha-cung-cap/unpaid-invoices")
+@router.get("/api/cong-no/nha-cung-cap/unpaid-invoices")
+@router.get("/api/doi-tuong/unpaid-invoices")
+async def get_supplier_unpaid_invoices_api(
+    ten_ncc: str = "",
+    ncc_id: str = "",
+    sdt: str = "",
+    user: str = Depends(require_login)
+):
+    """
+    Kiểm tra xem nhà cung cấp / đối tác có phiếu nhập kho nào mà công ty đang nợ tiền không.
+    Trả về danh sách phiếu nhập còn nợ, kèm thông tin tiền nợ và gợi ý nội dung.
+    """
+    query_name = ncc_id or ten_ncc
+    if not query_name and not sdt:
+        return {"success": True, "has_debt": False, "invoices": []}
+
+    invoices = db_manager.get_supplier_unpaid_invoices(query_name, sdt)
+    has_debt = len(invoices) > 0
+    return {
+        "success": True,
+        "has_debt": has_debt,
+        "count": len(invoices),
+        "invoices": invoices
+    }
+
+
 # ── CRUD Phiếu Thu & Phiếu Chi ────────────────────────────────────────────────
 
 @router.get("/api/phieu-thu")
@@ -291,10 +318,69 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
     danh_sach_thu = list(kh_debts.values())
     danh_sach_thu.sort(key=lambda x: x["con_no"], reverse=True)
 
+    # 2. Phải chi: từ bảng NhapHang có cong_no > 0
+    all_nhap = db_manager.get_all("NhapHang")
+    dt_records = db_manager.get_all("DoiTuong") or db_manager.get_all("NhaCungCap")
+
+    ncc_map = {}
+    for d in dt_records:
+        did = str(d.get("id", "")).strip()
+        dten = str(d.get("ten") or d.get("ten_ncc") or "").strip()
+        sdt_clean = _clean_phone(d.get("dien_thoai"))
+        info = {
+            "id": did,
+            "ten_ncc": dten,
+            "dien_thoai": sdt_clean,
+            "dia_chi": str(d.get("dia_chi", "") or "").replace("None", "").strip()
+        }
+        if did:
+            ncc_map[did] = info
+        if dten:
+            ncc_map[dten.lower()] = info
+        if sdt_clean:
+            ncc_map[sdt_clean] = info
+
+    ncc_debts = {}
+    tong_phai_chi = 0.0
+
+    for r in all_nhap:
+        tt = float(r.get("thanh_tien", 0) or 0)
+        no = float(r.get("cong_no") if r.get("cong_no") is not None else tt)
+        if no > 0:
+            tong_phai_chi += no
+            ncc_ref = str(r.get("nha_cung_cap_id", "") or "Nhà cung cấp").strip()
+            raw_sdt = _clean_phone(r.get("dien_thoai"))
+
+            matched_ncc = ncc_map.get(ncc_ref) or ncc_map.get(ncc_ref.lower()) or (ncc_map.get(raw_sdt) if raw_sdt else None) or {}
+            ncc_id_val = matched_ncc.get("id") or (ncc_ref if ncc_ref.startswith("DT") or ncc_ref.startswith("NCC") or (ncc_ref.isdigit() and len(ncc_ref) > 8) else "")
+            ncc_ten_val = matched_ncc.get("ten_ncc") or (ncc_ref if not (ncc_ref.isdigit() and len(ncc_ref) > 8) and not ncc_ref.startswith("DT") and not ncc_ref.startswith("NCC") else "Đối tác " + ncc_ref)
+            sdt_val = matched_ncc.get("dien_thoai") or raw_sdt
+            dia_chi_val = matched_ncc.get("dia_chi") or str(r.get("dia_chi", "") or "").replace("None", "").strip()
+
+            key = ncc_id_val or ncc_ten_val or ncc_ref
+            if key not in ncc_debts:
+                ncc_debts[key] = {
+                    "id": ncc_id_val,
+                    "ten_ncc": ncc_ten_val,
+                    "dien_thoai": sdt_val,
+                    "dia_chi": dia_chi_val,
+                    "tong_nhap": 0.0,
+                    "con_no": 0.0,
+                    "so_phieu_list": []
+                }
+            ncc_debts[key]["tong_nhap"] += tt
+            ncc_debts[key]["con_no"] += no
+            sp = str(r.get("so_phieu", ""))
+            if sp and sp not in ncc_debts[key]["so_phieu_list"]:
+                ncc_debts[key]["so_phieu_list"].append(sp)
+
+    danh_sach_chi = list(ncc_debts.values())
+    danh_sach_chi.sort(key=lambda x: x["con_no"], reverse=True)
+
     return {
         "success": True,
         "phai_thu": tong_phai_thu,
-        "phai_chi": 0.0,
+        "phai_chi": tong_phai_chi,
         "danh_sach_thu": danh_sach_thu,
-        "danh_sach_chi": []
+        "danh_sach_chi": danh_sach_chi
     }

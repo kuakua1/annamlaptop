@@ -1125,13 +1125,19 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
     // Tải danh sách tất cả sản phẩm cho dropdown "Thêm hàng"
     const allProducts = await fetchAllProductsForReceipt();
 
+    const isPaid = !!res.da_thanh_toan || (typeof res.total_no === 'number' && res.total_no <= 0);
+    const paymentBadge = isPaid
+        ? `<span class="badge bg-success-subtle text-success border border-success ms-1"><i class="bi bi-check2-circle me-1"></i>Đã thanh toán</span>`
+        : `<span class="badge bg-danger-subtle text-danger border border-danger ms-1"><i class="bi bi-clock-history me-1"></i>Còn nợ: ${formatVND(res.total_no !== undefined ? res.total_no : res.total)}</span>`;
+
     // Render HTML
     modalBody.innerHTML = `
         <div class="card bg-light border-0 mb-3 shadow-none">
             <div class="card-body p-3">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 pb-2 border-bottom">
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
                         <span class="badge ${isXuat ? 'bg-danger' : 'bg-primary'} fs-6 px-3 py-1 font-monospace">${escapeHtml(res.so_phieu)}</span>
+                        ${paymentBadge}
                         <div class="d-inline-flex align-items-center gap-1 ms-2">
                             <span class="text-secondary small">Ngày:</span>
                             <input type="date" id="receipt-edit-ngay" class="form-control form-control-sm py-0 px-2 fw-semibold border-secondary-subtle" style="width: 140px;" value="${ngay || ''}" onchange="markReceiptDetailDirty()">
@@ -1701,6 +1707,7 @@ function setupReceiptDetailModalFooter(targetModalBodyId, res, isXuat) {
     const so_phieu = res.so_phieu;
 
     // Với phiếu xuất: thay nút sao chép thành nút Tạo Phiếu Thu Nhanh (hoặc đã thu tiền)
+    // Với phiếu nhập: nút Tạo Phiếu Chi Nhanh (hoặc đã chi tiền) + nút Sao chép vào phiếu mới
     let actionBtnHtml = '';
     if (isXuat) {
         const isPaid = !!res.da_thanh_toan || (typeof res.total_no === 'number' && res.total_no <= 0);
@@ -1718,13 +1725,30 @@ function setupReceiptDetailModalFooter(targetModalBodyId, res, isXuat) {
             `;
         }
     } else {
-        if (typeof cloneCurrentReceiptToForm === 'function') {
-            actionBtnHtml = `
-                <button type="button" class="btn btn-outline-warning btn-sm" onclick="cloneCurrentReceiptToForm()">
-                    <i class="bi bi-copy me-1"></i>Sao chép vào phiếu mới
+        const isPaid = !!res.da_thanh_toan || (typeof res.total_no === 'number' && res.total_no <= 0);
+        let chiBtn = '';
+        if (isPaid) {
+            chiBtn = `
+                <button type="button" class="btn btn-secondary btn-sm opacity-50 text-nowrap" id="btn-quick-phieu-chi" disabled style="cursor: not-allowed;" title="Phiếu nhập này đã thanh toán / đã có phiếu chi">
+                    <i class="bi bi-check2-all me-1"></i>Đã có phiếu chi ${res.ma_phieu_chi ? `(${escapeHtml(res.ma_phieu_chi)})` : ''}
+                </button>
+            `;
+        } else {
+            chiBtn = `
+                <button type="button" class="btn btn-outline-danger btn-sm fw-semibold text-nowrap" id="btn-quick-phieu-chi" onclick="openQuickPhieuChiModal('${escapeHtml(res.so_phieu)}')">
+                    <i class="bi bi-cash-stack me-1"></i>Tạo Phiếu Chi Nhanh
                 </button>
             `;
         }
+        let cloneBtn = '';
+        if (typeof cloneCurrentReceiptToForm === 'function') {
+            cloneBtn = `
+                <button type="button" class="btn btn-outline-warning btn-sm" onclick="cloneCurrentReceiptToForm()">
+                    <i class="bi bi-copy me-1"></i>Sao chép
+                </button>
+            `;
+        }
+        actionBtnHtml = `${chiBtn} ${cloneBtn}`;
     }
 
     footer.innerHTML = `
@@ -1964,6 +1988,218 @@ async function submitQuickPhieuThu(event, so_phieu) {
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Xác Nhận Tạo Phiếu Thu';
+        }
+}
+
+/**
+ * Mở modal tạo phiếu chi nhanh trực tiếp từ Chi Tiết Phiếu Nhập
+ */
+async function openQuickPhieuChiModal(so_phieu) {
+    let r = window.currentReceiptDetail;
+    if (!r || r.so_phieu !== so_phieu) {
+        try {
+            const data = await apiRequest(`/api/nhap-hang/${encodeURIComponent(so_phieu)}`);
+            if (data && data.success) {
+                r = data;
+                window.currentReceiptDetail = data;
+            }
+        } catch (e) {
+            showToast('Không thể tải chi tiết phiếu nhập: ' + e.message, 'error');
+            return;
+        }
+    }
+
+    if (!r) {
+        showToast('Không tìm thấy thông tin phiếu nhập', 'error');
+        return;
+    }
+
+    const ten_ncc = r.nha_cung_cap?.ten_ncc || r.nha_cung_cap_id || '';
+    const dien_thoai = r.nha_cung_cap?.dien_thoai || '';
+    const dia_chi = r.nha_cung_cap?.dia_chi || '';
+    const ngay_nhap = r.ngay_nhap || '';
+    const total = parseFloat(r.total || 0);
+    const so_tien_no = (typeof r.total_no === 'number' && r.total_no > 0) ? r.total_no : total;
+
+    let modalEl = document.getElementById('quick-phieu-chi-modal');
+    if (!modalEl) {
+        modalEl = document.createElement('div');
+        modalEl.id = 'quick-phieu-chi-modal';
+        modalEl.className = 'modal fade';
+        modalEl.tabIndex = -1;
+        modalEl.style.zIndex = '1085';
+        document.body.appendChild(modalEl);
+
+        modalEl.addEventListener('show.bs.modal', function () {
+            setTimeout(() => {
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                if (backdrops.length > 1) {
+                    backdrops[backdrops.length - 1].style.zIndex = '1080';
+                }
+            }, 10);
+        });
+    }
+
+    const todayStr = (typeof todayISO === 'function') ? todayISO() : new Date().toISOString().split('T')[0];
+    const defaultNote = `Thanh toán tiền nhập hàng ${so_phieu}${ngay_nhap ? ' ngày ' + formatDate(ngay_nhap) : ''}`;
+
+    modalEl.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-danger shadow-lg">
+                <div class="modal-header bg-danger text-white py-2 px-3">
+                    <h6 class="modal-title fw-bold mb-0">
+                        <i class="bi bi-cash-stack me-2"></i>Tạo Phiếu Chi Nhanh
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-3">
+                    <!-- Thẻ tóm tắt thông tin phiếu nhập -->
+                    <div class="p-2 mb-3 rounded border border-danger border-opacity-25 bg-danger bg-opacity-10">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="badge bg-primary font-monospace fs-6">${escapeHtml(so_phieu)}</span>
+                            <span class="small text-muted">Ngày nhập: <strong>${formatDate(ngay_nhap)}</strong></span>
+                        </div>
+                        <div class="fw-semibold text-dark fs-6 mt-1">
+                            <i class="bi bi-truck text-danger me-1"></i>${escapeHtml(ten_ncc)}
+                            ${dien_thoai ? `<span class="badge bg-white text-secondary border ms-2 font-monospace">📞 ${escapeHtml(dien_thoai)}</span>` : ''}
+                        </div>
+                        <div class="d-flex justify-content-between align-items-baseline mt-2 pt-2 border-top border-danger border-opacity-25">
+                            <span class="small text-muted fw-semibold">Số tiền cần chi trả:</span>
+                            <span class="fs-5 fw-bold text-danger font-monospace">${formatVND(so_tien_no)}</span>
+                        </div>
+                    </div>
+
+                    <form id="quick-phieu-chi-form" onsubmit="submitQuickPhieuChi(event, '${escapeHtml(so_phieu)}')">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="form-label form-label-compact">Nguồn Tiền Chi <span class="text-danger">*</span></label>
+                                <select class="form-select form-select-sm" id="qpc-loai-quy">
+                                    <option value="TIEN_MAT" selected>Tiền mặt (Mã CMxxxx)</option>
+                                    <option value="NGAN_HANG">Tiền gửi ngân hàng (Mã CGxxxx)</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label form-label-compact">Ngày Chi <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control form-control-sm" id="qpc-ngay" value="${todayStr}" required>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label form-label-compact">Số Tiền Chi Thực Tế (VNĐ) <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control form-control-sm fs-5 fw-bold text-danger" id="qpc-so-tien" value="${so_tien_no}" min="1" step="1000" required>
+                                <small class="text-muted" style="font-size: 0.75rem;">Mặc định điền toàn bộ số tiền còn nợ của phiếu nhập này.</small>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label form-label-compact">Nội Dung / Lý Do Chi Tiền</label>
+                                <input type="text" class="form-control form-control-sm" id="qpc-ghi-chu" value="${escapeHtml(defaultNote)}">
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
+                            <button type="submit" class="btn btn-danger btn-sm px-4 fw-bold shadow-sm" id="btn-submit-quick-phieu-chi">
+                                <i class="bi bi-check2-circle me-1"></i>Xác Nhận Tạo Phiếu Chi
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const bsModal = new bootstrap.Modal(modalEl);
+    bsModal.show();
+}
+
+/**
+ * Xử lý lưu phiếu chi nhanh
+ */
+async function submitQuickPhieuChi(event, so_phieu) {
+    if (event) event.preventDefault();
+    const btn = document.getElementById('btn-submit-quick-phieu-chi');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang tạo phiếu chi...';
+    }
+
+    try {
+        const r = window.currentReceiptDetail || {};
+        const loai_quy = document.getElementById('qpc-loai-quy')?.value || 'TIEN_MAT';
+        const ngay = document.getElementById('qpc-ngay')?.value || '';
+        const so_tien = parseFloat(document.getElementById('qpc-so-tien')?.value || 0);
+        const ghi_chu = document.getElementById('qpc-ghi-chu')?.value?.trim() || '';
+
+        const ten_ncc = r.nha_cung_cap?.ten_ncc || r.nha_cung_cap_id || '';
+        const dien_thoai = r.nha_cung_cap?.dien_thoai || '';
+        const dia_chi = r.nha_cung_cap?.dia_chi || '';
+        const ncc_id = r.nha_cung_cap?.id || '';
+
+        if (!ten_ncc) {
+            showToast('Không có thông tin tên nhà cung cấp!', 'error');
+            return;
+        }
+        if (!so_tien || so_tien <= 0) {
+            showToast('Số tiền chi phải lớn hơn 0!', 'warning');
+            return;
+        }
+
+        const payload = {
+            loai_quy: loai_quy,
+            ngay: ngay,
+            doi_tuong: ten_ncc,
+            dien_thoai: dien_thoai,
+            dia_chi: dia_chi,
+            nha_cung_cap_id: ncc_id,
+            so_tien: so_tien,
+            phieu_lien_quan: so_phieu,
+            ghi_chu: ghi_chu
+        };
+
+        const res = await apiRequest('/api/phieu-chi', 'POST', payload);
+        if (res && res.success) {
+            const maPhieu = res.data?.ma_phieu || '';
+            showToast(`Tạo phiếu chi ${maPhieu} thành công!`, 'success');
+
+            // Đóng modal tạo nhanh
+            const modalEl = document.getElementById('quick-phieu-chi-modal');
+            if (modalEl) {
+                const bsModal = bootstrap.Modal.getInstance(modalEl);
+                if (bsModal) bsModal.hide();
+            }
+
+            // Cập nhật trạng thái phiếu nhập hiện tại
+            if (window.currentReceiptDetail) {
+                window.currentReceiptDetail.da_thanh_toan = true;
+                window.currentReceiptDetail.ma_phieu_chi = maPhieu;
+                const oldNo = window.currentReceiptDetail.total_no || window.currentReceiptDetail.total || 0;
+                window.currentReceiptDetail.total_no = Math.max(0, oldNo - so_tien);
+            }
+
+            // Đổi nút Tạo Phiếu Chi Nhanh thành nút Đã có phiếu chi
+            const qBtn = document.getElementById('btn-quick-phieu-chi');
+            if (qBtn) {
+                qBtn.className = "btn btn-secondary btn-sm opacity-50 text-nowrap";
+                qBtn.disabled = true;
+                qBtn.style.cursor = "not-allowed";
+                qBtn.onclick = null;
+                qBtn.title = `Phiếu nhập này đã có phiếu chi ${maPhieu}`;
+                qBtn.innerHTML = `<i class="bi bi-check2-all me-1"></i>Đã có phiếu chi (${escapeHtml(maPhieu)})`;
+            }
+
+            // Gọi callback cập nhật danh sách nền (nếu có)
+            if (typeof window.receiptDetailOnUpdated === 'function') {
+                window.receiptDetailOnUpdated();
+            }
+            if (typeof loadReceipts === 'function') {
+                loadReceipts();
+            }
+        }
+    } catch (e) {
+        showToast('Lỗi tạo phiếu chi: ' + e.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Xác Nhận Tạo Phiếu Chi';
         }
     }
 }
