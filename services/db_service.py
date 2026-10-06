@@ -831,36 +831,43 @@ class DatabaseManager:
                             max_seq = max(max_seq, int(digits))
             return f"NH{max_seq + 1:04d}/{month}"
 
-    def nhap_hang_batch_local(self, ma_hang: str, so_luong: int, gia_nhap: float) -> tuple[int, str]:
+    def nhap_hang_batch_local(self, ma_hang: str, so_luong: int, gia_nhap: float, conn: sqlite3.Connection = None) -> tuple[int, str]:
         """Cập nhật tồn kho theo lô trong SQLite."""
+        should_close = False
         with self._lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
-                row = cursor.fetchone()
-                if not row:
-                    raise ValueError(f"Không tìm thấy hàng hóa mã {ma_hang}")
-                cur_sl = int(row["ton_kho"] or 0)
-                cur_lo_str = str(row["chi_tiet_lo"] or "")
-                cur_gia = float(row["gia_nhap"] or 0)
+            if conn is None:
+                conn = self._get_connection()
+                should_close = True
 
-                batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
-                found = False
-                for b in batches:
-                    if abs(b["gia_nhap"] - gia_nhap) < 1.0:
-                        b["so_luong"] += so_luong
-                        found = True
-                        break
-                if not found:
-                    batches.append({"so_luong": so_luong, "gia_nhap": float(gia_nhap)})
+            cursor = conn.cursor()
+            cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
+            row = cursor.fetchone()
+            if not row:
+                if should_close: conn.close()
+                raise ValueError(f"Không tìm thấy hàng hóa mã {ma_hang}")
+            cur_sl = int(row["ton_kho"] or 0)
+            cur_lo_str = str(row["chi_tiet_lo"] or "")
+            cur_gia = float(row["gia_nhap"] or 0)
 
-                new_total_sl = sum(b["so_luong"] for b in batches)
-                new_lo_str = format_batches_str(batches)
+            batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
+            found = False
+            for b in batches:
+                if abs(b["gia_nhap"] - gia_nhap) < 1.0:
+                    b["so_luong"] += so_luong
+                    found = True
+                    break
+            if not found:
+                batches.append({"so_luong": so_luong, "gia_nhap": float(gia_nhap)})
 
-                cursor.execute("""
-                    UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ?, gia_nhap = ? WHERE ma_hang = ?
-                """, (new_total_sl, new_lo_str, gia_nhap, ma_hang))
+            new_total_sl = sum(b["so_luong"] for b in batches)
+            new_lo_str = format_batches_str(batches)
+
+            cursor.execute("""
+                UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ?, gia_nhap = ? WHERE ma_hang = ?
+            """, (new_total_sl, new_lo_str, gia_nhap, ma_hang))
+            if should_close:
                 conn.commit()
+                conn.close()
 
         # Enqueue cập nhật lô giá & tồn kho lên Sheet HangHoa
         self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
@@ -886,6 +893,9 @@ class DatabaseManager:
                     line_no = min(thanh_tien, max(0.0, rem_no))
                     rem_no -= line_no
 
+                    # Cập nhật tồn kho theo lô trong cùng connection (atomic, siêu nhanh cho nhiều dòng)
+                    self.nhap_hang_batch_local(it["ma_hang"], it["so_luong"], it["gia_nhap"], conn=conn)
+
                     cursor.execute("""
                         INSERT INTO NhapHang (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu, cong_no)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -909,10 +919,6 @@ class DatabaseManager:
                     })
                 conn.commit()
 
-        # Cập nhật tồn kho từng món & enqueue lên Google Sheet
-        for it in items:
-            self.nhap_hang_batch_local(it["ma_hang"], it["so_luong"], it["gia_nhap"])
-
         for r in created_rows:
             sheet_row = [
                 r["id"], r["so_phieu"], r["ngay_nhap"], r["ma_hang"], r["ten_hang"],
@@ -922,48 +928,55 @@ class DatabaseManager:
 
         return created_rows
 
-    def revert_nhap_hang_batch_local(self, ma_hang: str, so_luong: int, gia_nhap: float) -> tuple[int, str]:
+    def revert_nhap_hang_batch_local(self, ma_hang: str, so_luong: int, gia_nhap: float, conn: sqlite3.Connection = None) -> tuple[int, str]:
         """Trừ bớt số lượng đã nhập ra khỏi lô và tồn kho của sản phẩm trong SQLite."""
+        should_close = False
         with self._lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
-                row = cursor.fetchone()
-                if not row:
-                    return 0, ""
-                cur_sl = int(row["ton_kho"] or 0)
-                cur_lo_str = str(row["chi_tiet_lo"] or "")
-                cur_gia = float(row["gia_nhap"] or 0)
+            if conn is None:
+                conn = self._get_connection()
+                should_close = True
 
-                batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
-                remaining_to_remove = so_luong
+            cursor = conn.cursor()
+            cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
+            row = cursor.fetchone()
+            if not row:
+                if should_close: conn.close()
+                return 0, ""
+            cur_sl = int(row["ton_kho"] or 0)
+            cur_lo_str = str(row["chi_tiet_lo"] or "")
+            cur_gia = float(row["gia_nhap"] or 0)
 
-                # Ưu tiên trừ vào lô có giá nhập khớp
+            batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
+            remaining_to_remove = so_luong
+
+            # Ưu tiên trừ vào lô có giá nhập khớp
+            for b in batches:
+                if abs(b["gia_nhap"] - gia_nhap) < 1.0:
+                    deduct = min(b["so_luong"], remaining_to_remove)
+                    b["so_luong"] -= deduct
+                    remaining_to_remove -= deduct
+                    if remaining_to_remove <= 0:
+                        break
+
+            # Nếu còn dư chưa trừ hết, trừ tiếp từ các lô khác
+            if remaining_to_remove > 0:
                 for b in batches:
-                    if abs(b["gia_nhap"] - gia_nhap) < 1.0:
-                        deduct = min(b["so_luong"], remaining_to_remove)
-                        b["so_luong"] -= deduct
-                        remaining_to_remove -= deduct
-                        if remaining_to_remove <= 0:
-                            break
+                    deduct = min(b["so_luong"], remaining_to_remove)
+                    b["so_luong"] -= deduct
+                    remaining_to_remove -= deduct
+                    if remaining_to_remove <= 0:
+                        break
 
-                # Nếu còn dư chưa trừ hết, trừ tiếp từ các lô khác
-                if remaining_to_remove > 0:
-                    for b in batches:
-                        deduct = min(b["so_luong"], remaining_to_remove)
-                        b["so_luong"] -= deduct
-                        remaining_to_remove -= deduct
-                        if remaining_to_remove <= 0:
-                            break
+            batches = [b for b in batches if b["so_luong"] > 0]
+            new_total_sl = max(0, sum(b["so_luong"] for b in batches))
+            new_lo_str = format_batches_str(batches)
 
-                batches = [b for b in batches if b["so_luong"] > 0]
-                new_total_sl = max(0, sum(b["so_luong"] for b in batches))
-                new_lo_str = format_batches_str(batches)
-
-                cursor.execute("""
-                    UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ? WHERE ma_hang = ?
-                """, (new_total_sl, new_lo_str, ma_hang))
+            cursor.execute("""
+                UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ? WHERE ma_hang = ?
+            """, (new_total_sl, new_lo_str, ma_hang))
+            if should_close:
                 conn.commit()
+                conn.close()
 
         self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
             "ma_hang": ma_hang,
@@ -983,16 +996,16 @@ class DatabaseManager:
                     return False
                 items = [dict(r) for r in rows]
 
+                # Hoàn trả tồn kho từng món trong cùng connection
+                for it in items:
+                    sl = int(it.get("so_luong", 0) or 0)
+                    gia = float(it.get("gia_nhap", 0) or 0)
+                    ma = str(it.get("ma_hang", ""))
+                    if sl > 0 and ma:
+                        self.revert_nhap_hang_batch_local(ma, sl, gia, conn=conn)
+
                 cursor.execute("DELETE FROM NhapHang WHERE so_phieu = ?", (so_phieu,))
                 conn.commit()
-
-        # Hoàn trả tồn kho từng món
-        for it in items:
-            sl = int(it.get("so_luong", 0) or 0)
-            gia = float(it.get("gia_nhap", 0) or 0)
-            ma = str(it.get("ma_hang", ""))
-            if sl > 0 and ma:
-                self.revert_nhap_hang_batch_local(ma, sl, gia)
 
         # Xóa trên Google Sheet
         self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_NHAP_HANG, {"so_phieu": so_phieu})
@@ -1000,13 +1013,21 @@ class DatabaseManager:
 
     def update_nhap_hang_receipt(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict], cong_no: float = None) -> list[dict]:
         """Cập nhật phiếu nhập kho: hoàn trả kho cũ, nạp kho mới, cập nhật NhapHang."""
-        # 1. Lấy và hoàn trả các món cũ
+        created_rows = []
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (so_phieu,))
                 old_rows = cursor.fetchall()
                 old_items = [dict(r) for r in old_rows]
+
+                # 1. Hoàn trả tồn kho cũ trong cùng connection
+                for it in old_items:
+                    sl = int(it.get("so_luong", 0) or 0)
+                    gia = float(it.get("gia_nhap", 0) or 0)
+                    ma = str(it.get("ma_hang", ""))
+                    if sl > 0 and ma:
+                        self.revert_nhap_hang_batch_local(ma, sl, gia, conn=conn)
 
                 # Nếu cong_no không truyền, tính tổng nợ cũ còn lại
                 if cong_no is None and old_items:
@@ -1017,28 +1038,15 @@ class DatabaseManager:
                     rem_no = tong_tien if cong_no is None else float(cong_no)
 
                 cursor.execute("DELETE FROM NhapHang WHERE so_phieu = ?", (so_phieu,))
-                conn.commit()
 
-        for it in old_items:
-            sl = int(it.get("so_luong", 0) or 0)
-            gia = float(it.get("gia_nhap", 0) or 0)
-            ma = str(it.get("ma_hang", ""))
-            if sl > 0 and ma:
-                self.revert_nhap_hang_batch_local(ma, sl, gia)
-
-        # 2. Xóa các dòng cũ trên Google Sheet
-        self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_NHAP_HANG, {"so_phieu": so_phieu})
-
-        # 3. Tạo lại phiếu với các món mới (giữ nguyên so_phieu)
-        created_rows = []
-        with self._lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
+                # 2. Nạp kho mới & chèn các dòng mới trong cùng connection
                 for it in items:
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
                     thanh_tien = float(it["so_luong"] * it["gia_nhap"])
                     line_no = min(thanh_tien, max(0.0, rem_no))
                     rem_no -= line_no
+
+                    self.nhap_hang_batch_local(it["ma_hang"], it["so_luong"], it["gia_nhap"], conn=conn)
 
                     cursor.execute("""
                         INSERT INTO NhapHang (id, so_phieu, ngay_nhap, ma_hang, ten_hang, so_luong, gia_nhap, thanh_tien, nha_cung_cap_id, ghi_chu, cong_no)
@@ -1062,10 +1070,8 @@ class DatabaseManager:
                     })
                 conn.commit()
 
-        # Cập nhật tồn kho mới & enqueue Google Sheets
-        for it in items:
-            self.nhap_hang_batch_local(it["ma_hang"], it["so_luong"], it["gia_nhap"])
-
+        # Enqueue xóa cũ & append mới trên Sheet
+        self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_NHAP_HANG, {"so_phieu": so_phieu})
         for r in created_rows:
             sheet_row = [
                 r["id"], r["so_phieu"], r["ngay_nhap"], r["ma_hang"], r["ten_hang"],
