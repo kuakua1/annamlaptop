@@ -248,6 +248,12 @@ function onDateRangeChanged() {
     }
 }
 
+function clearSearch() {
+    const input = document.getElementById('search-input');
+    if (input) input.value = '';
+    renderTable();
+}
+
 function applyCustomRange() {
     const from = document.getElementById('filter-from-date').value;
     const to = document.getElementById('filter-to-date').value;
