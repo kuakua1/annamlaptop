@@ -433,7 +433,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadStockData();
 
-    document.getElementById('search-input')?.addEventListener('input', renderStockTable);
+    const searchHandler = typeof debounce === 'function' ? debounce(renderStockTable, 200) : renderStockTable;
+    document.getElementById('search-input')?.addEventListener('input', searchHandler);
     document.getElementById('filter-danh-muc')?.addEventListener('change', renderStockTable);
     document.getElementById('filter-stock-status')?.addEventListener('change', renderStockTable);
 

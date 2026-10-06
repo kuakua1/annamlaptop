@@ -61,7 +61,18 @@ function updateStatCards(list) {
 
 // ── Bộ lọc & Tìm kiếm ─────────────────────────────────────────────────────────
 
-function filterDoiTuong() {
+let _filterDoiTuongTimer = null;
+function filterDoiTuong(immediate = false) {
+    if (immediate === true) {
+        clearTimeout(_filterDoiTuongTimer);
+        _execFilterDoiTuong();
+        return;
+    }
+    clearTimeout(_filterDoiTuongTimer);
+    _filterDoiTuongTimer = setTimeout(_execFilterDoiTuong, 180);
+}
+
+function _execFilterDoiTuong() {
     const q = (document.getElementById('dt-search-input')?.value || '').toLowerCase().trim();
     const typeFilter = document.getElementById('dt-filter-type')?.value || 'all';
     const statusFilter = document.getElementById('dt-filter-status')?.value || 'all';
@@ -118,7 +129,7 @@ function filterDoiTuong() {
 function clearDoiTuongSearch() {
     const input = document.getElementById('dt-search-input');
     if (input) input.value = '';
-    filterDoiTuong();
+    filterDoiTuong(true);
 }
 
 // ── Render Bảng Đối Tượng ────────────────────────────────────────────────────
@@ -253,6 +264,16 @@ async function saveDoiTuong() {
         ghi_chu: document.getElementById('dt-ghi-chu')?.value.trim() || '',
     };
 
+    const saveBtn = document.getElementById('btn-save-doituong') || document.querySelector('#dt-modal .btn-primary');
+    if (saveBtn) {
+        if (saveBtn.disabled) return;
+        saveBtn.disabled = true;
+    }
+    const origHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
+    }
+
     try {
         showLoading();
         if (editingDtId) {
@@ -268,6 +289,10 @@ async function saveDoiTuong() {
         showToast(e.message, 'error');
     } finally {
         hideLoading();
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origHtml;
+        }
     }
 }
 

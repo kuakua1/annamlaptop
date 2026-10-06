@@ -305,10 +305,6 @@ async function viewHistoryReceipt(loai, so_phieu) {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    initLichSu();
-});
-
 function initLichSu() {
     // Mặc định chọn tháng hiện tại
     const monthInput = document.getElementById('filter-month');
@@ -325,9 +321,8 @@ function initLichSu() {
 
     const searchInput = document.getElementById('search-input');
     if (searchInput) {
-        searchInput.addEventListener('input', () => {
-            filterAndRenderHistory(1);
-        });
+        const searchHandler = typeof debounce === 'function' ? debounce(() => filterAndRenderHistory(1), 200) : () => filterAndRenderHistory(1);
+        searchInput.addEventListener('input', searchHandler);
     }
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho

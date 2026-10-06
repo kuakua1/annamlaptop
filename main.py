@@ -136,6 +136,24 @@ app.include_router(tai_chinh.router)
 app.include_router(doi_tuong.router)
 
 
+from fastapi.exceptions import RequestValidationError
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    messages = []
+    for err in errors:
+        loc = " -> ".join(str(l) for l in err.get("loc", []) if l != "body")
+        msg = err.get("msg", "Dữ liệu không hợp lệ")
+        messages.append(f"{loc}: {msg}" if loc else msg)
+    detail_str = "; ".join(messages) if messages else "Dữ liệu gửi lên không đúng định dạng"
+    return JSONResponse(
+        status_code=422,
+        content={"success": False, "detail": detail_str, "errors": errors}
+    )
+
+
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc):
     from fastapi.responses import RedirectResponse
@@ -146,6 +164,18 @@ async def not_found_handler(request: Request, exc):
 
 @app.exception_handler(500)
 async def server_error_handler(request: Request, exc):
+    return JSONResponse(status_code=500, content={"success": False, "detail": "Lỗi máy chủ nội bộ"})
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    traceback.print_exc()
+    if request.url.path.startswith("/api"):
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "detail": f"Lỗi hệ thống: {str(exc)}"}
+        )
     return JSONResponse(status_code=500, content={"success": False, "detail": "Lỗi máy chủ nội bộ"})
 
 

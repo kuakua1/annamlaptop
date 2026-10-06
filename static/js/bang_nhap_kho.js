@@ -366,7 +366,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     monthInput?.addEventListener('change', loadImportData);
 
-    document.getElementById('search-input')?.addEventListener('input', filterAndRenderImportTable);
+    const searchHandler = typeof debounce === 'function' ? debounce(filterAndRenderImportTable, 200) : filterAndRenderImportTable;
+    document.getElementById('search-input')?.addEventListener('input', searchHandler);
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
     window.addEventListener('message', (e) => {

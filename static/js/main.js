@@ -96,25 +96,119 @@ function showToast(message, type = 'success') {
     }, 3500);
 }
 
-// ── API Helper ────────────────────────────────────────────────────────────────
+// ── Debounce & Throttle Helpers ──────────────────────────────────────────────
 
-async function apiRequest(url, method = 'GET', body = null) {
+/**
+ * Trì hoãn thực thi hàm cho đến khi người dùng ngừng thao tác trong khoảng delay (ms)
+ */
+function debounce(fn, delay = 250) {
+    let timer = null;
+    return function (...args) {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            fn.apply(this, args);
+            timer = null;
+        }, delay);
+    };
+}
+window.debounce = debounce;
+
+/**
+ * Giới hạn tần suất gọi hàm không quá 1 lần trong khoảng limit (ms)
+ */
+function throttle(fn, limit = 300) {
+    let inThrottle = false;
+    return function (...args) {
+        if (!inThrottle) {
+            fn.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => { inThrottle = false; }, limit);
+        }
+    };
+}
+window.throttle = throttle;
+
+/**
+ * Chống double-click/spam click và hiển thị spinner cho nút khi đang chạy hàm async
+ */
+async function withButtonLoading(btn, asyncFn, loadingText = null) {
+    if (!btn || btn.disabled) return;
+    const originalHtml = btn.innerHTML;
+    const originalDisabled = btn.disabled;
+    btn.disabled = true;
+    if (loadingText) {
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${loadingText}`;
+    } else {
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${originalHtml}`;
+    }
+    try {
+        return await asyncFn();
+    } finally {
+        btn.disabled = originalDisabled;
+        btn.innerHTML = originalHtml;
+    }
+}
+window.withButtonLoading = withButtonLoading;
+
+// ── API Helper (Timeout & Safe Error Handling) ────────────────────────────────
+
+async function apiRequest(url, method = 'GET', body = null, timeoutMs = 25000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     const options = {
         method,
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
+        signal: controller.signal
     };
     if (body) options.body = JSON.stringify(body);
 
-    const res = await fetch(url, options);
-    const data = await res.json();
+    try {
+        const res = await fetch(url, options);
+        clearTimeout(timeoutId);
 
-    if (!res.ok) {
-        const msg = data.detail || data.message || 'Lỗi không xác định';
-        throw new Error(msg);
+        let data = null;
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            try {
+                data = await res.json();
+            } catch (jsonErr) {
+                data = null;
+            }
+        } else {
+            const text = await res.text();
+            data = { detail: text || `Phản hồi không hợp lệ (${res.status})` };
+        }
+
+        if (!res.ok) {
+            let msg = 'Lỗi không xác định';
+            if (data) {
+                if (Array.isArray(data.detail)) {
+                    msg = data.detail.map(d => (typeof d === 'object' ? (d.msg || JSON.stringify(d)) : d)).join('; ');
+                } else if (typeof data.detail === 'string') {
+                    msg = data.detail;
+                } else if (data.message) {
+                    msg = data.message;
+                } else {
+                    msg = `Lỗi máy chủ (${res.status})`;
+                }
+            }
+            throw new Error(msg);
+        }
+        return data;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            throw new Error('Yêu cầu bị quá thời gian xử lý (Timeout). Vui lòng kiểm tra lại mạng hoặc thử lại!');
+        }
+        if (err.message && err.message.includes('Failed to fetch')) {
+            throw new Error('Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại đường truyền internet hoặc thử lại sau!');
+        }
+        throw err;
     }
-    return data;
 }
+window.apiRequest = apiRequest;
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
 

@@ -164,11 +164,15 @@ function filterSuppliers(query) {
     }).slice(0, 50);
 }
 
+let _nccDebounceTimer = null;
 function onNccInput(input) {
-    const query = input.value.trim();
     document.getElementById('f-ncc-id').value = '';
-    const matches = filterSuppliers(query);
-    renderNccSuggestions(matches);
+    clearTimeout(_nccDebounceTimer);
+    _nccDebounceTimer = setTimeout(() => {
+        const query = (input?.value || '').trim();
+        const matches = filterSuppliers(query);
+        renderNccSuggestions(matches);
+    }, 180);
 }
 
 function onNccFocus(input) {
@@ -238,27 +242,32 @@ function renderProductSuggestions(id, matches) {
     box.classList.remove('d-none');
 }
 
+const _prodDebounceTimers = {};
 function onProductSearchInput(id, input) {
-    const query = input.value.trim().toLowerCase();
-    const box = document.getElementById(`prod-sug-${id}`);
-    const infoEl = document.getElementById(`prod-info-${id}`);
-
     // Khi gõ phím, tạm thời xóa mã đã chọn để tránh sai lệch
     document.getElementById(`prod-ma-${id}`).value = '';
+    const infoEl = document.getElementById(`prod-info-${id}`);
     if (infoEl) infoEl.textContent = '';
 
-    if (!query || !products.length) {
-        box.classList.add('d-none');
-        return;
-    }
+    clearTimeout(_prodDebounceTimers[id]);
+    _prodDebounceTimers[id] = setTimeout(() => {
+        const query = (input?.value || '').trim().toLowerCase();
+        const box = document.getElementById(`prod-sug-${id}`);
+        if (!box) return;
 
-    // Tìm kiếm theo Mã Hàng hoặc Tên Hàng
-    const matches = products.filter(p =>
-        (p.ma_hang || '').toLowerCase().includes(query) ||
-        (p.ten_hang || '').toLowerCase().includes(query)
-    ).slice(0, 20);
+        if (!query || !products.length) {
+            box.classList.add('d-none');
+            return;
+        }
 
-    renderProductSuggestions(id, matches);
+        // Tìm kiếm theo Mã Hàng hoặc Tên Hàng
+        const matches = products.filter(p =>
+            (p.ma_hang || '').toLowerCase().includes(query) ||
+            (p.ten_hang || '').toLowerCase().includes(query)
+        ).slice(0, 20);
+
+        renderProductSuggestions(id, matches);
+    }, 180);
 }
 
 function onProductInputFocus(id, input) {
@@ -372,6 +381,16 @@ async function quickCreateProduct() {
         ghi_chu: '',
     };
 
+    const btn = document.getElementById('btn-quick-create-product');
+    if (btn) {
+        if (btn.disabled) return;
+        btn.disabled = true;
+    }
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang tạo...';
+    }
+
     try {
         showLoading();
         const res = await apiRequest('/api/hang-hoa', 'POST', body);
@@ -394,6 +413,10 @@ async function quickCreateProduct() {
         showToast(e.message, 'error');
     } finally {
         hideLoading();
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
     }
 }
 
@@ -573,6 +596,16 @@ async function saveReceipt() {
 
     if (!valid || !items.length) return;
 
+    const saveBtn = document.getElementById('btn-save-nhap') || document.querySelector('button[onclick="saveReceipt()"]');
+    if (saveBtn) {
+        if (saveBtn.disabled) return;
+        saveBtn.disabled = true;
+    }
+    const origBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
+    }
+
     try {
         showLoading();
         const res = await apiRequest('/api/nhap-hang', 'POST', {
@@ -608,6 +641,10 @@ async function saveReceipt() {
         showToast(e.message, 'error');
     } finally {
         hideLoading();
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origBtnHtml;
+        }
     }
 }
 

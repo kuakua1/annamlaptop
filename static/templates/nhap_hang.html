@@ -88,7 +88,7 @@
                             <span class="text-muted small fw-semibold">Tổng:</span>
                             <strong class="text-primary fs-5" id="total-amount">0 đ</strong>
                         </div>
-                        <button class="btn btn-primary btn-sm px-3 py-1 fw-bold d-flex align-items-center gap-1 shadow-sm" onclick="saveReceipt()">
+                        <button class="btn btn-primary btn-sm px-3 py-1 fw-bold d-flex align-items-center gap-1 shadow-sm" id="btn-save-nhap" onclick="saveReceipt()">
                             <i class="bi bi-save me-1"></i>Lưu Phiếu Nhập
                         </button>
                     </div>
@@ -186,7 +186,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
-                <button type="button" class="btn btn-success" onclick="quickCreateProduct()">
+                <button type="button" class="btn btn-success" id="btn-quick-create-product" onclick="quickCreateProduct()">
                     <i class="bi bi-check-circle me-1"></i>Tạo & Chọn Ngay
                 </button>
             </div>

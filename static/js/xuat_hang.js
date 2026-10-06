@@ -155,11 +155,15 @@ function filterCustomers(query) {
     }).slice(0, 50);
 }
 
+let _khDebounceTimer = null;
 function onKhInput(input) {
-    const query = input.value.trim();
     document.getElementById('f-kh-id').value = '';
-    const matches = filterCustomers(query);
-    renderKhSuggestions(matches);
+    clearTimeout(_khDebounceTimer);
+    _khDebounceTimer = setTimeout(() => {
+        const query = (input?.value || '').trim();
+        const matches = filterCustomers(query);
+        renderKhSuggestions(matches);
+    }, 180);
 }
 
 function onKhFocus(input) {
@@ -206,25 +210,30 @@ function selectKh(cOrId) {
 let lastLoadTime = 0;
 let isRefreshingProducts = false;
 
+const _prodDebounceTimers = {};
 function onProductSearchInput(id, input) {
-    const query = input.value.trim().toLowerCase();
-    const box = document.getElementById(`prod-sug-${id}`);
-    const infoEl = document.getElementById(`prod-info-${id}`);
-
     document.getElementById(`prod-ma-${id}`).value = '';
+    const infoEl = document.getElementById(`prod-info-${id}`);
     if (infoEl) infoEl.textContent = '';
 
-    if (!query) {
-        box.classList.add('d-none');
-        return;
-    }
+    clearTimeout(_prodDebounceTimers[id]);
+    _prodDebounceTimers[id] = setTimeout(() => {
+        const query = (input?.value || '').trim().toLowerCase();
+        const box = document.getElementById(`prod-sug-${id}`);
+        if (!box) return;
 
-    const matches = products.filter(p =>
-        (p.ma_hang || '').toLowerCase().includes(query) ||
-        (p.ten_hang || '').toLowerCase().includes(query)
-    ).slice(0, 20);
+        if (!query) {
+            box.classList.add('d-none');
+            return;
+        }
 
-    renderProductSuggestions(id, matches);
+        const matches = products.filter(p =>
+            (p.ma_hang || '').toLowerCase().includes(query) ||
+            (p.ten_hang || '').toLowerCase().includes(query)
+        ).slice(0, 20);
+
+        renderProductSuggestions(id, matches);
+    }, 180);
 }
 
 function onProductInputFocus(id, input) {
@@ -583,6 +592,16 @@ async function saveReceipt() {
 
     if (!valid || !items.length) return;
 
+    const saveBtn = document.getElementById('btn-save-xuat') || document.querySelector('button[onclick="saveReceipt()"]');
+    if (saveBtn) {
+        if (saveBtn.disabled) return;
+        saveBtn.disabled = true;
+    }
+    const origBtnHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
+    }
+
     try {
         showLoading();
         const res = await apiRequest('/api/xuat-hang', 'POST', {
@@ -618,6 +637,10 @@ async function saveReceipt() {
         showToast(e.message, 'error');
     } finally {
         hideLoading();
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origBtnHtml;
+        }
     }
 }
 

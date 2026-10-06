@@ -170,6 +170,16 @@ async function saveProduct() {
 
     if (!body.ten_hang) { showToast('Vui lòng nhập tên hàng', 'error'); return; }
 
+    const saveBtn = document.getElementById('btn-save-product') || document.querySelector('#product-modal .btn-primary');
+    if (saveBtn) {
+        if (saveBtn.disabled) return;
+        saveBtn.disabled = true;
+    }
+    const origHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...';
+    }
+
     try {
         showLoading();
         if (editingId) {
@@ -185,6 +195,10 @@ async function saveProduct() {
         showToast(e.message, 'error');
     } finally {
         hideLoading();
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origHtml;
+        }
     }
 }
 
@@ -264,7 +278,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     populateDanhMucDropdowns();
     await loadProducts();
 
-    document.getElementById('search-input')?.addEventListener('input', applyFilters);
+    const searchHandler = typeof debounce === 'function' ? debounce(applyFilters, 200) : applyFilters;
+    document.getElementById('search-input')?.addEventListener('input', searchHandler);
     document.getElementById('filter-danh-muc')?.addEventListener('change', applyFilters);
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
