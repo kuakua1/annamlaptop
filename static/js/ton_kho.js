@@ -4,6 +4,19 @@
 
 let allProducts = [];
 
+const COMPANY_REPORT_INFO = window.COMPANY_INFO || {
+    name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',
+    address: '454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam',
+    brand: 'KHO HÀNG AN NAM',
+    hotline: '0386.539.555',
+    email: 'contact@laptopannam.com'
+};
+
+function formatVNDClean(v) {
+    if (!v || isNaN(v)) return '0';
+    return Math.round(Number(v)).toLocaleString('vi-VN');
+}
+
 async function loadStockData(silent = false) {
     try {
         const tbody = document.getElementById('stock-tbody');
@@ -158,20 +171,68 @@ function renderStockTable() {
     }).join('');
 }
 
-function printStockReport() {
-    printReceiptModal('printable-stock-area', 'Báo Cáo Tồn Kho Hàng Hóa');
+/**
+ * Trình kích hoạt in HTML an toàn (chống popup blocker)
+ */
+function executePrintHtml(htmlContent) {
+    try {
+        const printWindow = window.open('', '_blank', 'width=1100,height=800');
+        if (printWindow) {
+            printWindow.document.open();
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+            return;
+        }
+    } catch (e) {
+        console.warn('Cửa sổ popup bị chặn, chuyển sang in qua iframe', e);
+    }
+
+    let frame = document.getElementById('report-print-hidden-frame');
+    if (!frame) {
+        frame = document.createElement('iframe');
+        frame.id = 'report-print-hidden-frame';
+        frame.style.position = 'fixed';
+        frame.style.right = '0';
+        frame.style.bottom = '0';
+        frame.style.width = '0';
+        frame.style.height = '0';
+        frame.style.border = '0';
+        frame.style.visibility = 'hidden';
+        document.body.appendChild(frame);
+    }
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+    setTimeout(() => {
+        try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        } catch (err) {
+            console.error('Lỗi khi kích hoạt in:', err);
+            window.print();
+        }
+    }, 450);
 }
 
-function exportStockExcel() {
-    if (!currentFiltered || !currentFiltered.length) {
-        showToast('Không có dữ liệu hàng tồn kho để xuất!', 'info');
+/**
+ * In Báo Cáo Hàng Hóa Tồn Kho chuẩn Thông tư 133/2016/TT-BTC
+ * Format & Ngoại hình đồng bộ 100% với Bảng Nhập Xuất Tồn
+ */
+function printStockReport() {
+    const items = currentFiltered && currentFiltered.length ? currentFiltered : allProducts;
+    if (!items || !items.length) {
+        showToast('Không có dữ liệu hàng tồn kho để in báo cáo!', 'warning');
         return;
     }
 
-    let totalQty = 0;
-    let totalVal = 0;
+    const now = new Date();
+    const dateCloseStr = `Ngày ${String(now.getDate()).padStart(2, '0')} tháng ${String(now.getMonth() + 1).padStart(2, '0')} năm ${now.getFullYear()}`;
 
-    const rows = currentFiltered.map((p, idx) => {
+    let totQty = 0;
+    let totVal = 0;
+
+    const rowsHtml = items.map((p, idx) => {
         const sl = parseInt(p.ton_kho) || 0;
         const giaNhap = parseFloat(p.gia_nhap) || 0;
         const batches = p.batches || [];
@@ -184,43 +245,431 @@ function exportStockExcel() {
             giaTriTon = Math.round(sl * giaNhap);
         }
 
-        totalQty += sl;
-        totalVal += giaTriTon;
+        const donGiaHienThi = (sl > 0 && batches.length > 1) ? Math.round(giaTriTon / sl) : giaNhap;
 
-        return [
-            idx + 1,
-            p.ten_hang,
-            p.don_vi_tinh || 'Cái',
-            sl,
-            giaNhap,
-            giaTriTon
-        ];
-    });
+        totQty += sl;
+        totVal += giaTriTon;
 
-    const summaryRow = ['Tổng cộng', '', '-', totalQty, '-', totalVal];
+        return `
+            <tr>
+                <td style="text-align: center; padding: 4px;">${idx + 1}</td>
+                <td style="text-align: center; font-family: monospace; padding: 4px;">${escapeHtml(p.ma_hang || '')}</td>
+                <td style="text-align: left; padding: 4px 6px;">${escapeHtml(p.ten_hang || '')}</td>
+                <td style="text-align: left; padding: 4px 6px;">${escapeHtml(p.danh_muc || 'Khác')}</td>
+                <td style="text-align: center; padding: 4px;">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
+                <td style="text-align: right; padding: 4px 6px; font-weight: bold;">${formatNumber(sl)}</td>
+                <td style="text-align: right; padding: 4px 6px;">${formatVNDClean(donGiaHienThi)}</td>
+                <td style="text-align: right; padding: 4px 6px; font-weight: bold;">${formatVNDClean(giaTriTon)}</td>
+                <td style="text-align: left; padding: 4px 6px;">${escapeHtml(p.ghi_chu || '')}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const reportHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Báo Cáo Tổng Hợp Hàng Hóa Tồn Kho</title>
+            <style>
+                @page { size: A4 landscape; margin: 10mm 12mm; }
+                body {
+                    font-family: "Times New Roman", Times, serif;
+                    font-size: 9.5pt;
+                    color: #000;
+                    margin: 0;
+                    padding: 8px;
+                }
+                .no-print-bar {
+                    display: flex;
+                    justify-content: flex-end;
+                    margin-bottom: 10px;
+                }
+                .btn-print {
+                    background: #0284c7;
+                    color: #fff;
+                    border: none;
+                    padding: 7px 18px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                @media print {
+                    .no-print-bar { display: none !important; }
+                    body { padding: 0; }
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 8px;
+                }
+                th, td {
+                    border: 1px solid #000;
+                }
+                th {
+                    background-color: #f2f2f2;
+                    font-weight: bold;
+                    text-align: center;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="no-print-bar">
+                <button class="btn-print" onclick="window.print()">🖨️ In Báo Cáo Tồn Kho (A4)</button>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <div style="font-size: 9.5pt; line-height: 1.4;">
+                    <strong>Đơn vị:</strong> ${COMPANY_REPORT_INFO.name}<br>
+                    <strong>Địa chỉ:</strong> ${COMPANY_REPORT_INFO.address}
+                </div>
+                <div style="text-align: center; font-size: 9.5pt; line-height: 1.3;">
+                    <strong>Mẫu số 01 - VT</strong><br>
+                    <span style="font-style: italic; font-size: 8.5pt;">(Ban hành theo TT 133/2016/TT-BTC<br>ngày 26/08/2016 của Bộ Trưởng BTC)</span>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-bottom: 6px;">
+                <h2 style="font-size: 15pt; margin: 0; text-transform: uppercase; font-weight: bold;">BẢNG TỔNG HỢP HÀNG HÓA TỒN KHO</h2>
+                <div style="font-size: 10pt; margin-top: 3px;">Thời điểm: ${dateCloseStr}</div>
+            </div>
+
+            <div style="text-align: right; font-weight: bold; font-size: 9.5pt; margin-bottom: 4px;">
+                Đơn vị tính: Đồng
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 35px; padding: 6px;">STT</th>
+                        <th style="width: 85px; padding: 6px;">Mã hàng</th>
+                        <th style="padding: 6px;">Tên vật tư, hàng hóa</th>
+                        <th style="width: 130px; padding: 6px;">Danh mục</th>
+                        <th style="width: 50px; padding: 6px;">ĐVT</th>
+                        <th style="width: 80px; padding: 6px;">SL Tồn</th>
+                        <th style="width: 105px; padding: 6px;">Đơn giá vốn</th>
+                        <th style="width: 125px; padding: 6px;">Thành tiền tồn</th>
+                        <th style="width: 110px; padding: 6px;">Ghi chú</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                    <tr style="font-weight: bold; background-color: #f0f7ff;">
+                        <td colspan="5" style="text-align: center; padding: 5px;">TỔNG CỘNG</td>
+                        <td style="text-align: right; padding: 5px;">${formatNumber(totQty)}</td>
+                        <td style="text-align: center;">-</td>
+                        <td style="text-align: right; padding: 5px;">${formatVNDClean(totVal)}</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div style="margin-top: 15px; text-align: right; font-style: italic; font-size: 9.5pt; padding-right: 40px;">
+                ${dateCloseStr}
+            </div>
+
+            <div style="display: flex; justify-content: space-around; text-align: center; margin-top: 10px; font-size: 9.5pt;">
+                <div style="flex: 1;">
+                    <strong>Người lập biểu</strong><br>
+                    <span style="font-size: 8.5pt; font-style: italic;">(Ký, họ tên)</span>
+                </div>
+                <div style="flex: 1;">
+                    <strong>Thủ kho</strong><br>
+                    <span style="font-size: 8.5pt; font-style: italic;">(Ký, họ tên)</span>
+                </div>
+                <div style="flex: 1;">
+                    <strong>Kế toán trưởng</strong><br>
+                    <span style="font-size: 8.5pt; font-style: italic;">(Ký, họ tên)</span>
+                </div>
+                <div style="flex: 1;">
+                    <strong>Giám đốc</strong><br>
+                    <span style="font-size: 8.5pt; font-style: italic;">(Ký, họ tên, đóng dấu)</span>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+
+    executePrintHtml(reportHtml);
+}
+
+/**
+ * Xuất Báo Cáo Tồn Kho ra file Excel chuẩn Thông tư 133/2016/TT-BTC
+ * Định dạng, font chữ, viền kẻ và chữ ký đồng bộ 100% với Bảng Nhập Xuất Tồn
+ */
+async function exportStockExcel() {
+    const items = currentFiltered && currentFiltered.length ? currentFiltered : allProducts;
+    if (!items || !items.length) {
+        showToast('Không có dữ liệu hàng tồn kho để xuất Excel!', 'warning');
+        return;
+    }
+
+    if (typeof window.ExcelJS === 'undefined') {
+        showToast('Đang khởi tạo công cụ ExcelJS, vui lòng thử lại sau giây lát!', 'info');
+        return;
+    }
 
     const now = new Date();
+    const dateCloseStr = `Ngày ${String(now.getDate()).padStart(2, '0')} tháng ${String(now.getMonth() + 1).padStart(2, '0')} năm ${now.getFullYear()}`;
     const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const monthText = `Tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
 
-    exportAccountingReportToExcel({
-        title: 'BÁO CÁO TỔNG HỢP TỒN KHO',
-        monthText,
-        accountText: 'Tài khoản: 156 (Hàng hoá)',
-        unitText: 'Đơn vị tính : Đồng',
-        columns: [
-            { header: 'STT', code: 'A', width: 8, align: 'center' },
-            { header: 'Tên vật tư, hàng hóa', code: 'B', width: 50, align: 'left', wrapText: true },
-            { header: 'ĐVT', code: 'C', width: 12, align: 'center' },
-            { header: 'Số lượng', code: '1', width: 14, align: 'right', isNumber: true },
-            { header: 'Đơn giá', code: '2', width: 18, align: 'right', isNumber: true },
-            { header: 'Thành tiền', code: '3', width: 22, align: 'right', isNumber: true },
-        ],
-        rows,
-        summaryRow,
-        fileName: `Bao_Cao_Tong_Hop_Ton_Kho_${dateStr}.xlsx`,
-        sheetName: 'TonKho'
+    const wb = new window.ExcelJS.Workbook();
+    wb.creator = COMPANY_REPORT_INFO.name;
+    wb.lastModifiedBy = COMPANY_REPORT_INFO.name;
+    wb.created = now;
+
+    const ws = wb.addWorksheet('HangHoaTonKho', { views: [{ showGridLines: true }] });
+
+    // Độ rộng các cột tương ứng
+    ws.columns = [
+        { width: 6 },   // A: STT
+        { width: 14 },  // B: Mã hàng
+        { width: 42 },  // C: Tên hàng hóa
+        { width: 18 },  // D: Danh mục
+        { width: 10 },  // E: ĐVT
+        { width: 14 },  // F: Số lượng tồn
+        { width: 18 },  // G: Đơn giá vốn
+        { width: 22 },  // H: Thành tiền tồn
+        { width: 22 },  // I: Ghi chú
+    ];
+
+    const fontNormal = { name: 'Times New Roman', size: 10, color: { argb: 'FF000000' } };
+    const fontBold = { name: 'Times New Roman', size: 10, bold: true, color: { argb: 'FF000000' } };
+    const fontTitle = { name: 'Times New Roman', size: 15, bold: true, color: { argb: 'FF000000' } };
+    const fontItalic = { name: 'Times New Roman', size: 9.5, italic: true, color: { argb: 'FF000000' } };
+
+    const borderThinAll = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+    };
+
+    // Header góc trái (Đơn vị & Địa chỉ)
+    ws.getCell('A1').value = `Đơn vị: ${COMPANY_REPORT_INFO.name}`;
+    ws.getCell('A1').font = fontBold;
+    ws.getCell('A2').value = `Địa chỉ: ${COMPANY_REPORT_INFO.address}`;
+    ws.getCell('A2').font = fontBold;
+
+    // Header góc phải (Mẫu số TT 133)
+    ws.mergeCells('G1:I1');
+    const mCell = ws.getCell('G1');
+    mCell.value = 'Mẫu số 01 - VT';
+    mCell.font = fontBold;
+    mCell.alignment = { horizontal: 'center' };
+
+    ws.mergeCells('G2:I2');
+    const qdCell = ws.getCell('G2');
+    qdCell.value = '(Ban hành theo TT 133/2016/TT-BTC';
+    qdCell.font = fontItalic;
+    qdCell.alignment = { horizontal: 'center' };
+
+    ws.mergeCells('G3:I3');
+    const qd2Cell = ws.getCell('G3');
+    qd2Cell.value = 'ngày 26/08/2016 của Bộ Trưởng BTC)';
+    qd2Cell.font = fontItalic;
+    qd2Cell.alignment = { horizontal: 'center' };
+
+    // Tiêu đề bảng
+    ws.mergeCells('A5:I5');
+    const tCell = ws.getCell('A5');
+    tCell.value = 'BẢNG TỔNG HỢP HÀNG HÓA TỒN KHO';
+    tCell.font = fontTitle;
+    tCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // Thời điểm báo cáo
+    ws.mergeCells('A6:I6');
+    const pCell = ws.getCell('A6');
+    pCell.value = `Thời điểm: ${dateCloseStr}`;
+    pCell.font = fontNormal;
+    pCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // Đơn vị tính
+    ws.mergeCells('G8:I8');
+    const uCell = ws.getCell('G8');
+    uCell.value = 'Đơn vị tính: Đồng';
+    uCell.font = fontBold;
+    uCell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+    // Hàng 9: Tiêu đề các cột
+    const headers = [
+        'STT',
+        'Mã hàng',
+        'Tên vật tư, hàng hóa',
+        'Danh mục',
+        'ĐVT',
+        'Số lượng tồn',
+        'Đơn giá vốn',
+        'Thành tiền tồn',
+        'Ghi chú'
+    ];
+
+    const hRow = ws.getRow(9);
+    hRow.height = 25;
+    headers.forEach((h, idx) => {
+        const cell = hRow.getCell(idx + 1);
+        cell.value = h;
+        cell.font = fontBold;
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+        cell.border = borderThinAll;
     });
+
+    let currentRow = 10;
+    let totQty = 0;
+    let totVal = 0;
+
+    items.forEach((p, idx) => {
+        const row = ws.getRow(currentRow);
+        row.height = 20;
+
+        const sl = parseInt(p.ton_kho) || 0;
+        const giaNhap = parseFloat(p.gia_nhap) || 0;
+        const batches = p.batches || [];
+        let giaTriTon = 0;
+        if (p.thanh_tien_ton !== undefined) {
+            giaTriTon = p.thanh_tien_ton;
+        } else if (batches.length > 1) {
+            giaTriTon = batches.reduce((bSum, b) => bSum + (b.so_luong * b.gia_nhap), 0);
+        } else {
+            giaTriTon = Math.round(sl * giaNhap);
+        }
+
+        const donGiaHienThi = (sl > 0 && batches.length > 1) ? Math.round(giaTriTon / sl) : giaNhap;
+
+        totQty += sl;
+        totVal += giaTriTon;
+
+        row.getCell(1).value = idx + 1;
+        row.getCell(1).alignment = { horizontal: 'center' };
+
+        row.getCell(2).value = p.ma_hang || '';
+        row.getCell(2).alignment = { horizontal: 'center' };
+
+        row.getCell(3).value = p.ten_hang || '';
+        row.getCell(3).alignment = { horizontal: 'left' };
+
+        row.getCell(4).value = p.danh_muc || 'Khác';
+        row.getCell(4).alignment = { horizontal: 'left' };
+
+        row.getCell(5).value = p.don_vi_tinh || 'Cái';
+        row.getCell(5).alignment = { horizontal: 'center' };
+
+        row.getCell(6).value = sl;
+        row.getCell(6).numFmt = '#,##0';
+        row.getCell(6).alignment = { horizontal: 'right' };
+
+        row.getCell(7).value = donGiaHienThi;
+        row.getCell(7).numFmt = '#,##0';
+        row.getCell(7).alignment = { horizontal: 'right' };
+
+        row.getCell(8).value = giaTriTon;
+        row.getCell(8).numFmt = '#,##0';
+        row.getCell(8).alignment = { horizontal: 'right' };
+
+        row.getCell(9).value = p.ghi_chu || '';
+        row.getCell(9).alignment = { horizontal: 'left' };
+
+        for (let c = 1; c <= 9; c++) {
+            row.getCell(c).font = fontNormal;
+            row.getCell(c).border = borderThinAll;
+        }
+
+        currentRow++;
+    });
+
+    // Hàng Tổng cộng (nền xanh nhạt FFBDEAFE đồng bộ với Bảng Nhập Xuất Tồn)
+    const rTot = ws.getRow(currentRow);
+    rTot.height = 24;
+    ws.mergeCells(`A${currentRow}:E${currentRow}`);
+    rTot.getCell(1).value = 'TỔNG CỘNG';
+    rTot.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+
+    rTot.getCell(6).value = totQty;
+    rTot.getCell(6).numFmt = '#,##0';
+    rTot.getCell(6).alignment = { horizontal: 'right', vertical: 'middle' };
+
+    rTot.getCell(7).value = '';
+    rTot.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
+
+    rTot.getCell(8).value = totVal;
+    rTot.getCell(8).numFmt = '#,##0';
+    rTot.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+
+    rTot.getCell(9).value = '';
+
+    for (let c = 1; c <= 9; c++) {
+        const cell = rTot.getCell(c);
+        cell.font = fontBold;
+        cell.border = borderThinAll;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+    }
+    currentRow++;
+
+    // Phần Ký Tên (4 chức danh chuẩn)
+    const signRow = currentRow + 2;
+    ws.mergeCells(`G${signRow}:I${signRow}`);
+    const dCell = ws.getCell(`G${signRow}`);
+    dCell.value = dateCloseStr;
+    dCell.font = fontItalic;
+    dCell.alignment = { horizontal: 'center' };
+
+    const rSignTitle = ws.getRow(signRow + 1);
+    ws.mergeCells(`A${signRow + 1}:B${signRow + 1}`);
+    rSignTitle.getCell(1).value = 'Người lập biểu';
+    rSignTitle.getCell(1).font = fontBold;
+    rSignTitle.getCell(1).alignment = { horizontal: 'center' };
+
+    ws.mergeCells(`C${signRow + 1}:D${signRow + 1}`);
+    rSignTitle.getCell(3).value = 'Thủ kho';
+    rSignTitle.getCell(3).font = fontBold;
+    rSignTitle.getCell(3).alignment = { horizontal: 'center' };
+
+    ws.mergeCells(`E${signRow + 1}:F${signRow + 1}`);
+    rSignTitle.getCell(5).value = 'Kế toán trưởng';
+    rSignTitle.getCell(5).font = fontBold;
+    rSignTitle.getCell(5).alignment = { horizontal: 'center' };
+
+    ws.mergeCells(`G${signRow + 1}:I${signRow + 1}`);
+    rSignTitle.getCell(7).value = 'Giám đốc';
+    rSignTitle.getCell(7).font = fontBold;
+    rSignTitle.getCell(7).alignment = { horizontal: 'center' };
+
+    const rSignNote = ws.getRow(signRow + 2);
+    ws.mergeCells(`A${signRow + 2}:B${signRow + 2}`);
+    rSignNote.getCell(1).value = '(Ký, họ tên)';
+    rSignNote.getCell(1).font = fontItalic;
+    rSignNote.getCell(1).alignment = { horizontal: 'center' };
+
+    ws.mergeCells(`C${signRow + 2}:D${signRow + 2}`);
+    rSignNote.getCell(3).value = '(Ký, họ tên)';
+    rSignNote.getCell(3).font = fontItalic;
+    rSignNote.getCell(3).alignment = { horizontal: 'center' };
+
+    ws.mergeCells(`E${signRow + 2}:F${signRow + 2}`);
+    rSignNote.getCell(5).value = '(Ký, họ tên)';
+    rSignNote.getCell(5).font = fontItalic;
+    rSignNote.getCell(5).alignment = { horizontal: 'center' };
+
+    ws.mergeCells(`G${signRow + 2}:I${signRow + 2}`);
+    rSignNote.getCell(7).value = '(Ký, họ tên, đóng dấu)';
+    rSignNote.getCell(7).font = fontItalic;
+    rSignNote.getCell(7).alignment = { horizontal: 'center' };
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Bao_Cao_Tong_Hop_Ton_Kho_${dateStr}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 150);
+
+    showToast('Đã xuất file Excel Báo Cáo Tồn Kho thành công!', 'success');
 }
 
 // ── Stock Edit Modal Logic ────────────────────────────────────────────────────
