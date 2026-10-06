@@ -10,6 +10,13 @@ let currentMonth = '';
 let currentRecords = [];
 let allHistoryRecords = [];
 
+function getCurrentMonthStr() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+}
+
 async function loadHistory(silent = false) {
     try {
         if (!silent) showLoading();
@@ -278,10 +285,14 @@ async function viewHistoryReceipt(loai, so_phieu) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    initLichSu();
+});
+
+function initLichSu() {
     // Mặc định chọn tháng hiện tại
     const monthInput = document.getElementById('filter-month');
     if (monthInput) {
-        monthInput.value = currentMonthISO();
+        monthInput.value = getCurrentMonthStr();
         currentMonth = monthInput.value;
         monthInput.addEventListener('change', () => {
             currentPage = 1;
@@ -327,4 +338,10 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
     } catch (err) {}
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLichSu);
+} else {
+    initLichSu();
+}
