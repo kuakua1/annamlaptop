@@ -1097,48 +1097,56 @@ class DatabaseManager:
                             max_seq = max(max_seq, int(digits))
             return f"XH{max_seq + 1:04d}/{month}"
 
-    def xuat_hang_batch_local(self, ma_hang: str, so_luong: int) -> tuple[int, str, float]:
+    def xuat_hang_batch_local(self, ma_hang: str, so_luong: int, conn: sqlite3.Connection = None) -> tuple[int, str, float]:
         """Trừ tồn kho FIFO trong SQLite và tính chính xác giá vốn (COGS)."""
+        should_close = False
         with self._lock:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
-                row = cursor.fetchone()
-                if not row:
-                    raise ValueError(f"Không tìm thấy hàng hóa mã {ma_hang}")
-                cur_sl = int(row["ton_kho"] or 0)
-                if so_luong > cur_sl:
-                    raise ValueError(f"Hàng {ma_hang} không đủ tồn kho (còn {cur_sl}, yêu cầu xuất {so_luong})")
+            if conn is None:
+                conn = self._get_connection()
+                should_close = True
 
-                cur_lo_str = str(row["chi_tiet_lo"] or "")
-                cur_gia = float(row["gia_nhap"] or 0)
-                batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
+            cursor = conn.cursor()
+            cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (ma_hang,))
+            row = cursor.fetchone()
+            if not row:
+                if should_close: conn.close()
+                raise ValueError(f"Không tìm thấy hàng hóa mã {ma_hang}")
+            cur_sl = int(row["ton_kho"] or 0)
+            if so_luong > cur_sl:
+                if should_close: conn.close()
+                raise ValueError(f"Hàng {ma_hang} không đủ tồn kho (còn {cur_sl}, yêu cầu xuất {so_luong})")
 
-                remaining_need = so_luong
-                total_cost = 0.0
-                new_batches = []
-                for b in batches:
-                    if remaining_need <= 0:
-                        new_batches.append(b)
-                    elif b["so_luong"] <= remaining_need:
-                        total_cost += b["so_luong"] * b["gia_nhap"]
-                        remaining_need -= b["so_luong"]
-                    else:
-                        total_cost += remaining_need * b["gia_nhap"]
-                        b["so_luong"] -= remaining_need
-                        remaining_need = 0
-                        new_batches.append(b)
+            cur_lo_str = str(row["chi_tiet_lo"] or "")
+            cur_gia = float(row["gia_nhap"] or 0)
+            batches = parse_batches_str(cur_lo_str, cur_sl, cur_gia)
 
-                if remaining_need > 0:
-                    total_cost += remaining_need * cur_gia
+            remaining_need = so_luong
+            total_cost = 0.0
+            new_batches = []
+            for b in batches:
+                if remaining_need <= 0:
+                    new_batches.append(b)
+                elif b["so_luong"] <= remaining_need:
+                    total_cost += b["so_luong"] * b["gia_nhap"]
+                    remaining_need -= b["so_luong"]
+                else:
+                    total_cost += remaining_need * b["gia_nhap"]
+                    b["so_luong"] -= remaining_need
+                    remaining_need = 0
+                    new_batches.append(b)
 
-                new_total_sl = sum(b["so_luong"] for b in new_batches)
-                new_lo_str = format_batches_str(new_batches)
+            if remaining_need > 0:
+                total_cost += remaining_need * cur_gia
 
-                cursor.execute("""
-                    UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ? WHERE ma_hang = ?
-                """, (new_total_sl, new_lo_str, ma_hang))
+            new_total_sl = sum(b["so_luong"] for b in new_batches)
+            new_lo_str = format_batches_str(new_batches)
+
+            cursor.execute("""
+                UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ? WHERE ma_hang = ?
+            """, (new_total_sl, new_lo_str, ma_hang))
+            if should_close:
                 conn.commit()
+                conn.close()
 
         # Enqueue cập nhật lô giá & tồn kho lên Sheet HangHoa
         self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
@@ -1157,8 +1165,8 @@ class DatabaseManager:
                 for it in items:
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
                     thanh_tien = it["so_luong"] * it["gia_ban"]
-                    # Tính FIFO trực tiếp trong SQLite
-                    _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"])
+                    # Tính FIFO trực tiếp trong SQLite bằng cùng connection
+                    _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"], conn=conn)
                     loi_nhuan = float(thanh_tien) - float(gia_von)
                     tien_no = float(it.get("tien_khach_no", thanh_tien))
 
@@ -1280,7 +1288,7 @@ class DatabaseManager:
                 for it in items:
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
                     thanh_tien = it["so_luong"] * it["gia_ban"]
-                    _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"])
+                    _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"], conn=conn)
                     loi_nhuan = float(thanh_tien) - float(gia_von)
                     tien_no = float(it.get("tien_khach_no", thanh_tien))
 
