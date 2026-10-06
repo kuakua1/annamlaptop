@@ -372,6 +372,21 @@ const TabManager = {
             return;
         }
 
+        // Nếu tab Phiếu Chi hoặc Phiếu Thu đã mở sẵn và có customUrl truyền tham số, cập nhật iframe cũ và focus sang
+        if ((tabType === 'phieu-chi' || tabType === 'phieu-thu') && existingTabs.length > 0 && customUrl) {
+            const targetTab = existingTabs[existingTabs.length - 1];
+            const frame = document.getElementById(`tab-iframe-${targetTab.id}`);
+            if (frame) {
+                let finalUrl = customUrl;
+                if (!finalUrl.includes('embed=1')) {
+                    finalUrl = finalUrl.includes('?') ? `${finalUrl}&embed=1` : `${finalUrl}?embed=1`;
+                }
+                frame.src = finalUrl;
+            }
+            this.switchTab(targetTab.id);
+            return;
+        }
+
         // Với các nghiệp vụ giao dịch như Xuất Hàng, Nhập Hàng: Cho phép mở nhiều tab song song
         // Tự động gán số thứ tự nếu đã có tab đang mở
         this.tabCounter[tabType] = (this.tabCounter[tabType] || 0) + 1;

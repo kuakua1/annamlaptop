@@ -16,27 +16,46 @@ document.addEventListener('DOMContentLoaded', async function () {
     await loadCustomers();
     await loadRecentReceipts();
 
-    // 3. Kiểm tra tham số URL (kh_id, kh_ten, sdt) để tự động điền khách hàng
+    // 3. Kiểm tra tham số URL (kh_id, kh_ten, sdt, so_tien, so_phieu) để tự động điền khách hàng
     const urlParams = new URLSearchParams(window.location.search);
-    const paramKhId = urlParams.get('kh_id');
-    const paramKhTen = urlParams.get('kh_ten');
-    const paramSdt = urlParams.get('sdt');
+    const paramKhId = (urlParams.get('kh_id') || '').trim();
+    const paramKhTen = (urlParams.get('kh_ten') || '').trim();
+    const paramSdt = (urlParams.get('sdt') || '').trim();
+    const paramSoTien = parseFloat(urlParams.get('so_tien') || 0);
+    const paramSoPhieu = (urlParams.get('so_phieu') || '').trim();
 
-    if (paramKhId || paramKhTen) {
+    if (paramKhId || paramKhTen || paramSdt) {
+        let found = null;
         if (paramKhId) {
-            const found = customersList.find(c => String(c.id).trim() === String(paramKhId).trim());
-            if (found) {
-                selectKh(found.id);
-            } else {
-                document.getElementById('f-kh-id').value = paramKhId;
-                if (paramKhTen) document.getElementById('f-kh-ten').value = paramKhTen;
-                if (paramSdt) document.getElementById('f-kh-sdt').value = paramSdt;
-                checkCustomerDebt();
-            }
-        } else if (paramKhTen) {
-            document.getElementById('f-kh-ten').value = paramKhTen;
+            found = customersList.find(c => String(c.id).trim() === String(paramKhId).trim());
+        }
+        if (!found && paramSdt) {
+            found = customersList.find(c => String(c.dien_thoai || '').trim() === String(paramSdt).trim());
+        }
+        if (!found && paramKhTen) {
+            found = customersList.find(c => (c.ten || c.ten_kh || '').toLowerCase().trim() === paramKhTen.toLowerCase().trim());
+        }
+
+        if (found) {
+            selectKh(found.id, paramSoPhieu, paramSoTien);
+        } else {
+            const idEl = document.getElementById('f-kh-id');
+            if (idEl) idEl.value = paramKhId;
+            if (paramKhTen) document.getElementById('f-kh-ten').value = paramKhTen;
             if (paramSdt) document.getElementById('f-kh-sdt').value = paramSdt;
-            checkCustomerDebt();
+            if (paramSoTien > 0) {
+                const tienEl = document.getElementById('f-thu-so-tien');
+                if (tienEl) tienEl.value = paramSoTien;
+            }
+            const lyDoEl = document.getElementById('f-thu-ly-do');
+            if (lyDoEl) {
+                if (paramSoPhieu) {
+                    lyDoEl.value = `Thu tiền đơn hàng ${paramSoPhieu}`;
+                } else if (paramKhTen) {
+                    lyDoEl.value = `Thu tiền công nợ khách hàng ${paramKhTen}`;
+                }
+            }
+            checkCustomerDebt(true, paramSoPhieu, paramSoTien);
         }
     }
 
@@ -119,18 +138,18 @@ function onKhSearchInput(input) {
     box.classList.remove('d-none');
 }
 
-function selectKh(id) {
-    const c = customersList.find(x => x.id === id);
+function selectKh(id, targetSoPhieu = '', presetAmount = 0) {
+    const c = customersList.find(x => String(x.id) === String(id));
     if (!c) return;
 
-    document.getElementById('f-kh-ten').value = c.ten_kh || '';
+    document.getElementById('f-kh-ten').value = c.ten || c.ten_kh || '';
     document.getElementById('f-kh-id').value = c.id || '';
     document.getElementById('f-kh-sdt').value = c.dien_thoai || '';
     document.getElementById('f-kh-dia-chi').value = c.dia_chi || '';
     document.getElementById('kh-suggestions').classList.add('d-none');
 
     // Tự động kiểm tra công nợ phiếu xuất của khách
-    checkCustomerDebt();
+    checkCustomerDebt(true, targetSoPhieu, presetAmount);
 }
 
 // ── Kiểm Tra Công Nợ Phiếu Xuất Kho ──────────────────────────────────────────
@@ -139,19 +158,19 @@ let checkDebtTimer = null;
 let lastCheckedDebtKey = '';
 let currentSelectedSoPhieu = '';
 
-function checkCustomerDebt(force = false) {
+function checkCustomerDebt(force = false, targetSoPhieu = '', presetAmount = 0) {
     if (checkDebtTimer) clearTimeout(checkDebtTimer);
-    checkDebtTimer = setTimeout(() => _executeCheckCustomerDebt(force), 150);
+    checkDebtTimer = setTimeout(() => _executeCheckCustomerDebt(force, targetSoPhieu, presetAmount), 100);
 }
 
-async function _executeCheckCustomerDebt(force = false) {
+async function _executeCheckCustomerDebt(force = false, targetSoPhieu = '', presetAmount = 0) {
     const tenKh = document.getElementById('f-kh-ten')?.value.trim() || '';
     const khId = document.getElementById('f-kh-id')?.value.trim() || '';
     const sdt = document.getElementById('f-kh-sdt')?.value.trim() || '';
 
     const currentKey = `${tenKh}|${khId}|${sdt}`;
-    if (!force && currentKey === lastCheckedDebtKey) {
-        return; // Đã kiểm tra rồi, bỏ qua để tránh lặp lại thông báo
+    if (!force && currentKey === lastCheckedDebtKey && !targetSoPhieu && !presetAmount) {
+        return;
     }
     lastCheckedDebtKey = currentKey;
 
@@ -160,15 +179,19 @@ async function _executeCheckCustomerDebt(force = false) {
     const helpEl = document.getElementById('debt-help-text');
 
     if (!tenKh && !sdt) {
-        selectEl.innerHTML = '<option value="">-- Khách không nợ / Hoặc nhập thu tự do --</option>';
-        badgeEl.className = 'badge bg-secondary';
-        badgeEl.innerText = 'Chưa chọn khách';
+        if (selectEl) selectEl.innerHTML = '<option value="">-- Khách không nợ / Hoặc nhập thu tự do --</option>';
+        if (badgeEl) {
+            badgeEl.className = 'badge bg-secondary';
+            badgeEl.innerText = 'Chưa chọn khách';
+        }
         currentSelectedSoPhieu = '';
         return;
     }
 
-    badgeEl.className = 'badge bg-info text-dark';
-    badgeEl.innerText = 'Đang kiểm tra nợ...';
+    if (badgeEl) {
+        badgeEl.className = 'badge bg-info text-dark';
+        badgeEl.innerText = 'Đang kiểm tra nợ...';
+    }
 
     try {
         const queryParams = new URLSearchParams({ ten_kh: tenKh, kh_id: khId, sdt: sdt });
@@ -179,67 +202,102 @@ async function _executeCheckCustomerDebt(force = false) {
             res = await apiRequest(`/api/cong-no/khach-hang/unpaid-invoices?${queryParams}`);
         }
 
-        if (res.success && res.has_debt && res.invoices.length > 0) {
+        if (res.success && res.has_debt && res.invoices && res.invoices.length > 0) {
             unpaidInvoicesList = res.invoices;
+            const totalDebt = res.invoices.reduce((sum, inv) => sum + (parseFloat(inv.tong_no) || 0), 0);
 
-            badgeEl.className = 'badge bg-danger';
-            badgeEl.innerText = `Khách đang có ${res.count} phiếu xuất kho chưa thanh toán`;
+            if (badgeEl) {
+                badgeEl.className = 'badge bg-danger';
+                badgeEl.innerText = `Khách nợ ${res.count} phiếu (${formatVND(totalDebt)})`;
+            }
 
-            let optionsHtml = '<option value="">-- Chọn phiếu xuất kho cần thanh toán --</option>';
+            let optionsHtml = '<option value="">-- Thu tự do / Không theo phiếu --</option>';
+            if (res.invoices.length > 1) {
+                optionsHtml += `<option value="ALL">-- [Tất cả] Thu toàn bộ công nợ (${formatVND(totalDebt)}) --</option>`;
+            }
             res.invoices.forEach(inv => {
                 const ngayFormatted = formatDate(inv.ngay_xuat);
                 const debtStr = formatVND(inv.tong_no);
                 optionsHtml += `<option value="${inv.so_phieu}">Phiếu ${inv.so_phieu} (Ngày ${ngayFormatted}) - Còn nợ: ${debtStr}</option>`;
             });
-            selectEl.innerHTML = optionsHtml;
+            if (selectEl) selectEl.innerHTML = optionsHtml;
 
-            // Nếu chỉ có 1 phiếu nợ duy nhất, tự động chọn luôn phiếu đó
-            if (res.invoices.length === 1) {
+            // Xử lý tự động chọn phiếu & số tiền:
+            const matchedTarget = targetSoPhieu ? res.invoices.find(x => x.so_phieu === targetSoPhieu) : null;
+            if (matchedTarget && selectEl) {
+                selectEl.value = targetSoPhieu;
+                currentSelectedSoPhieu = targetSoPhieu;
+                const amt = (presetAmount > 0) ? presetAmount : matchedTarget.tong_no;
+                document.getElementById('f-thu-so-tien').value = amt;
+                document.getElementById('f-thu-ly-do').value = `Thanh toán đơn hàng ${matchedTarget.so_phieu} ngày ${formatDate(matchedTarget.ngay_xuat)}`;
+            } else if (res.invoices.length === 1 && selectEl) {
                 selectEl.value = res.invoices[0].so_phieu;
-                onPhieuXuatSelectChange(true);
-            } else {
-                currentSelectedSoPhieu = '';
-                helpEl.innerHTML = `<span class="text-danger fw-semibold">Khách đang có ${res.count} đơn hàng còn nợ tiền. Hãy chọn phiếu xuất phía trên để hệ thống tự động điền tiền và nội dung.</span>`;
+                currentSelectedSoPhieu = res.invoices[0].so_phieu;
+                const amt = (presetAmount > 0) ? presetAmount : res.invoices[0].tong_no;
+                document.getElementById('f-thu-so-tien').value = amt;
+                document.getElementById('f-thu-ly-do').value = `Thanh toán đơn hàng ${res.invoices[0].so_phieu} ngày ${formatDate(res.invoices[0].ngay_xuat)}`;
+            } else if (res.invoices.length > 1 && selectEl) {
+                selectEl.value = 'ALL';
+                currentSelectedSoPhieu = 'ALL';
+                const amt = (presetAmount > 0) ? presetAmount : totalDebt;
+                document.getElementById('f-thu-so-tien').value = amt;
+                document.getElementById('f-thu-ly-do').value = `Thu toàn bộ công nợ khách hàng ${tenKh}`;
+                if (helpEl) {
+                    helpEl.innerHTML = `<span class="text-danger fw-semibold">Khách đang có ${res.count} đơn hàng còn nợ tiền (Tổng nợ: ${formatVND(totalDebt)}). Đã chọn thu toàn bộ hoặc bạn có thể chọn từng phiếu ở ô trên.</span>`;
+                }
             }
         } else {
             // Không có nợ
             unpaidInvoicesList = [];
             currentSelectedSoPhieu = '';
-            selectEl.innerHTML = '<option value="">-- Khách hàng không có nợ tồn đọng --</option>';
-            badgeEl.className = 'badge bg-success';
-            badgeEl.innerText = 'Khách không nợ';
-            helpEl.innerHTML = '<span class="text-muted">Khách hiện không có phiếu xuất nào nợ. Bạn có thể tự nhập số tiền và nội dung thu thủ công.</span>';
-
-            // Không tự động điền số tiền & để trống cho người dùng nhập
-            document.getElementById('f-thu-so-tien').value = '';
-            document.getElementById('f-thu-ly-do').value = '';
+            if (selectEl) selectEl.innerHTML = '<option value="">-- Khách hàng không có nợ tồn đọng --</option>';
+            if (badgeEl) {
+                badgeEl.className = 'badge bg-success';
+                badgeEl.innerText = 'Khách không nợ';
+            }
+            if (helpEl) {
+                helpEl.innerHTML = '<span class="text-muted">Khách hiện không có phiếu xuất nào nợ. Bạn có thể tự nhập số tiền và nội dung thu thủ công.</span>';
+            }
+            if (presetAmount > 0) {
+                document.getElementById('f-thu-so-tien').value = presetAmount;
+            }
         }
     } catch (e) {
         console.warn('Lỗi kiểm tra nợ khách hàng:', e);
-        badgeEl.className = 'badge bg-warning text-dark';
-        badgeEl.innerText = 'Không thể kiểm tra nợ';
+        if (badgeEl) {
+            badgeEl.className = 'badge bg-warning text-dark';
+            badgeEl.innerText = 'Không thể kiểm tra nợ';
+        }
     }
 }
 
 function onPhieuXuatSelectChange(notify = true) {
     const selectEl = document.getElementById('f-phieu-xuat-select');
     const selectedSoPhieu = selectEl?.value;
+    const tenKh = document.getElementById('f-kh-ten')?.value.trim() || 'khách hàng';
 
     if (!selectedSoPhieu) {
         currentSelectedSoPhieu = '';
         return;
     }
 
+    if (selectedSoPhieu === 'ALL') {
+        const totalDebt = unpaidInvoicesList.reduce((sum, inv) => sum + (parseFloat(inv.tong_no) || 0), 0);
+        document.getElementById('f-thu-so-tien').value = totalDebt;
+        document.getElementById('f-thu-ly-do').value = `Thu toàn bộ công nợ khách hàng ${tenKh}`;
+        if (notify && currentSelectedSoPhieu !== 'ALL') {
+            showToast(`Đã chọn thu toàn bộ công nợ (${formatVND(totalDebt)})`, 'info');
+        }
+        currentSelectedSoPhieu = 'ALL';
+        return;
+    }
+
     const matchedInv = unpaidInvoicesList.find(x => x.so_phieu === selectedSoPhieu);
     if (matchedInv) {
-        // Tự động điền số tiền nợ
         document.getElementById('f-thu-so-tien').value = matchedInv.tong_no;
-
-        // Tự động điền nội dung lý do thu
         const ngayStr = formatDate(matchedInv.ngay_xuat);
         document.getElementById('f-thu-ly-do').value = `Thanh toán đơn hàng ${matchedInv.so_phieu} ngày ${ngayStr}`;
 
-        // Chỉ thông báo khi có sự thay đổi lựa chọn (không thông báo lặp lại)
         if (notify && currentSelectedSoPhieu !== selectedSoPhieu) {
             showToast(`Đã tự động chọn phiếu ${matchedInv.so_phieu}, còn nợ ${formatVND(matchedInv.tong_no)}`, 'info');
         }

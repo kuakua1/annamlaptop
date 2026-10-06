@@ -181,6 +181,28 @@
     </div>
 </div>
 
+<!-- Modal Xem Chi Tiết Công Nợ Đối Tác / Khách Hàng -->
+<div class="modal fade" id="modal-detail-cong-no" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content shadow border-0">
+            <div class="modal-header py-2 text-white" id="modal-cong-no-header">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-receipt fs-5" id="modal-cong-no-icon"></i>
+                    <h6 class="modal-title fw-bold mb-0" id="modal-cong-no-title">Chi Tiết Công Nợ</h6>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3" id="modal-cong-no-body">
+                <!-- Nội dung danh sách hóa đơn và mặt hàng nạp động -->
+            </div>
+            <div class="modal-footer py-2 bg-light d-flex justify-content-between align-items-center" id="modal-cong-no-footer">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+                <div id="modal-cong-no-actions" class="d-flex gap-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 let danhSachThu = [];
 let danhSachChi = [];
@@ -282,12 +304,13 @@ function renderKhachNoTable(list) {
     }
 
     tbody.innerHTML = list.map(c => {
-        const phieuBadges = (c.so_phieu_list || []).map(sp => 
-            `<span class="badge bg-light text-danger border font-monospace me-1">${escapeHtml(sp)}</span>`
-        ).join('');
         const idDisplay = escapeHtml(c.id || '');
         const nameDisplay = escapeHtml(c.ten_kh || 'Khách lẻ');
         const phoneDisplay = c.dien_thoai ? escapeHtml(c.dien_thoai) : '<span class="text-muted fst-italic">Chưa có</span>';
+        const singleSoPhieu = (c.so_phieu_list && c.so_phieu_list.length === 1) ? c.so_phieu_list[0] : '';
+        const phieuBadges = (c.so_phieu_list || []).map(sp => 
+            `<span class="badge bg-light text-danger border font-monospace me-1" style="cursor: pointer;" title="Bấm xem chi tiết phiếu ${escapeHtml(sp)}" onclick="xemChiTietCongNo('THU', '${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}', '${escapeHtml(c.dia_chi || '')}', ${c.con_no || 0}, '${escapeHtml(sp)}')">${escapeHtml(sp)}</span>`
+        ).join('');
 
         return `
             <tr>
@@ -299,10 +322,15 @@ function renderKhachNoTable(list) {
                 <td class="text-end fw-semibold">${formatVND(c.tong_mua)}</td>
                 <td class="text-end fw-bold text-danger fs-6 font-monospace">${formatVND(c.con_no)}</td>
                 <td>${phieuBadges || '<span class="text-muted small fst-italic">---</span>'}</td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-success py-1 px-2 text-nowrap" onclick="thuTienKhach('${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}')">
-                        <i class="bi bi-cash me-1"></i> Thu tiền
-                    </button>
+                <td class="text-center text-nowrap">
+                    <div class="d-inline-flex align-items-center gap-1">
+                        <button class="btn btn-sm btn-outline-info py-1 px-2" title="Xem chi tiết các phiếu xuất nợ" onclick="xemChiTietCongNo('THU', '${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}', '${escapeHtml(c.dia_chi || '')}', ${c.con_no || 0})">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-success py-1 px-2 text-nowrap" onclick="thuTienKhach('${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}', ${c.con_no || 0}, '${singleSoPhieu}')">
+                            <i class="bi bi-cash me-1"></i> Thu tiền
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -325,12 +353,13 @@ function renderNccNoTable(list) {
     }
 
     tbody.innerHTML = list.map(c => {
-        const phieuBadges = (c.so_phieu_list || []).map(sp => 
-            `<span class="badge bg-light text-primary border font-monospace me-1">${escapeHtml(sp)}</span>`
-        ).join('');
         const idDisplay = escapeHtml(c.id || '');
         const nameDisplay = escapeHtml(c.ten_ncc || 'Nhà cung cấp');
         const phoneDisplay = c.dien_thoai ? escapeHtml(c.dien_thoai) : '<span class="text-muted fst-italic">Chưa có</span>';
+        const singleSoPhieu = (c.so_phieu_list && c.so_phieu_list.length === 1) ? c.so_phieu_list[0] : '';
+        const phieuBadges = (c.so_phieu_list || []).map(sp => 
+            `<span class="badge bg-light text-primary border font-monospace me-1" style="cursor: pointer;" title="Bấm xem chi tiết phiếu ${escapeHtml(sp)}" onclick="xemChiTietCongNo('CHI', '${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}', '${escapeHtml(c.dia_chi || '')}', ${c.con_no || 0}, '${escapeHtml(sp)}')">${escapeHtml(sp)}</span>`
+        ).join('');
 
         return `
             <tr>
@@ -342,24 +371,235 @@ function renderNccNoTable(list) {
                 <td class="text-end fw-semibold">${formatVND(c.tong_nhap)}</td>
                 <td class="text-end fw-bold text-danger fs-6 font-monospace">${formatVND(c.con_no)}</td>
                 <td>${phieuBadges || '<span class="text-muted small fst-italic">---</span>'}</td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-danger py-1 px-2 text-nowrap" onclick="chiTienNcc('${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}')">
-                        <i class="bi bi-cash-stack me-1"></i> Chi tiền
-                    </button>
+                <td class="text-center text-nowrap">
+                    <div class="d-inline-flex align-items-center gap-1">
+                        <button class="btn btn-sm btn-outline-info py-1 px-2" title="Xem chi tiết các phiếu nhập nợ" onclick="xemChiTietCongNo('CHI', '${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}', '${escapeHtml(c.dia_chi || '')}', ${c.con_no || 0})">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger py-1 px-2 text-nowrap" onclick="chiTienNcc('${idDisplay}', '${nameDisplay}', '${escapeHtml(c.dien_thoai || '')}', ${c.con_no || 0}, '${singleSoPhieu}')">
+                            <i class="bi bi-cash-stack me-1"></i> Chi tiền
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
     }).join('');
 }
 
-function thuTienKhach(khId, khTen, sdt) {
-    const url = `/phieu-thu?embed=1&kh_id=${encodeURIComponent(khId || '')}&kh_ten=${encodeURIComponent(khTen || '')}&sdt=${encodeURIComponent(sdt || '')}`;
+function thuTienKhach(khId, khTen, sdt, conNo = 0, soPhieu = '') {
+    let url = `/phieu-thu?embed=1&kh_id=${encodeURIComponent(khId || '')}&kh_ten=${encodeURIComponent(khTen || '')}&sdt=${encodeURIComponent(sdt || '')}`;
+    if (conNo > 0) url += `&so_tien=${encodeURIComponent(conNo)}`;
+    if (soPhieu) url += `&so_phieu=${encodeURIComponent(soPhieu)}`;
     TabManager.openTab('phieu-thu', url, true);
 }
 
-function chiTienNcc(nccId, nccTen, sdt) {
-    const url = `/phieu-chi?embed=1&ncc_id=${encodeURIComponent(nccId || '')}&ncc_ten=${encodeURIComponent(nccTen || '')}&sdt=${encodeURIComponent(sdt || '')}`;
+function chiTienNcc(nccId, nccTen, sdt, conNo = 0, soPhieu = '') {
+    let url = `/phieu-chi?embed=1&ncc_id=${encodeURIComponent(nccId || '')}&ncc_ten=${encodeURIComponent(nccTen || '')}&sdt=${encodeURIComponent(sdt || '')}`;
+    if (conNo > 0) url += `&so_tien=${encodeURIComponent(conNo)}`;
+    if (soPhieu) url += `&so_phieu=${encodeURIComponent(soPhieu)}`;
     TabManager.openTab('phieu-chi', url, true);
+}
+
+async function xemChiTietCongNo(loai, id, name, phone, diaChi, tongNo, focusSoPhieu = '') {
+    const headerEl = document.getElementById('modal-cong-no-header');
+    const titleEl = document.getElementById('modal-cong-no-title');
+    const iconEl = document.getElementById('modal-cong-no-icon');
+    const bodyEl = document.getElementById('modal-cong-no-body');
+    const actionsEl = document.getElementById('modal-cong-no-actions');
+
+    const isChi = (loai === 'CHI');
+
+    if (headerEl) {
+        headerEl.className = `modal-header py-2 text-white ${isChi ? 'bg-danger' : 'bg-primary'}`;
+    }
+    if (iconEl) {
+        iconEl.className = `bi ${isChi ? 'bi-truck' : 'bi-person-check-fill'} fs-5`;
+    }
+    if (titleEl) {
+        titleEl.innerText = isChi 
+            ? `Chi Tiết Công Nợ Phải Trả NCC: ${name}`
+            : `Chi Tiết Công Nợ Phải Thu Khách: ${name}`;
+    }
+
+    if (bodyEl) {
+        bodyEl.innerHTML = `
+            <div class="text-center py-5 text-muted">
+                <div class="spinner-border spinner-border-sm ${isChi ? 'text-danger' : 'text-primary'} me-2"></div>
+                Đang tải chi tiết các phiếu nợ và danh sách mặt hàng...
+            </div>
+        `;
+    }
+    if (actionsEl) actionsEl.innerHTML = '';
+
+    openModal('modal-detail-cong-no');
+
+    try {
+        const queryParams = new URLSearchParams({
+            [isChi ? 'ncc_id' : 'kh_id']: id || '',
+            [isChi ? 'ten_ncc' : 'ten_kh']: name || '',
+            sdt: phone || ''
+        });
+
+        const url = isChi 
+            ? `/api/nha-cung-cap/unpaid-invoices?${queryParams}`
+            : `/api/khach-hang/unpaid-invoices?${queryParams}`;
+
+        const res = await apiRequest(url);
+
+        if (!res.success || !res.invoices || res.invoices.length === 0) {
+            if (bodyEl) {
+                bodyEl.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="bi bi-check-circle-fill text-success fs-1 d-block mb-2"></i>
+                        <h6 class="fw-bold text-dark">Tuyệt vời! Không có phiếu nào còn nợ.</h6>
+                        <p class="text-muted small mb-0">Đối tác này đã hoàn tất thanh toán toàn bộ công nợ.</p>
+                    </div>
+                `;
+            }
+            return;
+        }
+
+        const invoices = res.invoices;
+        const calcTongNo = invoices.reduce((s, inv) => s + (parseFloat(inv.tong_no) || 0), 0);
+        const finalTongNo = tongNo > 0 ? tongNo : calcTongNo;
+
+        let html = `
+            <!-- Khung thông tin tóm tắt đối tác -->
+            <div class="card border-0 bg-light p-3 mb-3 rounded-3 shadow-sm border-start border-4 ${isChi ? 'border-danger' : 'border-primary'}">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <h5 class="mb-0 fw-bold text-dark">${escapeHtml(name)}</h5>
+                            ${id ? `<span class="badge bg-secondary-subtle text-secondary border font-monospace">${escapeHtml(id)}</span>` : ''}
+                        </div>
+                        <div class="small text-muted d-flex flex-wrap gap-3">
+                            ${phone ? `<span><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(phone)}</span>` : ''}
+                            ${diaChi ? `<span><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(diaChi)}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <small class="text-muted d-block text-uppercase fw-semibold" style="font-size: 0.75rem;">
+                            ${isChi ? 'Tổng Nợ Phải Trả' : 'Tổng Nợ Phải Thu'} (${invoices.length} phiếu)
+                        </small>
+                        <h4 class="mb-0 text-danger fw-bold font-monospace">${formatVND(finalTongNo)}</h4>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="fw-bold text-dark mb-0">
+                    <i class="bi bi-card-checklist me-1 text-secondary"></i>Danh Sách Phiếu ${isChi ? 'Nhập Kho' : 'Xuất Kho'} Còn Nợ (${invoices.length} phiếu):
+                </h6>
+                <small class="text-muted fst-italic">Bấm vào từng phiếu để thanh toán riêng</small>
+            </div>
+        `;
+
+        // Render từng phiếu nợ
+        invoices.forEach((inv, index) => {
+            const ngayStr = formatDate(inv.ngay_nhap || inv.ngay_xuat);
+            const items = inv.items || [];
+            const isTarget = (focusSoPhieu && focusSoPhieu === inv.so_phieu);
+
+            html += `
+                <div class="card mb-3 border shadow-sm ${isTarget ? 'border-primary ring-2' : ''}" id="card-phieu-${escapeHtml(inv.so_phieu)}">
+                    <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge ${isChi ? 'bg-primary' : 'bg-danger'} font-monospace fs-6 px-2 py-1">${escapeHtml(inv.so_phieu)}</span>
+                            <span class="small text-muted"><i class="bi bi-calendar3 me-1"></i>${ngayStr}</span>
+                            ${inv.ghi_chu ? `<span class="badge bg-light text-secondary border small fst-italic">${escapeHtml(inv.ghi_chu)}</span>` : ''}
+                        </div>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="text-end">
+                                <span class="small text-muted">Trị giá: </span><span class="fw-semibold">${formatVND(inv.tong_tien)}</span>
+                                <span class="text-muted mx-1">|</span>
+                                <span class="small text-muted">Còn nợ: </span><span class="fw-bold text-danger font-monospace fs-6">${formatVND(inv.tong_no)}</span>
+                            </div>
+                            ${isChi ? `
+                                <button class="btn btn-sm btn-outline-danger py-1 px-2 fw-semibold text-nowrap" 
+                                    onclick="closeModal('modal-detail-cong-no'); chiTienNcc('${escapeHtml(id)}', '${escapeHtml(name)}', '${escapeHtml(phone)}', ${inv.tong_no}, '${escapeHtml(inv.so_phieu)}')">
+                                    <i class="bi bi-cash-stack me-1"></i>Chi phiếu này
+                                </button>
+                            ` : `
+                                <button class="btn btn-sm btn-outline-success py-1 px-2 fw-semibold text-nowrap" 
+                                    onclick="closeModal('modal-detail-cong-no'); thuTienKhach('${escapeHtml(id)}', '${escapeHtml(name)}', '${escapeHtml(phone)}', ${inv.tong_no}, '${escapeHtml(inv.so_phieu)}')">
+                                    <i class="bi bi-cash me-1"></i>Thu phiếu này
+                                </button>
+                            `}
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped align-middle mb-0" style="font-size: 0.85rem;">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-3" style="width: 40px;">STT</th>
+                                        <th style="width: 100px;">Mã Hàng</th>
+                                        <th>Tên Hàng Hóa</th>
+                                        <th class="text-center" style="width: 70px;">SL</th>
+                                        <th class="text-end" style="width: 120px;">Đơn Giá</th>
+                                        <th class="text-end pe-3" style="width: 130px;">Thành Tiền</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${items.length === 0 ? `
+                                        <tr><td colspan="6" class="text-center py-2 text-muted fst-italic">Không có chi tiết mặt hàng</td></tr>
+                                    ` : items.map((it, idx) => `
+                                        <tr>
+                                            <td class="ps-3 text-muted">${idx + 1}</td>
+                                            <td><span class="badge bg-light text-secondary border font-monospace">${escapeHtml(it.ma_hang || '---')}</span></td>
+                                            <td class="fw-semibold text-dark">${escapeHtml(it.ten_hang || '---')}</td>
+                                            <td class="text-center font-monospace fw-bold">${it.so_luong || 0}</td>
+                                            <td class="text-end font-monospace">${formatVND(it.gia_nhap || it.gia_ban || 0)}</td>
+                                            <td class="text-end pe-3 font-monospace fw-bold ${isChi ? 'text-primary' : 'text-danger'}">${formatVND(it.thanh_tien || 0)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        if (bodyEl) bodyEl.innerHTML = html;
+
+        // Footer Actions: Nút Chi/Thu Toàn Bộ Nợ
+        if (actionsEl) {
+            if (isChi) {
+                actionsEl.innerHTML = `
+                    <button class="btn btn-danger btn-sm px-3 fw-bold shadow-sm" onclick="closeModal('modal-detail-cong-no'); chiTienNcc('${escapeHtml(id)}', '${escapeHtml(name)}', '${escapeHtml(phone)}', ${finalTongNo})">
+                        <i class="bi bi-cash-stack me-1"></i>Chi Toàn Bộ Công Nợ (${formatVND(finalTongNo)})
+                    </button>
+                `;
+            } else {
+                actionsEl.innerHTML = `
+                    <button class="btn btn-success btn-sm px-3 fw-bold shadow-sm" onclick="closeModal('modal-detail-cong-no'); thuTienKhach('${escapeHtml(id)}', '${escapeHtml(name)}', '${escapeHtml(phone)}', ${finalTongNo})">
+                        <i class="bi bi-cash me-1"></i>Thu Toàn Bộ Công Nợ (${formatVND(finalTongNo)})
+                    </button>
+                `;
+            }
+        }
+
+        // Tự động cuộn đến phiếu target nếu có
+        if (focusSoPhieu) {
+            setTimeout(() => {
+                const targetCard = document.getElementById(`card-phieu-${focusSoPhieu}`);
+                if (targetCard) {
+                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 250);
+        }
+
+    } catch (err) {
+        console.error('Lỗi tải chi tiết công nợ:', err);
+        if (bodyEl) {
+            bodyEl.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Không thể tải chi tiết công nợ: ${escapeHtml(err.message)}
+                </div>
+            `;
+        }
+    }
 }
 
 function escapeHtml(text) {

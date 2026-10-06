@@ -1399,37 +1399,61 @@ class DatabaseManager:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu))
 
-                # Nếu thu tiền cho 1 phiếu xuất cụ thể, trừ bớt tien_khach_no trên các dòng của phiếu đó
+                modified_xuat_ids = []
+                # Nếu thu tiền cho 1 phiếu xuất cụ thể hoặc tất cả công nợ (ALL)
                 if phieu_lien_quan:
-                    cursor.execute("SELECT id, tien_khach_no, thanh_tien FROM XuatHang WHERE so_phieu = ?", (phieu_lien_quan,))
-                    xuat_rows = cursor.fetchall()
-                    if xuat_rows:
+                    if phieu_lien_quan == 'ALL':
+                        unpaid_invs = self.get_customer_unpaid_invoices(doi_tuong, dien_thoai)
                         rem_payment = so_tien
-                        for xr in xuat_rows:
-                            cur_no = float(xr["tien_khach_no"] if xr["tien_khach_no"] is not None else xr["thanh_tien"] or 0)
-                            deduct = min(cur_no, rem_payment)
-                            new_no = max(0.0, cur_no - deduct)
-                            rem_payment -= deduct
-                            cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (new_no, xr["id"]))
+                        for inv in unpaid_invs:
+                            if rem_payment <= 0:
+                                break
+                            sp = inv["so_phieu"]
+                            cursor.execute("SELECT id, tien_khach_no, thanh_tien FROM XuatHang WHERE so_phieu = ? ORDER BY id ASC", (sp,))
+                            xuat_rows = cursor.fetchall()
+                            for xr in xuat_rows:
+                                if rem_payment <= 0:
+                                    break
+                                cur_no = float(xr["tien_khach_no"] if xr["tien_khach_no"] is not None else xr["thanh_tien"] or 0)
+                                if cur_no <= 0:
+                                    continue
+                                deduct = min(cur_no, rem_payment)
+                                new_no = max(0.0, cur_no - deduct)
+                                rem_payment -= deduct
+                                cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (new_no, xr["id"]))
+                                modified_xuat_ids.append(xr["id"])
+                    else:
+                        cursor.execute("SELECT id, tien_khach_no, thanh_tien FROM XuatHang WHERE so_phieu = ?", (phieu_lien_quan,))
+                        xuat_rows = cursor.fetchall()
+                        if xuat_rows:
+                            rem_payment = so_tien
+                            for xr in xuat_rows:
+                                cur_no = float(xr["tien_khach_no"] if xr["tien_khach_no"] is not None else xr["thanh_tien"] or 0)
+                                deduct = min(cur_no, rem_payment)
+                                new_no = max(0.0, cur_no - deduct)
+                                rem_payment -= deduct
+                                cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (new_no, xr["id"]))
+                                modified_xuat_ids.append(xr["id"])
                 conn.commit()
 
         # Enqueue lên Google Sheet
         sheet_row = [record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu]
         self._enqueue_task("APPEND_ROW", SHEET_SO_QUY, {"row": sheet_row})
 
-        # Nếu có cập nhật phiếu xuất, ta có thể cập nhật cả Sheet XuatHang
-        if phieu_lien_quan:
+        # Cập nhật các dòng phiếu xuất tương ứng trên Google Sheets
+        if modified_xuat_ids:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM XuatHang WHERE so_phieu = ?", (phieu_lien_quan,))
-                updated_xuat = cursor.fetchall()
-                for ux in updated_xuat:
-                    u_row = [
-                        ux["id"], ux["so_phieu"], ux["ngay_xuat"], ux["ma_hang"], ux["ten_hang"],
-                        ux["so_luong"], ux["gia_ban"], ux["thanh_tien"], ux["khach_hang_id"],
-                        ux["ghi_chu"], ux["gia_von"], ux["loi_nhuan"], ux["tien_khach_no"]
-                    ]
-                    self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
+                for mid in modified_xuat_ids:
+                    cursor.execute("SELECT * FROM XuatHang WHERE id = ?", (mid,))
+                    ux = cursor.fetchone()
+                    if ux:
+                        u_row = [
+                            ux["id"], ux["so_phieu"], ux["ngay_xuat"], ux["ma_hang"], ux["ten_hang"],
+                            ux["so_luong"], ux["gia_ban"], ux["thanh_tien"], ux["khach_hang_id"],
+                            ux["ghi_chu"], ux["gia_von"], ux["loi_nhuan"], ux["tien_khach_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
 
         return {
             "id": record_id,
@@ -1464,18 +1488,41 @@ class DatabaseManager:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu))
 
+                modified_nhap_ids = []
                 # Nếu có phiếu liên quan (phiếu nhập kho), trừ dần công nợ
                 if phieu_lien_quan:
-                    cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (phieu_lien_quan,))
-                    nhap_rows = cursor.fetchall()
-                    if nhap_rows:
+                    if phieu_lien_quan == 'ALL':
+                        unpaid_invs = self.get_supplier_unpaid_invoices(doi_tuong, dien_thoai)
                         rem_payment = so_tien
-                        for nr in nhap_rows:
-                            cur_no = float(nr["cong_no"] if nr["cong_no"] is not None else nr["thanh_tien"] or 0)
-                            deduct = min(cur_no, rem_payment)
-                            new_no = max(0.0, cur_no - deduct)
-                            rem_payment -= deduct
-                            cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (new_no, nr["id"]))
+                        for inv in unpaid_invs:
+                            if rem_payment <= 0:
+                                break
+                            sp = inv["so_phieu"]
+                            cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ? ORDER BY id ASC", (sp,))
+                            nhap_rows = cursor.fetchall()
+                            for nr in nhap_rows:
+                                if rem_payment <= 0:
+                                    break
+                                cur_no = float(nr["cong_no"] if nr["cong_no"] is not None else nr["thanh_tien"] or 0)
+                                if cur_no <= 0:
+                                    continue
+                                deduct = min(cur_no, rem_payment)
+                                new_no = max(0.0, cur_no - deduct)
+                                rem_payment -= deduct
+                                cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (new_no, nr["id"]))
+                                modified_nhap_ids.append(nr["id"])
+                    else:
+                        cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (phieu_lien_quan,))
+                        nhap_rows = cursor.fetchall()
+                        if nhap_rows:
+                            rem_payment = so_tien
+                            for nr in nhap_rows:
+                                cur_no = float(nr["cong_no"] if nr["cong_no"] is not None else nr["thanh_tien"] or 0)
+                                deduct = min(cur_no, rem_payment)
+                                new_no = max(0.0, cur_no - deduct)
+                                rem_payment -= deduct
+                                cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (new_no, nr["id"]))
+                                modified_nhap_ids.append(nr["id"])
 
                 conn.commit()
 
@@ -1483,18 +1530,19 @@ class DatabaseManager:
         self._enqueue_task("APPEND_ROW", SHEET_SO_QUY, {"row": sheet_row})
 
         # Cập nhật các dòng phiếu nhập tương ứng trên Google Sheets
-        if phieu_lien_quan:
+        if modified_nhap_ids:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (phieu_lien_quan,))
-                updated_nhap = cursor.fetchall()
-                for un in updated_nhap:
-                    u_row = [
-                        un["id"], un["so_phieu"], un["ngay_nhap"], un["ma_hang"], un["ten_hang"],
-                        un["so_luong"], un["gia_nhap"], un["thanh_tien"], un["nha_cung_cap_id"],
-                        un["ghi_chu"], un["cong_no"]
-                    ]
-                    self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
+                for mid in modified_nhap_ids:
+                    cursor.execute("SELECT * FROM NhapHang WHERE id = ?", (mid,))
+                    un = cursor.fetchone()
+                    if un:
+                        u_row = [
+                            un["id"], un["so_phieu"], un["ngay_nhap"], un["ma_hang"], un["ten_hang"],
+                            un["so_luong"], un["gia_nhap"], un["thanh_tien"], un["nha_cung_cap_id"],
+                            un["ghi_chu"], un["cong_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
 
         return {
             "id": record_id,

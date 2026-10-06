@@ -16,28 +16,46 @@ document.addEventListener('DOMContentLoaded', async function () {
     await loadSuppliers();
     await loadRecentChi();
 
-    // 3. Kiểm tra tham số URL (ncc_id, ncc_ten, sdt) để tự động điền đối tác
+    // 3. Kiểm tra tham số URL (ncc_id, ncc_ten, sdt, so_tien, so_phieu) để tự động điền đối tác
     const urlParams = new URLSearchParams(window.location.search);
-    const paramNccId = urlParams.get('ncc_id');
-    const paramNccTen = urlParams.get('ncc_ten');
-    const paramSdt = urlParams.get('sdt');
+    const paramNccId = (urlParams.get('ncc_id') || '').trim();
+    const paramNccTen = (urlParams.get('ncc_ten') || '').trim();
+    const paramSdt = (urlParams.get('sdt') || '').trim();
+    const paramSoTien = parseFloat(urlParams.get('so_tien') || 0);
+    const paramSoPhieu = (urlParams.get('so_phieu') || '').trim();
 
-    if (paramNccId || paramNccTen) {
+    if (paramNccId || paramNccTen || paramSdt) {
+        let matched = null;
         if (paramNccId) {
-            const found = suppliersList.find(c => String(c.id).trim() === String(paramNccId).trim());
-            if (found) {
-                selectSupplier(found.id);
-            } else {
-                const idEl = document.getElementById('f-ncc-id');
-                if (idEl) idEl.value = paramNccId;
-                if (paramNccTen) document.getElementById('f-chi-doi-tuong').value = paramNccTen;
-                if (paramSdt) document.getElementById('f-chi-sdt').value = paramSdt;
-                checkSupplierDebt();
-            }
-        } else if (paramNccTen) {
-            document.getElementById('f-chi-doi-tuong').value = paramNccTen;
+            matched = suppliersList.find(c => String(c.id).trim() === String(paramNccId).trim());
+        }
+        if (!matched && paramSdt) {
+            matched = suppliersList.find(c => String(c.dien_thoai || '').trim() === String(paramSdt).trim());
+        }
+        if (!matched && paramNccTen) {
+            matched = suppliersList.find(c => (c.ten || c.ten_ncc || c.ten_kh || '').toLowerCase().trim() === paramNccTen.toLowerCase().trim());
+        }
+
+        if (matched) {
+            selectSupplier(matched.id, paramSoPhieu, paramSoTien);
+        } else {
+            const idEl = document.getElementById('f-ncc-id');
+            if (idEl) idEl.value = paramNccId;
+            if (paramNccTen) document.getElementById('f-chi-doi-tuong').value = paramNccTen;
             if (paramSdt) document.getElementById('f-chi-sdt').value = paramSdt;
-            checkSupplierDebt();
+            if (paramSoTien > 0) {
+                const tienEl = document.getElementById('f-chi-so-tien');
+                if (tienEl) tienEl.value = paramSoTien;
+            }
+            const lyDoEl = document.getElementById('f-chi-ly-do');
+            if (lyDoEl) {
+                if (paramSoPhieu) {
+                    lyDoEl.value = `Thanh toán công nợ theo phiếu ${paramSoPhieu}`;
+                } else if (paramNccTen) {
+                    lyDoEl.value = `Thanh toán công nợ cho ${paramNccTen}`;
+                }
+            }
+            checkSupplierDebt(true, paramSoPhieu, paramSoTien);
         }
     }
 
@@ -182,7 +200,7 @@ function toggleSupplierDropdown() {
     renderSupplierSuggestions(matches);
 }
 
-function selectSupplier(id) {
+function selectSupplier(id, targetSoPhieu = '', presetAmount = 0) {
     const c = suppliersList.find(x => String(x.id) === String(id));
     if (!c) return;
 
@@ -197,7 +215,7 @@ function selectSupplier(id) {
     if (box) box.classList.add('d-none');
 
     // Tự động kiểm tra công nợ phiếu nhập của nhà cung cấp này
-    checkSupplierDebt(true);
+    checkSupplierDebt(true, targetSoPhieu, presetAmount);
 }
 
 // ── Kiểm Tra Công Nợ Phiếu Nhập Kho ─────────────────────────────────────────
@@ -206,18 +224,18 @@ let checkDebtTimer = null;
 let lastCheckedDebtKey = '';
 let currentSelectedSoPhieu = '';
 
-function checkSupplierDebt(force = false) {
+function checkSupplierDebt(force = false, targetSoPhieu = '', presetAmount = 0) {
     if (checkDebtTimer) clearTimeout(checkDebtTimer);
-    checkDebtTimer = setTimeout(() => _executeCheckSupplierDebt(force), 150);
+    checkDebtTimer = setTimeout(() => _executeCheckSupplierDebt(force, targetSoPhieu, presetAmount), 100);
 }
 
-async function _executeCheckSupplierDebt(force = false) {
+async function _executeCheckSupplierDebt(force = false, targetSoPhieu = '', presetAmount = 0) {
     const tenNcc = document.getElementById('f-chi-doi-tuong')?.value.trim() || '';
     const nccId = document.getElementById('f-ncc-id')?.value.trim() || '';
     const sdt = document.getElementById('f-chi-sdt')?.value.trim() || '';
 
     const currentKey = `${tenNcc}|${nccId}|${sdt}`;
-    if (!force && currentKey === lastCheckedDebtKey) {
+    if (!force && currentKey === lastCheckedDebtKey && !targetSoPhieu && !presetAmount) {
         return;
     }
     lastCheckedDebtKey = currentKey;
@@ -245,15 +263,19 @@ async function _executeCheckSupplierDebt(force = false) {
         const queryParams = new URLSearchParams({ ten_ncc: tenNcc, ncc_id: nccId, sdt: sdt });
         const res = await apiRequest(`/api/nha-cung-cap/unpaid-invoices?${queryParams}`);
 
-        if (res.success && res.has_debt && res.invoices.length > 0) {
+        if (res.success && res.has_debt && res.invoices && res.invoices.length > 0) {
             unpaidInvoicesList = res.invoices;
+            const totalDebt = res.invoices.reduce((sum, inv) => sum + (parseFloat(inv.tong_no) || 0), 0);
 
             if (badgeEl) {
                 badgeEl.className = 'badge bg-danger';
-                badgeEl.innerText = `Công ty đang nợ ${res.count} phiếu nhập kho`;
+                badgeEl.innerText = `Công ty đang nợ ${res.count} phiếu (${formatVND(totalDebt)})`;
             }
 
-            let optionsHtml = '<option value="">-- Chọn phiếu nhập kho cần thanh toán --</option>';
+            let optionsHtml = '<option value="">-- Chi tự do / Không theo phiếu --</option>';
+            if (res.invoices.length > 1) {
+                optionsHtml += `<option value="ALL">-- [Tất cả] Thanh toán toàn bộ nợ (${formatVND(totalDebt)}) --</option>`;
+            }
             res.invoices.forEach(inv => {
                 const ngayFormatted = formatDate(inv.ngay_nhap);
                 const debtStr = formatVND(inv.tong_no);
@@ -261,15 +283,30 @@ async function _executeCheckSupplierDebt(force = false) {
             });
             if (selectEl) selectEl.innerHTML = optionsHtml;
 
-            // Nếu chỉ có 1 phiếu nợ duy nhất, tự động chọn luôn phiếu đó
-            if (res.invoices.length === 1 && selectEl) {
+            // Xử lý tự động chọn phiếu & số tiền:
+            const matchedTarget = targetSoPhieu ? res.invoices.find(x => x.so_phieu === targetSoPhieu) : null;
+            if (matchedTarget && selectEl) {
+                selectEl.value = targetSoPhieu;
+                currentSelectedSoPhieu = targetSoPhieu;
+                const amt = (presetAmount > 0) ? presetAmount : matchedTarget.tong_no;
+                document.getElementById('f-chi-so-tien').value = amt;
+                document.getElementById('f-chi-ly-do').value = `Thanh toán tiền nhập hàng theo phiếu ${matchedTarget.so_phieu} ngày ${formatDate(matchedTarget.ngay_nhap)}`;
+            } else if (res.invoices.length === 1 && selectEl) {
                 selectEl.value = res.invoices[0].so_phieu;
-                onPhieuNhapSelectChange(true);
-            } else {
-                currentSelectedSoPhieu = '';
+                currentSelectedSoPhieu = res.invoices[0].so_phieu;
+                const amt = (presetAmount > 0) ? presetAmount : res.invoices[0].tong_no;
+                document.getElementById('f-chi-so-tien').value = amt;
+                document.getElementById('f-chi-ly-do').value = `Thanh toán tiền nhập hàng theo phiếu ${res.invoices[0].so_phieu} ngày ${formatDate(res.invoices[0].ngay_nhap)}`;
+            } else if (res.invoices.length > 1 && selectEl) {
+                // Nhiều phiếu: Tự động chọn ALL (toàn bộ công nợ)
+                selectEl.value = 'ALL';
+                currentSelectedSoPhieu = 'ALL';
+                const amt = (presetAmount > 0) ? presetAmount : totalDebt;
+                document.getElementById('f-chi-so-tien').value = amt;
+                document.getElementById('f-chi-ly-do').value = `Thanh toán toàn bộ công nợ cho ${tenNcc}`;
                 if (helpEl) {
                     helpEl.classList.remove('d-none');
-                    helpEl.innerHTML = `<span class="text-danger fw-semibold">Công ty đang nợ ${res.count} đơn nhập hàng của đối tác này. Hãy chọn phiếu nhập để tự động điền tiền và lý do chi.</span>`;
+                    helpEl.innerHTML = `<span class="text-danger fw-semibold">Công ty đang nợ ${res.count} đơn nhập hàng (Tổng nợ: ${formatVND(totalDebt)}). Đã chọn thanh toán toàn bộ hoặc bạn có thể chọn từng phiếu ở ô trên.</span>`;
                 }
             }
         } else {
@@ -285,9 +322,9 @@ async function _executeCheckSupplierDebt(force = false) {
                 helpEl.classList.remove('d-none');
                 helpEl.innerHTML = '<span class="text-muted">Đối tác hiện không có phiếu nhập nào còn nợ. Bạn có thể tự nhập số tiền và nội dung chi thủ công.</span>';
             }
-
-            document.getElementById('f-chi-so-tien').value = '';
-            document.getElementById('f-chi-ly-do').value = '';
+            if (presetAmount > 0) {
+                document.getElementById('f-chi-so-tien').value = presetAmount;
+            }
         }
     } catch (e) {
         console.warn('Lỗi kiểm tra nợ nhà cung cấp:', e);
@@ -301,18 +338,27 @@ async function _executeCheckSupplierDebt(force = false) {
 function onPhieuNhapSelectChange(notify = true) {
     const selectEl = document.getElementById('f-phieu-nhap-select');
     const selectedSoPhieu = selectEl?.value;
+    const tenNcc = document.getElementById('f-chi-doi-tuong')?.value.trim() || 'đối tác';
 
     if (!selectedSoPhieu) {
         currentSelectedSoPhieu = '';
         return;
     }
 
+    if (selectedSoPhieu === 'ALL') {
+        const totalDebt = unpaidInvoicesList.reduce((sum, inv) => sum + (parseFloat(inv.tong_no) || 0), 0);
+        document.getElementById('f-chi-so-tien').value = totalDebt;
+        document.getElementById('f-chi-ly-do').value = `Thanh toán toàn bộ công nợ cho ${tenNcc}`;
+        if (notify && currentSelectedSoPhieu !== 'ALL') {
+            showToast(`Đã chọn thanh toán toàn bộ công nợ (${formatVND(totalDebt)})`, 'info');
+        }
+        currentSelectedSoPhieu = 'ALL';
+        return;
+    }
+
     const matchedInv = unpaidInvoicesList.find(x => x.so_phieu === selectedSoPhieu);
     if (matchedInv) {
-        // Tự động điền số tiền nợ
         document.getElementById('f-chi-so-tien').value = matchedInv.tong_no;
-
-        // Tự động điền nội dung lý do chi
         const ngayStr = formatDate(matchedInv.ngay_nhap);
         document.getElementById('f-chi-ly-do').value = `Thanh toán tiền nhập hàng theo phiếu ${matchedInv.so_phieu} ngày ${ngayStr}`;
 
