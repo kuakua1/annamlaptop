@@ -403,12 +403,105 @@ const TabManager = {
         } catch (e) {}
     },
 
+    saveTabsState() {
+        if (!this.isParent()) return;
+        try {
+            const state = {
+                tabs: this.tabs.map(t => {
+                    let currentUrl = t.url;
+                    const frame = document.getElementById(`tab-iframe-${t.id}`);
+                    if (frame) {
+                        try {
+                            if (frame.contentWindow && frame.contentWindow.location && frame.contentWindow.location.pathname) {
+                                currentUrl = frame.contentWindow.location.pathname + frame.contentWindow.location.search;
+                            }
+                        } catch (e) {}
+                    }
+                    return {
+                        id: t.id,
+                        type: t.type,
+                        title: t.title,
+                        icon: t.icon,
+                        closable: t.closable,
+                        url: currentUrl || (TAB_DEFINITIONS[t.type] ? TAB_DEFINITIONS[t.type].url : null)
+                    };
+                }),
+                activeTabId: this.activeTabId,
+                tabCounter: this.tabCounter
+            };
+            localStorage.setItem('inventory_tabs_state_v1', JSON.stringify(state));
+        } catch (e) {
+            console.warn('Không thể lưu trạng thái tab:', e);
+        }
+    },
+
+    restoreTabsState() {
+        if (!this.isParent()) return false;
+        try {
+            const raw = localStorage.getItem('inventory_tabs_state_v1');
+            if (!raw) return false;
+            const state = JSON.parse(raw);
+            if (!state || !Array.isArray(state.tabs) || state.tabs.length === 0) return false;
+
+            // Lọc các tab hợp lệ
+            let validTabs = state.tabs.filter(t => t && t.id && (t.id === 'dashboard' || TAB_DEFINITIONS[t.type]));
+            if (validTabs.length === 0) return false;
+
+            // Đảm bảo tab Dashboard luôn tồn tại ở vị trí đầu tiên
+            const hasDashboard = validTabs.some(t => t.id === 'dashboard');
+            if (!hasDashboard) {
+                const dashDef = TAB_DEFINITIONS['dashboard'] || { title: 'Dashboard', icon: 'bi-speedometer2 text-primary', url: '/dashboard?embed=1' };
+                validTabs.unshift({
+                    id: 'dashboard',
+                    type: 'dashboard',
+                    title: 'Dashboard',
+                    icon: dashDef.icon,
+                    closable: false,
+                    url: dashDef.url
+                });
+            }
+
+            this.tabs = [];
+            this.tabCounter = (state.tabCounter && typeof state.tabCounter === 'object') ? state.tabCounter : {};
+
+            validTabs.forEach(tab => {
+                const tabDef = TAB_DEFINITIONS[tab.type] || {};
+                const restoredTab = {
+                    id: String(tab.id),
+                    type: tab.type || 'dashboard',
+                    title: tab.title || tabDef.title || 'Tab',
+                    icon: tab.icon || tabDef.icon || 'bi-window',
+                    closable: tab.id !== 'dashboard' && (tab.closable !== false),
+                    url: tab.url || tabDef.url || '/dashboard?embed=1'
+                };
+                this.tabs.push(restoredTab);
+                this.createTabIframe(restoredTab.id, restoredTab.url);
+            });
+
+            const targetActive = this.tabs.find(t => t.id === state.activeTabId) ? state.activeTabId : this.tabs[0].id;
+            this.switchTab(targetActive);
+            this.renderTabBar();
+            return true;
+        } catch (e) {
+            console.warn('Lỗi phục hồi tab cũ:', e);
+            try {
+                localStorage.removeItem('inventory_tabs_state_v1');
+            } catch (err) {}
+            return false;
+        }
+    },
+
     init() {
         if (!this.isParent()) {
             // Đang nằm trong iframe con -> cấu hình link interceptor để mở tab ở parent
             this.setupChildLinkInterceptor();
             return;
         }
+
+        // Tự động lưu trạng thái tab trước khi F5 hoặc đóng trang
+        window.addEventListener('beforeunload', () => {
+            this.saveTabsState();
+        });
 
         // Xóa sạch dữ liệu tạm dùng chung cũ nếu có
         try {
@@ -418,7 +511,12 @@ const TabManager = {
 
         this.initSidebar();
 
-        // Mở Dashboard làm tab mặc định đầu tiên
+        // Thử phục hồi danh sách các tab đang mở trước khi reload/F5
+        if (this.restoreTabsState()) {
+            return;
+        }
+
+        // Mở Dashboard làm tab mặc định đầu tiên nếu chưa có dữ liệu lưu
         this.openTab('dashboard');
     },
 
@@ -448,12 +546,14 @@ const TabManager = {
                     type: 'dashboard',
                     title: 'Dashboard',
                     icon: tabDef.icon,
-                    closable: false
+                    closable: false,
+                    url: customUrl || tabDef.url
                 });
                 this.createTabIframe('dashboard', customUrl || tabDef.url);
             }
             this.switchTab('dashboard');
             this.renderTabBar();
+            this.saveTabsState();
             return;
         }
 
@@ -463,6 +563,7 @@ const TabManager = {
         // Với các màn hình danh sách/báo cáo thông thường: nếu đã mở thì focus sang tab cũ
         if (tabType !== 'nhap-hang' && tabType !== 'xuat-hang' && !forceNew && !customUrl && existingTabs.length > 0) {
             this.switchTab(existingTabs[0].id);
+            this.saveTabsState();
             return;
         }
 
@@ -478,6 +579,7 @@ const TabManager = {
                 frame.src = finalUrl;
             }
             this.switchTab(targetTab.id);
+            this.saveTabsState();
             return;
         }
 
@@ -495,13 +597,15 @@ const TabManager = {
             type: tabType,
             title: tabTitle,
             icon: tabDef.icon,
-            closable: true
+            closable: true,
+            url: customUrl || tabDef.url
         };
 
         this.tabs.push(newTab);
         this.createTabIframe(tabId, customUrl || tabDef.url);
         this.switchTab(tabId);
         this.renderTabBar();
+        this.saveTabsState();
     },
 
     createTabIframe(tabId, url) {
@@ -564,6 +668,7 @@ const TabManager = {
         });
 
         this.renderTabBar();
+        this.saveTabsState();
     },
 
     closeTab(tabId, event) {
@@ -609,6 +714,7 @@ const TabManager = {
         } else {
             this.renderTabBar();
         }
+        this.saveTabsState();
     },
 
     renderTabBar() {
@@ -719,6 +825,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // ── Logout ────────────────────────────────────────────────────────────────────
 
 async function logout() {
+    try {
+        localStorage.removeItem('inventory_tabs_state_v1');
+    } catch (e) {}
     try {
         await apiRequest('/api/auth/logout', 'POST');
     } catch (e) {}
