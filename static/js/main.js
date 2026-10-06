@@ -2225,7 +2225,7 @@ async function submitQuickPhieuChi(event, so_phieu) {
 
 const COMPANY_INFO = {
     name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',
-    address: '454 Nguyễn Trãi, Phường Hạc Thành, Thanh Hóa (ĐKKD: 106 Phú Thọ 3)',
+    address: '106 Phú Thọ 3, Phường Hạc Thành, Thanh Hóa, Việt Nam',
     brand: 'KHO HÀNG AN NAM',
     hotline: '0386.539.555',
     email: 'contact@laptopannam.com'
@@ -2531,6 +2531,276 @@ async function exportAccountingReportToExcel({
         showToast('Lỗi khi xuất file Excel: ' + err.message, 'error');
     }
 }
+
+/**
+ * In Báo cáo tổng hợp / Sổ nhật ký theo format xuất Excel (Chuẩn Kế toán Việt Nam, giống Ảnh 2 & Ảnh 3):
+ * - Tiêu đề Báo cáo in hoa, xanh dương đậm
+ * - Đơn vị tính: Đồng
+ * - 2 hàng tiêu đề cột (Tên cột & Mã A, B, C, 1, 2, 3...)
+ * - Dòng Tổng cộng gộp nhãn
+ * - Khối ngày tháng mở sổ và 3 chữ ký: Người ghi sổ, Kế toán trưởng, Giám đốc
+ */
+function printAccountingReport({
+    title = 'BÁO CÁO TỔNG HỢP NHẬP KHO',
+    monthText = '',
+    accountText = 'Tài khoản: 156 (Hàng hoá)',
+    unitText = 'Đơn vị tính : Đồng',
+    companyName = COMPANY_INFO.name,
+    companyAddress = COMPANY_INFO.address,
+    columns = [],
+    rows = [],
+    summaryRow = null,
+    dateOpen = null,
+    dateClose = null,
+}) {
+    if (!rows || !rows.length) {
+        showToast('Không có dữ liệu để in báo cáo!', 'info');
+        return;
+    }
+
+    const now = new Date();
+    const curMonthText = monthText || `Tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
+    const defaultDateOpen = dateOpen || `Ngày mở sổ : 01/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    const defaultDateClose = dateClose || `Ngày ${String(now.getDate()).padStart(2, '0')} tháng ${String(now.getMonth() + 1).padStart(2, '0')} năm ${now.getFullYear()}`;
+
+    const formatVNDClean = (v) => {
+        if (!v || isNaN(v)) return '0';
+        return Math.round(Number(v)).toLocaleString('vi-VN');
+    };
+
+    // Tạo dòng Tổng cộng tfoot
+    let summaryHtml = '';
+    if (summaryRow && summaryRow.length) {
+        let mergeCols = 1;
+        for (let i = 1; i < summaryRow.length; i++) {
+            if (summaryRow[i] === '' || summaryRow[i] === null || summaryRow[i] === undefined || summaryRow[i] === '-') {
+                if (columns[i] && columns[i].isNumber) break;
+                mergeCols = i + 1;
+            } else {
+                break;
+            }
+        }
+
+        let sumCells = `<td colspan="${mergeCols}" style="text-align: center; font-weight: bold; border: 1px solid #000; padding: 6px;">Tổng cộng</td>`;
+        for (let i = mergeCols; i < columns.length; i++) {
+            const val = summaryRow[i];
+            const col = columns[i] || {};
+            const align = (typeof val === 'number' || col.isNumber) ? 'right' : 'center';
+            let disp = '';
+            if (typeof val === 'number') {
+                disp = Math.round(val).toLocaleString('vi-VN');
+            } else if (val !== null && val !== undefined && val !== '') {
+                disp = escapeHtml(String(val));
+            } else {
+                disp = '-';
+            }
+            sumCells += `<td style="text-align: ${align}; font-weight: bold; border: 1px solid #000; padding: 6px;">${disp}</td>`;
+        }
+        summaryHtml = `<tfoot><tr style="background-color: #f8fafc; font-weight: bold;">${sumCells}</tr></tfoot>`;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+        window.print();
+        return;
+    }
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>${escapeHtml(title)}</title>
+            <style>
+                @page {
+                    size: A4 landscape;
+                    margin: 10mm 12mm 10mm 12mm;
+                }
+                body {
+                    font-family: 'Times New Roman', Times, serif;
+                    font-size: 10.5pt;
+                    line-height: 1.35;
+                    color: #000;
+                    margin: 0;
+                    padding: 15px;
+                }
+                .header-company {
+                    margin-bottom: 12px;
+                }
+                .header-company .comp-name {
+                    font-weight: bold;
+                    font-size: 11pt;
+                    text-transform: uppercase;
+                }
+                .header-company .comp-addr {
+                    font-weight: bold;
+                    font-size: 10.5pt;
+                }
+                .report-title-area {
+                    text-align: center;
+                    margin: 10px 0 16px 0;
+                }
+                .report-title {
+                    color: #002060;
+                    font-size: 16pt;
+                    font-weight: bold;
+                    text-transform: uppercase;
+                    margin: 0 0 5px 0;
+                }
+                .report-subtitle {
+                    font-weight: bold;
+                    font-size: 11pt;
+                    margin-bottom: 3px;
+                }
+                .unit-label {
+                    text-align: right;
+                    font-weight: bold;
+                    font-size: 10.5pt;
+                    margin-bottom: 5px;
+                }
+                table.accounting-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 10pt;
+                    margin-bottom: 15px;
+                }
+                table.accounting-table th, table.accounting-table td {
+                    border: 1px solid #000;
+                    padding: 5px 6px;
+                }
+                table.accounting-table thead tr:first-child th {
+                    font-weight: bold;
+                    text-align: center;
+                    background-color: #f8fafc !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                table.accounting-table thead tr:nth-child(2) th {
+                    font-weight: bold;
+                    text-align: center;
+                    font-size: 9.5pt;
+                    background-color: #f1f5f9 !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                table.accounting-table tbody td {
+                    border-top: 1px dotted #444;
+                    border-bottom: 1px dotted #444;
+                    border-left: 1px solid #000;
+                    border-right: 1px solid #000;
+                }
+                table.accounting-table tfoot td {
+                    font-weight: bold;
+                    border: 1px solid #000;
+                    background-color: #f8fafc !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .signature-date-row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-top: 25px;
+                    font-size: 10.5pt;
+                }
+                .signature-titles-row {
+                    display: flex;
+                    justify-content: space-between;
+                    text-align: center;
+                    margin-top: 8px;
+                    font-size: 10.5pt;
+                }
+                .signature-titles-row .sign-col {
+                    width: 32%;
+                }
+                .signature-titles-row .sign-name {
+                    font-weight: bold;
+                }
+                .signature-titles-row .sign-note {
+                    font-style: italic;
+                    font-size: 9.5pt;
+                    margin-top: 2px;
+                }
+                @media print {
+                    .no-print { display: none !important; }
+                    body { padding: 0; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="no-print" style="text-align: right; margin-bottom: 15px;">
+                <button onclick="window.print()" style="padding: 8px 18px; background: #0d6efd; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
+                    In Báo Cáo
+                </button>
+            </div>
+            <div class="header-company">
+                <div class="comp-name">Đơn vị : ${escapeHtml(companyName)}</div>
+                <div class="comp-addr">Địa chỉ : ${escapeHtml(companyAddress)}</div>
+            </div>
+            <div class="report-title-area">
+                <div class="report-title">${escapeHtml(title)}</div>
+                <div class="report-subtitle">${escapeHtml(curMonthText)}</div>
+                ${accountText ? `<div class="report-subtitle">${escapeHtml(accountText)}</div>` : ''}
+            </div>
+            <div class="unit-label">${escapeHtml(unitText)}</div>
+
+            <table class="accounting-table">
+                <thead>
+                    <tr>
+                        ${columns.map(c => `<th>${escapeHtml(c.header)}</th>`).join('')}
+                    </tr>
+                    <tr>
+                        ${columns.map((c, i) => `<th>${escapeHtml(c.code || String(i + 1))}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows.map(row => `
+                        <tr>
+                            ${row.map((val, idx) => {
+                                const col = columns[idx] || {};
+                                const isNum = col.isNumber;
+                                const align = col.align || (isNum ? 'right' : 'left');
+                                const displayVal = (isNum && typeof val === 'number') ? formatVNDClean(val) : (val !== null && val !== undefined ? escapeHtml(String(val)) : '');
+                                return `<td style="text-align: ${align};">${displayVal}</td>`;
+                            }).join('')}
+                        </tr>
+                    `).join('')}
+                </tbody>
+                ${summaryHtml}
+            </table>
+
+            <div class="signature-date-row">
+                <div>${escapeHtml(defaultDateOpen)}</div>
+                <div style="text-align: center; min-width: 280px;">${escapeHtml(defaultDateClose)}</div>
+            </div>
+            <div class="signature-titles-row">
+                <div class="sign-col">
+                    <div class="sign-name">Người ghi sổ</div>
+                    <div class="sign-note">(ký, họ tên)</div>
+                </div>
+                <div class="sign-col">
+                    <div class="sign-name">Kế toán trưởng</div>
+                    <div class="sign-note">(ký, họ tên)</div>
+                </div>
+                <div class="sign-col">
+                    <div class="sign-name">Giám đốc</div>
+                    <div class="sign-note">(ký, họ tên, đóng dấu)</div>
+                </div>
+            </div>
+
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 350);
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+window.printAccountingReport = printAccountingReport;
+
 
 /**
  * Tương thích ngược: tự động ánh xạ dữ liệu json/array sang chuẩn kế toán

@@ -1,8 +1,9 @@
 /**
- * bang_nhap_kho.js - Logic cho Bảng Nhập Kho (chi tiết nhập, lọc tháng, tìm kiếm đa năng)
+ * bang_nhap_kho.js - Logic cho Bảng Nhập Kho (hiển thị theo Phiếu Nhập, preview tối đa 3 mặt hàng)
  */
 
-let importRecords = [];
+let allMonthImportRecords = []; // Dữ liệu chi tiết từng dòng mặt hàng
+let filteredImportReceipts = []; // Danh sách phiếu nhập đã gom nhóm sau khi lọc
 
 function getCurrentMonthStr() {
     const d = new Date();
@@ -11,7 +12,50 @@ function getCurrentMonthStr() {
     return `${y}-${m}`;
 }
 
-let allMonthImportRecords = [];
+/**
+ * Gom nhóm danh sách dòng hàng hóa thành danh sách Phiếu Nhập
+ */
+function groupImportRecordsByReceipt(records) {
+    const map = new Map();
+    records.forEach(r => {
+        const sp = (r.so_phieu || '').trim();
+        if (!sp) return;
+
+        if (!map.has(sp)) {
+            map.set(sp, {
+                so_phieu: sp,
+                ngay_nhap: r.ngay_nhap || '',
+                ncc_ten: r.ncc_ten || r.nha_cung_cap_id || 'Nhà cung cấp lẻ',
+                ncc_sdt: r.ncc_sdt || '',
+                ncc_dia_chi: r.ncc_dia_chi || '',
+                ghi_chu: r.ghi_chu || '',
+                items: [],
+                tong_so_luong: 0,
+                tong_thanh_tien: 0,
+                tong_cong_no: 0
+            });
+        }
+        const rc = map.get(sp);
+        const sl = parseInt(r.so_luong) || 0;
+        const giaNhap = parseFloat(r.gia_nhap) || 0;
+        const thanhTien = parseFloat(r.thanh_tien) || (sl * giaNhap);
+        const congNo = parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0;
+
+        rc.items.push({
+            ma_hang: r.ma_hang || '',
+            ten_hang: r.ten_hang || '',
+            don_vi_tinh: r.don_vi_tinh || 'Cái',
+            so_luong: sl,
+            gia_nhap: giaNhap,
+            thanh_tien: thanhTien,
+            cong_no: congNo
+        });
+        rc.tong_so_luong += sl;
+        rc.tong_thanh_tien += thanhTien;
+        rc.tong_cong_no += congNo;
+    });
+    return Array.from(map.values());
+}
 
 async function loadImportData(silent = false) {
     try {
@@ -20,7 +64,7 @@ async function loadImportData(silent = false) {
 
         const tbody = document.getElementById('import-tbody');
         if (!silent && tbody) {
-            tbody.innerHTML = '<tr><td colspan="12" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu nhập kho...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu phiếu nhập kho...</td></tr>';
         }
 
         let url = '/api/nhap-hang?';
@@ -41,75 +85,97 @@ function filterAndRenderImportTable() {
     const searchInput = document.getElementById('search-input');
     const search = (searchInput ? searchInput.value : '').toLowerCase().trim();
 
+    const allReceipts = groupImportRecordsByReceipt(allMonthImportRecords);
+
     if (!search) {
-        importRecords = allMonthImportRecords;
+        filteredImportReceipts = allReceipts;
     } else {
-        importRecords = allMonthImportRecords.filter(r => {
-            const ma = (r.ma_hang || '').toLowerCase();
-            const ten = (r.ten_hang || '').toLowerCase();
-            const so_phieu = (r.so_phieu || '').toLowerCase();
-            const ncc_ten = (r.ncc_ten || r.nha_cung_cap_id || '').toLowerCase();
-            const ncc_sdt = (r.ncc_sdt || '').toLowerCase();
-            const ncc_dia_chi = (r.ncc_dia_chi || '').toLowerCase();
-            const ghi_chu = (r.ghi_chu || '').toLowerCase();
-            return ma.includes(search) || ten.includes(search) || so_phieu.includes(search) ||
-                   ncc_ten.includes(search) || ncc_sdt.includes(search) || ncc_dia_chi.includes(search) || ghi_chu.includes(search);
+        filteredImportReceipts = allReceipts.filter(rc => {
+            const sp = (rc.so_phieu || '').toLowerCase();
+            const ncc = (rc.ncc_ten || '').toLowerCase();
+            const sdt = (rc.ncc_sdt || '').toLowerCase();
+            const addr = (rc.ncc_dia_chi || '').toLowerCase();
+            const note = (rc.ghi_chu || '').toLowerCase();
+            if (sp.includes(search) || ncc.includes(search) || sdt.includes(search) || addr.includes(search) || note.includes(search)) {
+                return true;
+            }
+            return rc.items.some(it => {
+                const ma = (it.ma_hang || '').toLowerCase();
+                const ten = (it.ten_hang || '').toLowerCase();
+                return ma.includes(search) || ten.includes(search);
+            });
         });
     }
 
     renderImportTable();
 }
 
-function renderImportTable(apiRes) {
+function renderImportTable() {
     const month = document.getElementById('filter-month')?.value || '';
     const monthLabel = month ? `tháng ${month.split('-')[1]}/${month.split('-')[0]}` : 'tất cả các tháng';
-    document.getElementById('stat-month-label').textContent = monthLabel;
+    const monthLabelEl = document.getElementById('stat-month-label');
+    if (monthLabelEl) monthLabelEl.textContent = monthLabel;
 
-    const count = importRecords.length;
-    const totalQty = (apiRes && apiRes.tong_so_luong !== undefined) ? apiRes.tong_so_luong : importRecords.reduce((sum, r) => sum + (parseInt(r.so_luong) || 0), 0);
-    const totalCost = (apiRes && apiRes.tong_thanh_tien !== undefined) ? apiRes.tong_thanh_tien : importRecords.reduce((sum, r) => sum + (parseFloat(r.thanh_tien) || 0), 0);
-    const totalDebt = (apiRes && apiRes.tong_cong_no !== undefined) ? apiRes.tong_cong_no : importRecords.reduce((sum, r) => sum + (parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0), 0);
+    const receiptCount = filteredImportReceipts.length;
+    const totalQty = filteredImportReceipts.reduce((sum, r) => sum + r.tong_so_luong, 0);
+    const totalCost = filteredImportReceipts.reduce((sum, r) => sum + r.tong_thanh_tien, 0);
+    const totalDebt = filteredImportReceipts.reduce((sum, r) => sum + r.tong_cong_no, 0);
 
-    // Cập nhật card trên đầu
-    document.getElementById('stat-count').textContent = formatNumber(count);
-    document.getElementById('stat-qty').textContent = formatNumber(totalQty);
-    document.getElementById('stat-cost').textContent = formatVND(totalCost);
-    document.getElementById('total-count').textContent = count;
+    // Cập nhật card trên đầu (Số Phiếu Nhập, Tổng SL, Tổng Tiền)
+    const statCountEl = document.getElementById('stat-count');
+    if (statCountEl) statCountEl.textContent = formatNumber(receiptCount);
+
+    const statQtyEl = document.getElementById('stat-qty');
+    if (statQtyEl) statQtyEl.textContent = formatNumber(totalQty);
+
+    const statCostEl = document.getElementById('stat-cost');
+    if (statCostEl) statCostEl.textContent = formatVND(totalCost);
+
+    const totalCountBadge = document.getElementById('total-count');
+    if (totalCountBadge) totalCountBadge.textContent = receiptCount;
 
     // Cập nhật footer
     const tfoot = document.getElementById('import-tfoot');
-    if (count > 0) {
-        tfoot.style.display = '';
-        document.getElementById('tf-qty').textContent = formatNumber(totalQty);
-        document.getElementById('tf-val').textContent = formatVND(totalCost);
+    if (receiptCount > 0) {
+        if (tfoot) tfoot.style.display = '';
+        const tfQty = document.getElementById('tf-qty');
+        if (tfQty) tfQty.textContent = formatNumber(totalQty);
+
+        const tfVal = document.getElementById('tf-val');
+        if (tfVal) tfVal.textContent = formatVND(totalCost);
+
         const tfDebt = document.getElementById('tf-debt');
         if (tfDebt) tfDebt.textContent = formatVND(totalDebt);
     } else {
-        tfoot.style.display = 'none';
+        if (tfoot) tfoot.style.display = 'none';
     }
 
     const tbody = document.getElementById('import-tbody');
-    if (count === 0) {
-        tbody.innerHTML = `<tr><td colspan="12" class="text-center text-muted py-5">
+    if (!tbody) return;
+
+    if (receiptCount === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted py-5">
             <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
-            Không tìm thấy dữ liệu nhập kho phù hợp
+            Không tìm thấy phiếu nhập kho phù hợp
         </td></tr>`;
         return;
     }
 
-    tbody.innerHTML = importRecords.map((r, idx) => {
-        const sl = parseInt(r.so_luong) || 0;
-        const giaNhap = parseFloat(r.gia_nhap) || 0;
-        const thanhTien = parseFloat(r.thanh_tien) || 0;
-        const congNo = parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0;
-        const debtHtml = congNo > 0
-            ? `<span class="fw-bold text-danger font-monospace">${formatVND(congNo)}</span>`
-            : `<span class="text-muted font-monospace">0 đ</span>`;
+    tbody.innerHTML = filteredImportReceipts.map((r, idx) => {
+        const debtHtml = r.tong_cong_no > 0
+            ? `<span class="fw-bold text-danger font-monospace text-nowrap">${formatVND(r.tong_cong_no)}</span>`
+            : `<span class="text-muted font-monospace text-nowrap">0 đ</span>`;
 
-        // Định dạng thông tin đơn vị nhập (Tên, SĐT, Địa chỉ)
-        const nccTen = r.ncc_ten || r.nha_cung_cap_id || 'Nhà cung cấp lẻ';
-        const nccSdt = r.ncc_sdt || '';
-        const nccDiaChi = r.ncc_dia_chi || '';
+        // Preview tối đa 3 tên đầu tiên trong danh sách, mỗi tên 1 dòng, nếu có nhiều hơn 3 thì thêm dấu 3 chấm
+        const previewItems = r.items.slice(0, 3);
+        const hasMore = r.items.length > 3;
+        const itemsHtml = previewItems.map(it => `
+            <div class="text-truncate py-0 my-0" title="${escapeHtml(it.ten_hang)}">
+                <span class="text-secondary me-1">•</span><span class="fw-semibold text-dark">${escapeHtml(it.ten_hang)}</span>
+            </div>
+        `).join('') + (hasMore ? `<div class="text-muted small fw-bold ps-2 pt-0">...</div>` : '');
+
+        const nccPhoneHtml = r.ncc_sdt ? `<div class="text-muted small font-monospace"><i class="bi bi-telephone me-1 text-primary"></i>${escapeHtml(r.ncc_sdt)}</div>` : '';
 
         return `
             <tr>
@@ -120,16 +186,21 @@ function renderImportTable(apiRes) {
                         <i class="bi bi-file-earmark-text me-1"></i>${escapeHtml(r.so_phieu)}
                     </button>
                 </td>
-                <td><span class="badge bg-secondary font-monospace">${escapeHtml(r.ma_hang)}</span></td>
-                <td class="fw-semibold text-dark">${escapeHtml(r.ten_hang)}</td>
-                <td class="text-center text-muted small">${escapeHtml(r.don_vi_tinh || 'Cái')}</td>
-                <td class="text-center fw-bold fs-6 text-primary font-monospace">${formatNumber(sl)}</td>
-                <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(giaNhap)}</td>
-                <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
-                <td class="text-end font-monospace text-nowrap" style="white-space: nowrap; min-width: 145px;">${debtHtml}</td>
+                <td>
+                    <div class="fw-bold text-dark text-truncate" style="max-width: 210px;" title="${escapeHtml(r.ncc_ten)}">${escapeHtml(r.ncc_ten)}</div>
+                    ${nccPhoneHtml}
+                </td>
+                <td>
+                    <div class="d-flex flex-column gap-1" style="max-width: 380px;">
+                        ${itemsHtml}
+                    </div>
+                </td>
+                <td class="text-center fw-bold fs-6 text-primary font-monospace">${formatNumber(r.tong_so_luong)}</td>
+                <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(r.tong_thanh_tien)}</td>
+                <td class="text-end font-monospace text-nowrap" style="white-space: nowrap;">${debtHtml}</td>
                 <td class="text-center no-print">
                     <div class="d-flex justify-content-center gap-1">
-                        <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu nhập">
+                        <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewReceipt('${escapeHtml(r.so_phieu)}')" title="Xem chi tiết & in phiếu">
                             <i class="bi bi-eye"></i>
                         </button>
                         <button class="btn btn-xs btn-outline-danger btn-sm" onclick="confirmDeleteReceipt('${escapeHtml(r.so_phieu)}', 'nhap', () => loadImportData())" title="Xóa phiếu nhập">
@@ -165,24 +236,26 @@ function clearSearch() {
     loadImportData();
 }
 
-function printImportReport() {
-    printReceiptModal('printable-import-area', 'Sổ Báo Cáo Nhập Kho');
-}
-
-function exportImportToExcel() {
-    if (!importRecords || !importRecords.length) {
-        showToast('Không có dữ liệu nhập kho để xuất Excel!', 'info');
-        return;
+/**
+ * Lấy các dòng dữ liệu chi tiết tương ứng với các phiếu đang hiển thị để xuất Excel & In
+ */
+function getReportExportData() {
+    if (!filteredImportReceipts || !filteredImportReceipts.length) {
+        return null;
     }
+
+    // Lọc lại các dòng item thuộc về các phiếu đang được hiển thị
+    const validSoPhieuSet = new Set(filteredImportReceipts.map(r => r.so_phieu));
+    const itemsToExport = allMonthImportRecords.filter(r => validSoPhieuSet.has(r.so_phieu));
 
     let totalQty = 0;
     let totalThanhTien = 0;
     let totalDebt = 0;
 
-    const rows = importRecords.map((r, idx) => {
+    const rows = itemsToExport.map((r, idx) => {
         const sl = parseInt(r.so_luong) || 0;
         const giaNhap = parseFloat(r.gia_nhap) || 0;
-        const thanhTien = parseFloat(r.thanh_tien) || 0;
+        const thanhTien = parseFloat(r.thanh_tien) || (sl * giaNhap);
         const congNo = parseFloat(r.cong_no !== undefined ? r.cong_no : r.thanh_tien) || 0;
 
         totalQty += sl;
@@ -199,7 +272,7 @@ function exportImportToExcel() {
             giaNhap,
             thanhTien,
             congNo,
-            r.ncc_ten || 'Không xác định'
+            r.ncc_ten || r.nha_cung_cap_id || 'Nhà cung cấp lẻ'
         ];
     });
 
@@ -215,26 +288,68 @@ function exportImportToExcel() {
         fileSuffix = `${y}_${m}`;
     }
 
-    exportAccountingReportToExcel({
-        title: 'BẢNG KÊ CHI TIẾT NHẬP KHO HÀNG HÓA',
-        monthText: monthLabel,
-        accountText: 'Tài khoản: 156 (Hàng hoá)',
-        unitText: 'Đơn vị tính : Đồng',
-        columns: [
-            { header: 'STT', code: 'A', width: 8, align: 'center' },
-            { header: 'Ngày nhập', code: 'B', width: 14, align: 'center' },
-            { header: 'Số phiếu', code: 'C', width: 16, align: 'center' },
-            { header: 'Tên vật tư, hàng hóa', code: 'D', width: 45, align: 'left', wrapText: true },
-            { header: 'ĐVT', code: 'E', width: 10, align: 'center' },
-            { header: 'Số lượng', code: '1', width: 12, align: 'right', isNumber: true },
-            { header: 'Đơn giá nhập', code: '2', width: 16, align: 'right', isNumber: true },
-            { header: 'Thành tiền', code: '3', width: 20, align: 'right', isNumber: true },
-            { header: 'Công nợ', code: '4', width: 18, align: 'right', isNumber: true },
-            { header: 'Nhà cung cấp', code: '5', width: 25, align: 'left', wrapText: true }
-        ],
+    const columns = [
+        { header: 'STT', code: 'A', width: 8, align: 'center' },
+        { header: 'Ngày nhập', code: 'B', width: 14, align: 'center' },
+        { header: 'Số phiếu', code: 'C', width: 16, align: 'center' },
+        { header: 'Tên vật tư, hàng hóa', code: 'D', width: 45, align: 'left', wrapText: true },
+        { header: 'ĐVT', code: 'E', width: 10, align: 'center' },
+        { header: 'Số lượng', code: '1', width: 12, align: 'right', isNumber: true },
+        { header: 'Đơn giá nhập', code: '2', width: 16, align: 'right', isNumber: true },
+        { header: 'Thành tiền', code: '3', width: 20, align: 'right', isNumber: true },
+        { header: 'Công nợ', code: '4', width: 18, align: 'right', isNumber: true },
+        { header: 'Nhà cung cấp', code: '5', width: 25, align: 'left', wrapText: true }
+    ];
+
+    return {
         rows,
         summaryRow,
-        fileName: `Bang_Ke_Nhap_Kho_${fileSuffix}.xlsx`,
+        columns,
+        monthLabel,
+        fileSuffix
+    };
+}
+
+/**
+ * In Bảng Nhập Kho theo format xuất Excel (Chuẩn Kế Toán Việt Nam, giống Ảnh 2 & Ảnh 3)
+ */
+function printImportReport() {
+    const data = getReportExportData();
+    if (!data || !data.rows.length) {
+        showToast('Không có dữ liệu nhập kho để in!', 'info');
+        return;
+    }
+
+    printAccountingReport({
+        title: 'BÁO CÁO TỔNG HỢP NHẬP KHO',
+        monthText: data.monthLabel,
+        accountText: 'Tài khoản: 156 (Hàng hoá)',
+        unitText: 'Đơn vị tính : Đồng',
+        columns: data.columns,
+        rows: data.rows,
+        summaryRow: data.summaryRow
+    });
+}
+
+/**
+ * Xuất Bảng Nhập Kho ra Excel (Chuẩn Kế Toán Việt Nam, giống Ảnh 2 & Ảnh 3)
+ */
+function exportImportToExcel() {
+    const data = getReportExportData();
+    if (!data || !data.rows.length) {
+        showToast('Không có dữ liệu nhập kho để xuất Excel!', 'info');
+        return;
+    }
+
+    exportAccountingReportToExcel({
+        title: 'BÁO CÁO TỔNG HỢP NHẬP KHO',
+        monthText: data.monthLabel,
+        accountText: 'Tài khoản: 156 (Hàng hoá)',
+        unitText: 'Đơn vị tính : Đồng',
+        columns: data.columns,
+        rows: data.rows,
+        summaryRow: data.summaryRow,
+        fileName: `Bao_Cao_Tong_Hop_Nhap_Kho_${data.fileSuffix}.xlsx`,
         sheetName: 'NhapKho'
     });
 }
@@ -255,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
     window.addEventListener('message', (e) => {
-        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED')) {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
             loadImportData(true);
         }
     });
@@ -264,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof BroadcastChannel !== 'undefined') {
             const bc = new BroadcastChannel('inventory_sync');
             bc.onmessage = (e) => {
-                if (e.data && e.data.type === 'PRODUCTS_UPDATED') {
+                if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
                     loadImportData(true);
                 }
             };

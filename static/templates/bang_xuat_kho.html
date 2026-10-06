@@ -8,7 +8,7 @@
     <div class="col-md-3">
         <div class="card stat-card border-0 shadow-sm" style="border-left: 4px solid var(--danger) !important;">
             <div class="card-body p-3">
-                <div class="text-muted small fw-semibold text-uppercase">Số Lần / Dòng Xuất</div>
+                <div class="text-muted small fw-semibold text-uppercase">Số Phiếu Xuất</div>
                 <div class="fs-3 fw-bold text-dark font-monospace mt-1" id="stat-count">0</div>
                 <span id="stat-month-label" class="d-none"></span>
             </div>
@@ -73,7 +73,7 @@
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
                     <input type="text" class="form-control border-start-0" id="search-input"
-                        placeholder="Tìm hàng đã xuất, tên khách xuất, số điện thoại, địa chỉ của khách, số phiếu...">
+                        placeholder="Tìm theo số phiếu, tên khách hàng, SĐT, hoặc tên/mã mặt hàng xuất...">
                     <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()" title="Xóa tìm kiếm">
                         <i class="bi bi-x-lg"></i>
                     </button>
@@ -92,26 +92,23 @@
                 <thead style="background-color: #1e293b !important; color: #ffffff !important;">
                     <tr style="background-color: #1e293b !important;">
                         <th class="text-center" style="width: 45px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
-                        <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Ngày Xuất</th>
-                        <th style="width: 140px; background-color: #1e293b !important; color: #ffffff !important;">Số Phiếu</th>
-                        <th style="width: 100px; background-color: #1e293b !important; color: #ffffff !important;">Mã Hàng</th>
-                        <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Hàng Hóa</th>
-                        <th class="text-center" style="width: 65px; background-color: #1e293b !important; color: #ffffff !important;">ĐVT</th>
-                        <th class="text-center" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">SL</th>
-                        <th class="text-end text-nowrap" style="width: 130px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Đơn Giá Bán</th>
-                        <th class="text-end text-nowrap" style="min-width: 160px; width: 165px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Thành Tiền</th>
+                        <th style="width: 105px; background-color: #1e293b !important; color: #ffffff !important;">Ngày Xuất</th>
+                        <th style="width: 130px; background-color: #1e293b !important; color: #ffffff !important;">Số Phiếu</th>
+                        <th style="width: 190px; background-color: #1e293b !important; color: #ffffff !important;">Khách Hàng</th>
+                        <th style="background-color: #1e293b !important; color: #ffffff !important;">Hàng Hóa Xuất</th>
+                        <th class="text-center" style="width: 80px; background-color: #1e293b !important; color: #ffffff !important;">Tổng SL</th>
+                        <th class="text-end text-nowrap" style="min-width: 155px; width: 165px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Tổng Tiền</th>
                         <th class="text-end text-nowrap" style="min-width: 145px; width: 150px; background-color: #1e293b !important; color: #ffffff !important; white-space: nowrap;">Khách Nợ</th>
                         <th class="text-center no-print" style="width: 80px; background-color: #1e293b !important; color: #ffffff !important;">Chi Tiết</th>
                     </tr>
                 </thead>
                 <tbody id="export-tbody">
-                    <tr><td colspan="11" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-danger me-2"></div>Đang tải dữ liệu xuất kho...</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-danger me-2"></div>Đang tải dữ liệu xuất kho...</td></tr>
                 </tbody>
                 <tfoot class="table-light fw-bold border-top border-2" id="export-tfoot" style="display: none;">
                     <tr>
-                        <td colspan="6" class="text-end text-uppercase small text-secondary">Tổng cộng:</td>
+                        <td colspan="5" class="text-end text-uppercase small text-secondary">Tổng cộng:</td>
                         <td class="text-center text-danger fs-6 font-monospace" id="tf-qty">0</td>
-                        <td></td>
                         <td class="text-end text-danger fs-5 font-monospace text-nowrap" id="tf-val">0 đ</td>
                         <td class="text-end text-danger fs-5 font-monospace text-nowrap" id="tf-debt">0 đ</td>
                         <td class="no-print"></td>
@@ -143,5 +140,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/bang_xuat_kho.js?v=20261006_v7"></script>
+<script src="/static/js/bang_xuat_kho.js?v=20261006_v8"></script>
 {% endblock %}
