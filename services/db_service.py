@@ -2175,22 +2175,38 @@ class DatabaseManager:
                     try:
                         records = sheets_service.get_all_records(SHEET_SO_QUY, force_refresh=True)
                         cursor.execute("DELETE FROM SoQuy")
-                        for r in records:
+                        for idx, r in enumerate(records):
+                            rec_id = str(r.get("id") or r.get("ID") or "").strip()
+                            ma_phieu = str(r.get("ma_phieu") or r.get("Mã Phiếu") or r.get("so_phieu") or r.get("Số Phiếu") or "").strip()
+                            if not rec_id:
+                                rec_id = ma_phieu or f"SQ_{int(time.time()*1000)}_{idx+1}"
+                            if not ma_phieu:
+                                ma_phieu = f"PH_{rec_id}"
+
+                            ngay = str(r.get("ngay") or r.get("Ngày") or "").strip()
+                            loai_phieu = str(r.get("loai_phieu") or r.get("Loại Phiếu") or "THU").strip().upper()
+                            loai_quy = str(r.get("loai_quy") or r.get("Loại Quỹ") or "TIEN_MAT").strip().upper()
+                            doi_tuong = str(r.get("doi_tuong") or r.get("Đối Tượng") or "").strip()
+                            dien_thoai = str(r.get("dien_thoai") or r.get("Điện Thoại") or "").strip()
+                            so_tien = _safe_float(r.get("so_tien") if r.get("so_tien") is not None else (r.get("Số Tiền (đ)") or r.get("Số Tiền")))
+                            phieu_lien_quan = str(r.get("phieu_lien_quan") or r.get("Phiếu Liên Quan") or "").strip()
+                            ghi_chu = str(r.get("ghi_chu") or r.get("Ghi Chú") or "").strip()
+
                             cursor.execute("""
                                 INSERT OR REPLACE INTO SoQuy
                                 (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
-                                str(r.get("id") or ""),
-                                str(r.get("ma_phieu") or ""),
-                                str(r.get("ngay") or ""),
-                                str(r.get("loai_phieu") or ""),
-                                str(r.get("loai_quy") or "TIEN_MAT"),
-                                str(r.get("doi_tuong") or ""),
-                                str(r.get("dien_thoai") or ""),
-                                _safe_float(r.get("so_tien")),
-                                str(r.get("phieu_lien_quan") or ""),
-                                str(r.get("ghi_chu") or "")
+                                rec_id,
+                                ma_phieu,
+                                ngay,
+                                loai_phieu,
+                                loai_quy,
+                                doi_tuong,
+                                dien_thoai,
+                                so_tien,
+                                phieu_lien_quan,
+                                ghi_chu
                             ))
                         counts["SoQuy"] = len(records)
                     except Exception as e:

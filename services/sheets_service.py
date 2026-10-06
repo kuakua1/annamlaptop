@@ -185,9 +185,12 @@ COLUMN_ALIAS_MAP = {
     "sđt": "dien_thoai",
     "email": "email",
     # SoQuy
+    "mã phiếu": "ma_phieu",
+    "ma_phieu": "ma_phieu",
     "ngày": "ngay",
     "ngày thu/chi": "ngay",
     "loại phiếu": "loai_phieu",
+    "loai_phieu": "loai_phieu",
     "loại quỹ": "loai_quy",
     "loai_quy": "loai_quy",
     "đối tượng": "doi_tuong",
