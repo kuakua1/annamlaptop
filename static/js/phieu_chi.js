@@ -570,63 +570,95 @@ function resetFormPhieuChi() {
     checkSufficientBalance();
 }
 
-// ── Tải Phiếu Chi Gần Đây ───────────────────────────────────────────────────
+// ── Receipts list & Pagination ────────────────────────────────────────────────
+
+let allChiList = [];
+let chiCurrentPage = 1;
+const CHI_PAGE_SIZE = 5;
 
 async function loadRecentChi() {
-    const tbody = document.getElementById('tbody-recent-chi');
-    if (!tbody) return;
-
     try {
         const res = await apiRequest('/api/phieu-chi');
-        if (res.success && Array.isArray(res.data)) {
-            if (res.data.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="text-center py-4 text-muted">
-                            <i class="bi bi-inbox fs-3 d-block mb-1"></i> Chưa có phiếu chi nào
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
+        const records = (res.success && Array.isArray(res.data)) ? res.data : [];
 
-            tbody.innerHTML = res.data.slice(0, 30).map(r => {
-                const loaiBadge = r.loai_quy === 'TIEN_MAT'
-                    ? '<span class="badge bg-danger-subtle text-danger border border-danger">CM</span>'
-                    : '<span class="badge bg-warning-subtle text-dark border border-warning">CG</span>';
+        // Sắp xếp: Phiếu mới nhất luôn ở trên đầu (theo ngày và mã phiếu giảm dần)
+        allChiList = records.sort((a, b) => {
+            const dateA = a.ngay || '';
+            const dateB = b.ngay || '';
+            if (dateB !== dateA) return dateB.localeCompare(dateA);
+            return (b.ma_phieu || '').localeCompare(a.ma_phieu || '');
+        });
 
-                return `
-                    <tr>
-                        <td>
-                            <div class="fw-bold font-monospace text-danger">${escapeHtml(r.ma_phieu || '')}</div>
-                            ${loaiBadge}
-                        </td>
-                        <td class="small text-muted">${formatDate(r.ngay)}</td>
-                        <td>
-                            <div class="fw-semibold">${escapeHtml(r.doi_tuong || '')}</div>
-                            <small class="text-muted">${r.dien_thoai ? '📞 ' + escapeHtml(r.dien_thoai) : ''}</small>
-                        </td>
-                        <td class="text-end fw-bold text-danger">
-                            ${formatVND(r.so_tien)}
-                        </td>
-                        <td class="text-center">
-                            <button class="btn btn-sm btn-outline-info p-1 px-2" title="Xem chi tiết" onclick="viewDetailChi('${r.id}')">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
+        renderChiPage(1);
     } catch (e) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" class="text-center py-3 text-danger">
-                    Lỗi tải phiếu chi gần đây: ${e.message}
-                </td>
-            </tr>
-        `;
+        console.error('Lỗi tải phiếu chi:', e);
+        const container = document.getElementById('receipts-list');
+        if (container) container.innerHTML = `<p class="text-danger small text-center py-4">Lỗi tải dữ liệu: ${e.message}</p>`;
     }
+}
+
+function renderChiPage(page) {
+    chiCurrentPage = page;
+    const container = document.getElementById('receipts-list');
+    const paginationContainer = document.getElementById('receipts-pagination');
+    const summaryContainer = document.getElementById('receipts-page-summary');
+    if (!container) return;
+
+    if (!allChiList.length) {
+        container.innerHTML = '<p class="text-muted small text-center py-4">Chưa có phiếu chi nào</p>';
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        if (summaryContainer) summaryContainer.textContent = '';
+        return;
+    }
+
+    const totalPages = Math.ceil(allChiList.length / CHI_PAGE_SIZE);
+    if (chiCurrentPage > totalPages) chiCurrentPage = totalPages;
+    if (chiCurrentPage < 1) chiCurrentPage = 1;
+
+    const startIdx = (chiCurrentPage - 1) * CHI_PAGE_SIZE;
+    const pageItems = allChiList.slice(startIdx, startIdx + CHI_PAGE_SIZE);
+
+    container.innerHTML = pageItems.map(r => {
+        const loaiBadge = r.loai_quy === 'TIEN_MAT'
+            ? '<span class="badge bg-danger-subtle text-danger border border-danger px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">CM</span>'
+            : '<span class="badge bg-warning-subtle text-dark border border-warning px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">CG</span>';
+
+        return `
+            <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailChi('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
+                <!-- Dòng 1: Ngày + ID phiếu + Quỹ (trái) và Số tiền (phải) -->
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="d-flex align-items-center gap-1.5 flex-wrap">
+                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
+                            <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
+                        </span>
+                        <span class="fw-bold text-danger font-monospace ms-1" style="font-size: 0.85rem;">${escapeHtml(r.ma_phieu || '')}</span>
+                        ${loaiBadge}
+                    </div>
+                    <div class="text-end">
+                        <span class="fw-bold text-danger font-monospace" style="font-size: 0.95rem;">${formatVND(r.so_tien)}</span>
+                    </div>
+                </div>
+
+                <!-- Dòng 2: Người nhận (trái) + Nút thao tác (phải) -->
+                <div class="d-flex justify-content-between align-items-center pt-1 border-top border-light">
+                    <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.doi_tuong || 'Nhà cung cấp')}">
+                        <i class="bi bi-building text-secondary me-1"></i>${escapeHtml(r.doi_tuong || 'Nhà cung cấp')}
+                    </div>
+                    <div class="d-flex align-items-center gap-2 text-nowrap">
+                        <button class="btn btn-xs btn-outline-danger py-0 px-1.5" style="font-size: 0.725rem; line-height: 1.4;" onclick="event.stopPropagation(); confirmDeletePhieuChi('${r.id}', '${r.ma_phieu}')" title="Xóa phiếu chi">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                        <span class="text-danger fw-semibold" style="font-size: 0.75rem;">Chi tiết <i class="bi bi-chevron-right" style="font-size: 0.65rem;"></i></span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (summaryContainer) {
+        summaryContainer.textContent = `Trang ${chiCurrentPage}/${totalPages} (${allChiList.length} phiếu)`;
+    }
+    renderPagination('receipts-pagination', chiCurrentPage, totalPages, renderChiPage);
 }
 
 async function viewDetailChi(recordId) {

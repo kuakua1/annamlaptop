@@ -111,38 +111,21 @@
         </div>
     </div>
 
-    <!-- Cột phải: Danh sách phiếu chi gần đây -->
+    <!-- Right: Recent receipts -->
     <div class="col-lg-5">
         <div class="card shadow-sm border-0 receipt-history-card">
-            <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center">
-                <span class="fw-bold fs-6">
-                    <i class="bi bi-clock-history me-2 text-danger"></i>Phiếu Chi Gần Đây
-                </span>
-                <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="loadRecentChi()" title="Tải lại">
-                    <i class="bi bi-arrow-repeat"></i>
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2 px-3">
+                <span class="fw-bold"><i class="bi bi-list-ul text-danger me-2"></i>Phiếu Chi Gần Đây</span>
+                <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="loadRecentChi()" title="Làm mới">
+                    <i class="bi bi-arrow-clockwise"></i>
                 </button>
             </div>
-            <div class="card-body p-0">
-                <div class="table-responsive receipt-history-body">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light sticky-top">
-                            <tr>
-                                <th>Mã Phiếu</th>
-                                <th>Ngày</th>
-                                <th>Người Nhận</th>
-                                <th class="text-end">Số Tiền</th>
-                                <th class="text-center" style="width: 50px;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbody-recent-chi">
-                            <tr>
-                                <td colspan="5" class="text-center py-4 text-muted">
-                                    <div class="spinner-border spinner-border-sm text-danger me-2"></div> Đang tải danh sách...
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="card-body p-2 receipt-history-body" id="receipts-list">
+                <p class="text-muted small text-center py-3">Đang tải...</p>
+            </div>
+            <div class="card-footer bg-white border-top py-1 px-3 d-flex justify-content-between align-items-center" id="receipts-pagination-wrap">
+                <small class="text-muted fw-semibold" id="receipts-page-summary"></small>
+                <div id="receipts-pagination"></div>
             </div>
         </div>
     </div>
@@ -166,5 +149,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/phieu_chi.js?v=20261006_v3"></script>
+<script src="/static/js/phieu_chi.js?v=20261006_v5"></script>
 {% endblock %}

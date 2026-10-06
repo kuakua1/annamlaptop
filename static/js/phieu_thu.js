@@ -448,60 +448,120 @@ function resetFormPhieuThu() {
 
 // ── Tải Phiếu Thu Gần Đây ───────────────────────────────────────────────────
 
-async function loadRecentReceipts() {
-    const tbody = document.getElementById('tbody-recent-receipts');
-    if (!tbody) return;
+// ── Receipts list & Pagination ────────────────────────────────────────────────
 
+let allReceiptsList = [];
+let receiptsCurrentPage = 1;
+const RECEIPTS_PAGE_SIZE = 5;
+
+async function loadRecentReceipts() {
     try {
         const res = await apiRequest('/api/phieu-thu');
-        if (res.success && Array.isArray(res.data)) {
-            if (res.data.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="text-center py-4 text-muted">
-                            <i class="bi bi-inbox fs-3 d-block mb-1"></i> Chưa có phiếu thu nào
-                        </td>
-                    </tr>
-                `;
-                return;
+        const records = (res.success && Array.isArray(res.data)) ? res.data : [];
+
+        // Sắp xếp: Phiếu mới nhất luôn ở trên đầu (theo ngày và mã phiếu giảm dần)
+        allReceiptsList = records.sort((a, b) => {
+            const dateA = a.ngay || '';
+            const dateB = b.ngay || '';
+            if (dateB !== dateA) return dateB.localeCompare(dateA);
+            return (b.ma_phieu || '').localeCompare(a.ma_phieu || '');
+        });
+
+        renderReceiptsPage(1);
+    } catch (e) {
+        console.error('Lỗi tải phiếu thu:', e);
+        const container = document.getElementById('receipts-list');
+        if (container) container.innerHTML = `<p class="text-danger small text-center py-4">Lỗi tải dữ liệu: ${e.message}</p>`;
+    }
+}
+
+function renderReceiptsPage(page) {
+    receiptsCurrentPage = page;
+    const container = document.getElementById('receipts-list');
+    const paginationContainer = document.getElementById('receipts-pagination');
+    const summaryContainer = document.getElementById('receipts-page-summary');
+    if (!container) return;
+
+    if (!allReceiptsList.length) {
+        container.innerHTML = '<p class="text-muted small text-center py-4">Chưa có phiếu thu nào</p>';
+        if (paginationContainer) paginationContainer.innerHTML = '';
+        if (summaryContainer) summaryContainer.textContent = '';
+        return;
+    }
+
+    const totalPages = Math.ceil(allReceiptsList.length / RECEIPTS_PAGE_SIZE);
+    if (receiptsCurrentPage > totalPages) receiptsCurrentPage = totalPages;
+    if (receiptsCurrentPage < 1) receiptsCurrentPage = 1;
+
+    const startIdx = (receiptsCurrentPage - 1) * RECEIPTS_PAGE_SIZE;
+    const pageItems = allReceiptsList.slice(startIdx, startIdx + RECEIPTS_PAGE_SIZE);
+
+    container.innerHTML = pageItems.map(r => {
+        const loaiBadge = r.loai_quy === 'TIEN_MAT'
+            ? '<span class="badge bg-success-subtle text-success border border-success px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">TM</span>'
+            : '<span class="badge bg-primary-subtle text-primary border border-primary px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">TG</span>';
+
+        return `
+            <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailReceipt('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
+                <!-- Dòng 1: Ngày + ID phiếu + Quỹ (trái) và Số tiền (phải) -->
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="d-flex align-items-center gap-1.5 flex-wrap">
+                        <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
+                            <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
+                        </span>
+                        <span class="fw-bold text-primary font-monospace ms-1" style="font-size: 0.85rem;">${escapeHtml(r.ma_phieu || '')}</span>
+                        ${loaiBadge}
+                    </div>
+                    <div class="text-end">
+                        <span class="fw-bold text-success font-monospace" style="font-size: 0.95rem;">${formatVND(r.so_tien)}</span>
+                    </div>
+                </div>
+
+                <!-- Dòng 2: Người nộp (trái) + Nút thao tác (phải) -->
+                <div class="d-flex justify-content-between align-items-center pt-1 border-top border-light">
+                    <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.doi_tuong || 'Khách lẻ')}">
+                        <i class="bi bi-person text-secondary me-1"></i>${escapeHtml(r.doi_tuong || 'Khách lẻ')}
+                    </div>
+                    <div class="d-flex align-items-center gap-2 text-nowrap">
+                        <button class="btn btn-xs btn-outline-danger py-0 px-1.5" style="font-size: 0.725rem; line-height: 1.4;" onclick="event.stopPropagation(); confirmDeletePhieuThu('${r.id}', '${r.ma_phieu}')" title="Xóa phiếu thu">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                        <span class="text-primary fw-semibold" style="font-size: 0.75rem;">Chi tiết <i class="bi bi-chevron-right" style="font-size: 0.65rem;"></i></span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (summaryContainer) {
+        summaryContainer.textContent = `Trang ${receiptsCurrentPage}/${totalPages} (${allReceiptsList.length} phiếu)`;
+    }
+    renderPagination('receipts-pagination', receiptsCurrentPage, totalPages, renderReceiptsPage);
+}
+
+async function confirmDeletePhieuThu(recordId, maPhieu) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa phiếu thu ${maPhieu}?\nNếu phiếu có liên quan đến phiếu xuất kho, số tiền nợ sẽ được hoàn lại và quỹ tiền sẽ được khấu trừ lại.`)) {
+        return;
+    }
+
+    try {
+        const res = await apiRequest(`/api/so-quy/${encodeURIComponent(recordId)}`, 'DELETE');
+        if (res.success) {
+            showToast(`Đã xóa thành công phiếu thu ${maPhieu}`, 'success');
+            const modalEl = document.getElementById('modal-detail-phieu-thu');
+            if (modalEl) {
+                const bsModal = bootstrap.Modal.getInstance(modalEl);
+                if (bsModal) bsModal.hide();
             }
-
-            tbody.innerHTML = res.data.slice(0, 30).map(r => {
-                const loaiBadge = r.loai_quy === 'TIEN_MAT'
-                    ? '<span class="badge bg-success-subtle text-success border border-success">TM</span>'
-                    : '<span class="badge bg-primary-subtle text-primary border border-primary">TG</span>';
-
-                return `
-                    <tr>
-                        <td>
-                            <div class="fw-bold font-monospace text-primary">${escapeHtml(r.ma_phieu || '')}</div>
-                            ${loaiBadge}
-                        </td>
-                        <td class="small text-muted">${formatDate(r.ngay)}</td>
-                        <td>
-                            <div class="fw-semibold">${escapeHtml(r.doi_tuong || '')}</div>
-                            <small class="text-muted">${r.dien_thoai ? '📞 ' + escapeHtml(r.dien_thoai) : ''}</small>
-                        </td>
-                        <td class="text-end fw-bold text-success">
-                            ${formatVND(r.so_tien)}
-                        </td>
-                        <td class="text-center">
-                            <button class="btn btn-sm btn-outline-info p-1 px-2" title="Xem chi tiết" onclick="viewDetailReceipt('${r.id}')">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+            await fetchNextCode();
+            await loadRecentReceipts();
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('DEBT_UPDATED');
+                broadcastDataUpdate('BALANCE_UPDATED');
+            }
         }
     } catch (e) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" class="text-center py-3 text-danger">
-                    Lỗi tải phiếu thu gần đây: ${e.message}
-                </td>
-            </tr>
-        `;
+        showToast('Lỗi xóa phiếu thu: ' + e.message, 'error');
     }
 }
 
@@ -517,10 +577,10 @@ async function viewDetailReceipt(recordId) {
         const loaiStr = item.loai_quy === 'TIEN_MAT' ? 'Tiền mặt' : 'Tiền gửi ngân hàng (Chuyển khoản)';
 
         modalBody.innerHTML = `
-            <div class="p-2">
+            <div class="p-2" id="printable-phieu-thu">
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
-                    <span class="text-muted">Mã Phiếu:</span>
-                    <strong class="font-monospace text-primary">${escapeHtml(item.ma_phieu)}</strong>
+                    <span class="text-muted">Mã Phiếu Thu:</span>
+                    <strong class="font-monospace text-primary fs-6">${escapeHtml(item.ma_phieu)}</strong>
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Ngày Thu:</span>
@@ -540,16 +600,24 @@ async function viewDetailReceipt(recordId) {
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Phiếu Xuất Liên Quan:</span>
-                    <strong class="text-danger">${escapeHtml(item.phieu_lien_quan || 'Thu tự do')}</strong>
+                    <strong class="text-danger font-monospace">${escapeHtml(item.phieu_lien_quan || 'Thu tự do')}</strong>
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Số Tiền Thu:</span>
-                    <strong class="text-success fs-5">${formatVND(item.so_tien)}</strong>
+                    <strong class="text-success fs-5 font-monospace">${formatVND(item.so_tien)}</strong>
                 </div>
                 <div class="border-bottom pb-2 mb-2">
                     <div class="text-muted mb-1">Nội Dung / Ghi Chú:</div>
                     <div class="p-2 bg-light rounded">${escapeHtml(item.ghi_chu || 'Không có')}</div>
                 </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="confirmDeletePhieuThu('${item.id}', '${item.ma_phieu}')">
+                    <i class="bi bi-trash3 me-1"></i> Xóa phiếu
+                </button>
+                <button type="button" class="btn btn-success btn-sm px-3" onclick="printReceiptModal('printable-phieu-thu', 'Phiếu Thu Tiền')">
+                    <i class="bi bi-printer me-1"></i> In phiếu thu
+                </button>
             </div>
         `;
 
