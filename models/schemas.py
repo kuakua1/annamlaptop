@@ -244,7 +244,7 @@ class PhieuThuCreate(BaseModel):
     loai_quy: str = "TIEN_MAT"  # "TIEN_MAT" | "NGAN_HANG"
     ngay: str  # YYYY-MM-DD
     doi_tuong: str  # Tên khách hàng (bắt buộc)
-    dien_thoai: str  # Số điện thoại (bắt buộc)
+    dien_thoai: Optional[str] = ""  # Số điện thoại (không bắt buộc)
     dia_chi: Optional[str] = ""
     khach_hang_id: Optional[str] = ""
     so_tien: float

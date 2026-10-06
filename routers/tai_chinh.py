@@ -132,9 +132,9 @@ async def get_list_phieu_thu(user: str = Depends(require_login)):
 @router.post("/api/phieu-thu")
 async def create_phieu_thu(data: PhieuThuCreate, user: str = Depends(require_login)):
     if not data.doi_tuong or not str(data.doi_tuong).strip():
-        raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Khách Hàng / Đối Tượng Nộp")
-    if not data.dien_thoai or not str(data.dien_thoai).strip():
-        raise HTTPException(status_code=400, detail="Vui lòng nhập Số Điện Thoại Khách Hàng")
+        raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Người / Đơn Vị Nộp Tiền")
+    data.dien_thoai = (data.dien_thoai or "").strip()
+    data.dia_chi = (data.dia_chi or "").strip()
     if data.so_tien is None or data.so_tien <= 0:
         raise HTTPException(status_code=400, detail="Số tiền thu phải lớn hơn 0")
 

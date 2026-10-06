@@ -63,7 +63,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.addEventListener('click', function (e) {
         const box = document.getElementById('kh-suggestions');
         const input = document.getElementById('f-kh-ten');
-        if (box && input && !box.contains(e.target) && e.target !== input) {
+        const arrowBtn = document.getElementById('btn-toggle-kh-dropdown');
+        if (box && input && !box.contains(e.target) && e.target !== input && (!arrowBtn || !arrowBtn.contains(e.target))) {
             box.classList.add('d-none');
         }
     });
@@ -97,52 +98,114 @@ function onNgayChange() {
 
 async function loadCustomers() {
     try {
-        const res = await apiRequest('/api/khach-hang');
-        if (res.success && Array.isArray(res.data)) {
+        let res = null;
+        try {
+            res = await apiRequest('/api/doi-tuong');
+        } catch (err) {
+            res = null;
+        }
+        if (res && res.success && Array.isArray(res.data) && res.data.length) {
             customersList = res.data;
+        } else {
+            res = await apiRequest('/api/khach-hang');
+            if (res && res.success && Array.isArray(res.data)) {
+                customersList = res.data;
+            }
         }
     } catch (e) {
-        console.warn('Lỗi tải danh mục khách hàng:', e);
+        console.warn('Lỗi tải danh mục khách hàng/đối tác:', e);
     }
 }
 
-function onKhSearchInput(input) {
-    const query = input.value.trim().toLowerCase();
+function filterCustomers(query) {
+    if (!customersList || !customersList.length) return [];
+    if (!query) return customersList.slice(0, 60);
+    const q = query.toLowerCase().trim();
+    return customersList.filter(c => {
+        const name = (c.ten || c.ten_kh || c.ten_ncc || '').toLowerCase();
+        const code = String(c.id || '').toLowerCase();
+        const phone = String(c.dien_thoai || '').toLowerCase();
+        const mst = String(c.ma_so_thue || '').toLowerCase();
+        const addr = String(c.dia_chi || '').toLowerCase();
+        return name.includes(q) || code.includes(q) || phone.includes(q) || mst.includes(q) || addr.includes(q);
+    }).slice(0, 50);
+}
+
+function renderKhSuggestions(matches) {
     const box = document.getElementById('kh-suggestions');
-    document.getElementById('f-kh-id').value = '';
+    if (!box) return;
 
-    if (!query || !customersList.length) {
-        box.classList.add('d-none');
+    if (!matches || !matches.length) {
+        box.innerHTML = '<div class="p-2 text-muted small text-center">Không tìm thấy đối tác phù hợp</div>';
+        box.classList.remove('d-none');
         return;
     }
 
-    const matches = customersList.filter(c =>
-        (c.ten_kh || '').toLowerCase().includes(query) ||
-        (c.dien_thoai || '').includes(query)
-    ).slice(0, 8);
+    box.innerHTML = matches.map(c => {
+        const name = c.ten || c.ten_kh || c.ten_ncc || 'Chưa đặt tên';
+        const type = c.phan_loai || '';
+        let badge = '';
+        if (type === 'NHA_CUNG_CAP') badge = '<span class="badge bg-info-subtle text-info border small ms-1">Nhà Cung Cấp</span>';
+        else if (type === 'KHACH_HANG') badge = '<span class="badge bg-success-subtle text-success border small ms-1">Khách Hàng</span>';
+        else if (type) badge = '<span class="badge bg-primary-subtle text-primary border small ms-1">Đối tác</span>';
 
-    if (!matches.length) {
-        box.classList.add('d-none');
-        return;
-    }
+        const codePart = (c.id && c.id !== name) ? `<span class="badge bg-light text-secondary border font-monospace me-1">${escapeHtml(String(c.id))}</span>` : '';
+        const mstPart = c.ma_so_thue ? `<span class="badge bg-warning-subtle text-dark border font-monospace me-1">MST: ${escapeHtml(c.ma_so_thue)}</span>` : '';
+        const phonePart = c.dien_thoai ? `<span class="me-2"><i class="bi bi-telephone text-primary me-1"></i>${escapeHtml(c.dien_thoai)}</span>` : '';
+        const addrPart = c.dia_chi ? `<span><i class="bi bi-geo-alt text-danger me-1"></i>${escapeHtml(c.dia_chi)}</span>` : '';
 
-    box.innerHTML = matches.map(c => `
-        <div class="autocomplete-item py-2 px-3 border-bottom cursor-pointer" onclick="selectKh('${c.id}')" style="cursor: pointer;">
-            <div class="fw-semibold text-primary">${escapeHtml(c.ten_kh)}</div>
-            <div class="small text-muted">
-                ${c.dien_thoai ? '📞 ' + escapeHtml(c.dien_thoai) : 'Chưa có SĐT'}
-                ${c.dia_chi ? ' · 📍 ' + escapeHtml(c.dia_chi) : ''}
+        return `
+            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectKh('${escapeHtml(String(c.id))}')" style="cursor: pointer;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        ${codePart}
+                        <span class="fw-semibold text-primary">${escapeHtml(name)}</span>
+                    </div>
+                    <div>
+                        ${mstPart}
+                        ${badge}
+                    </div>
+                </div>
+                <div class="small text-muted mt-1 text-truncate">
+                    ${phonePart}
+                    ${addrPart}
+                </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
     box.classList.remove('d-none');
+}
+
+function onKhSearchInput(input) {
+    const query = input.value.trim();
+    const idEl = document.getElementById('f-kh-id');
+    if (idEl) idEl.value = '';
+
+    const box = document.getElementById('kh-suggestions');
+    if (!query) {
+        if (box) box.classList.add('d-none');
+        return;
+    }
+    renderKhSuggestions(filterCustomers(query));
+}
+
+function toggleKhDropdown() {
+    const box = document.getElementById('kh-suggestions');
+    if (!box) return;
+    if (!box.classList.contains('d-none')) {
+        box.classList.add('d-none');
+        return;
+    }
+    const input = document.getElementById('f-kh-ten');
+    const query = input ? input.value.trim() : '';
+    renderKhSuggestions(filterCustomers(query));
 }
 
 function selectKh(id, targetSoPhieu = '', presetAmount = 0) {
     const c = customersList.find(x => String(x.id) === String(id));
     if (!c) return;
 
-    document.getElementById('f-kh-ten').value = c.ten || c.ten_kh || '';
+    document.getElementById('f-kh-ten').value = c.ten || c.ten_kh || c.ten_ncc || '';
     document.getElementById('f-kh-id').value = c.id || '';
     document.getElementById('f-kh-sdt').value = c.dien_thoai || '';
     document.getElementById('f-kh-dia-chi').value = c.dia_chi || '';
@@ -320,13 +383,12 @@ async function savePhieuThu() {
 
     // Validate
     if (!doiTuong) {
-        showToast('Vui lòng nhập hoặc chọn Tên Khách Hàng', 'error');
+        showToast('Vui lòng nhập Tên Người / Đơn Vị Nộp Tiền', 'error');
         document.getElementById('f-kh-ten')?.focus();
         return;
     }
-    if (!sdt) {
-        showToast('Vui lòng nhập Số Điện Thoại Khách Hàng', 'error');
-        document.getElementById('f-kh-sdt')?.focus();
+    if (!ngay) {
+        showToast('Vui lòng chọn ngày thu tiền', 'error');
         return;
     }
     if (!soTien || soTien <= 0) {
@@ -377,12 +439,11 @@ function resetFormPhieuThu() {
     document.getElementById('f-kh-id').value = '';
     document.getElementById('f-kh-sdt').value = '';
     document.getElementById('f-kh-dia-chi').value = '';
-    document.getElementById('f-phieu-xuat-select').innerHTML = '<option value="">-- Khách không nợ / Hoặc nhập thu tự do --</option>';
+    document.getElementById('f-phieu-xuat-select').innerHTML = '<option value="">-- Chưa chọn đối tác / Hoặc thu tự do --</option>';
     document.getElementById('debt-status-badge').className = 'badge bg-secondary';
-    document.getElementById('debt-status-badge').innerText = 'Chưa chọn khách';
+    document.getElementById('debt-status-badge').innerText = 'Chưa chọn đối tác';
     document.getElementById('f-thu-so-tien').value = '';
     document.getElementById('f-thu-ly-do').value = '';
-    document.getElementById('debt-help-text').innerHTML = 'Hệ thống sẽ tự động quét phiếu xuất kho mà khách hàng này còn nợ tiền để tự động điền số tiền & nội dung.';
 }
 
 // ── Tải Phiếu Thu Gần Đây ───────────────────────────────────────────────────

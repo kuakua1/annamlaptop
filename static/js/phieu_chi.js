@@ -567,10 +567,6 @@ function resetFormPhieuChi() {
     }
     document.getElementById('f-chi-so-tien').value = '';
     document.getElementById('f-chi-ly-do').value = '';
-    const helpEl = document.getElementById('debt-help-text');
-    if (helpEl) {
-        helpEl.innerHTML = 'Hệ thống sẽ tự động quét phiếu nhập kho mà công ty còn nợ tiền để tự động điền số tiền & nội dung.';
-    }
     checkSufficientBalance();
 }
 
