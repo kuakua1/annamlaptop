@@ -579,8 +579,25 @@ class DatabaseManager:
 
     # ── 4. Danh Mục Đối Tượng CRUD (Hợp Nhất NCC & Khách Hàng) ─────────────────
 
+    def generate_ma_doi_tuong(self) -> str:
+        """Tạo mã đối tượng kế tiếp định dạng DTxxxx (DT0001, DT0002...)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM DoiTuong WHERE id LIKE 'DT%'")
+            rows = cursor.fetchall()
+            max_num = 0
+            for r in rows:
+                mid = str(r["id"] or "").strip().upper()
+                if mid.startswith("DT"):
+                    num_part = mid[2:]
+                    if num_part.isdigit():
+                        max_num = max(max_num, int(num_part))
+            return f"DT{max_num + 1:04d}"
+
     def insert_doi_tuong(self, item: dict) -> dict:
-        dt_id = str(item.get("id") or int(time.time() * 1000))
+        dt_id = str(item.get("id") or "").strip()
+        if not dt_id:
+            dt_id = self.generate_ma_doi_tuong()
         item["id"] = dt_id
         ten = str(item.get("ten") or "").strip()
         phan_loai = str(item.get("phan_loai") or "CA_HAI").strip().upper()
@@ -662,14 +679,14 @@ class DatabaseManager:
                     return str(matched["id"])
 
                 # Tạo mới
-                new_id = str(int(time.time() * 1000))
+                new_id = self.generate_ma_doi_tuong()
                 cursor.execute("""
                     INSERT INTO DoiTuong (id, ten, phan_loai, dia_chi, dien_thoai, email, ghi_chu)
                     VALUES (?, ?, ?, ?, ?, '', 'Tự động lưu từ phiếu')
                 """, (new_id, ten_clean or f"Đối tác {new_id}", default_type, dia_chi_clean, sdt_clean))
                 conn.commit()
 
-        row = [new_id, ten_clean, default_type, sdt_clean, dia_chi_clean, "", "Tự động lưu từ phiếu"]
+        row = [new_id, ten_clean, "", sdt_clean, dia_chi_clean, default_type, "", "Tự động lưu từ phiếu"]
         self._enqueue_task("APPEND_ROW", SHEET_DOI_TUONG, {"row": row})
         return new_id
 

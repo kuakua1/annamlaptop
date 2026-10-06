@@ -122,7 +122,7 @@ async def create_doi_tuong(
         raise HTTPException(status_code=400, detail="Tên đối tượng không được để trống")
 
     try:
-        new_id = str(int(time.time() * 1000))
+        new_id = db_manager.generate_ma_doi_tuong()
         item = {
             "id": new_id,
             "ten": data.ten.strip(),

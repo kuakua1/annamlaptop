@@ -130,7 +130,7 @@ function renderDoiTuongTable(records) {
     if (!records.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" class="text-center text-muted py-5">
+                <td colspan="9" class="text-center text-muted py-5">
                     <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
                     Không tìm thấy đối tượng nào phù hợp
                 </td>
@@ -168,6 +168,9 @@ function renderDoiTuongTable(records) {
         return `
             <tr>
                 <td class="text-center text-muted small">${i + 1}</td>
+                <td class="text-center font-monospace">
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace px-2 py-1 fw-bold">${escapeHtml(r.id || '')}</span>
+                </td>
                 <td>
                     <div class="d-flex align-items-center">
                         <span class="avatar-sm bg-primary-subtle text-primary rounded-circle d-inline-flex align-items-center justify-content-center me-2 fw-bold" style="width:34px;height:34px;font-size:14px;flex-shrink:0;">
@@ -177,7 +180,6 @@ function renderDoiTuongTable(records) {
                             <a href="javascript:void(0)" onclick="viewDoiTuongHistory('${r.id}')" class="fw-bold text-dark text-decoration-none hover-primary" title="Bấm xem lịch sử mua / bán 2 chiều">
                                 ${escapeHtml(r.ten)}
                             </a>
-                            ${(r.id && r.id !== r.ten && r.id !== r.ma_so_thue) ? `<div class="text-secondary small font-monospace" style="font-size:11px;">Mã: ${escapeHtml(r.id)}</div>` : ''}
                         </div>
                     </div>
                 </td>
@@ -212,6 +214,7 @@ function openAddDoiTuong() {
     editingDtId = null;
     document.getElementById('dt-modal-title').innerHTML = '<i class="bi bi-person-plus me-2"></i>Thêm Đối Tượng Mới';
     document.getElementById('dt-form').reset();
+    document.getElementById('dt-id').value = '';
     document.getElementById('dt-mst').value = '';
     document.getElementById('dt-phan-loai').value = 'CA_HAI';
     openModal('dt-modal');
@@ -222,6 +225,7 @@ function editDoiTuong(id) {
     if (!dt) return;
     editingDtId = id;
     document.getElementById('dt-modal-title').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Sửa Thông Tin Đối Tượng';
+    document.getElementById('dt-id').value = dt.id || '';
     document.getElementById('dt-ten').value = dt.ten || '';
     document.getElementById('dt-mst').value = dt.ma_so_thue || '';
     document.getElementById('dt-phan-loai').value = dt.phan_loai || 'CA_HAI';
@@ -553,7 +557,7 @@ async function exportDoiTuongExcel() {
 
         ws.columns = [
             { header: 'STT', key: 'stt', width: 6 },
-            { header: 'Mã / ID', key: 'id', width: 16 },
+            { header: 'ID', key: 'id', width: 14 },
             { header: 'Tên Đối Tượng', key: 'ten', width: 28 },
             { header: 'Mã Số Thuế', key: 'ma_so_thue', width: 18 },
             { header: 'Phân Loại', key: 'phan_loai', width: 18 },
