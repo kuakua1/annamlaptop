@@ -990,7 +990,7 @@ function printOfficialReceipt(receiptData = null, receiptType = null) {
                     </div>
                     <div>
                         <span>Địa điểm:</span>
-                        <span style="padding-left: 8px;">454 Nguyễn Trãi, Hạc Thành, Thanh Hóa</span>
+                        <span style="padding-left: 8px;">454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam</span>
                     </div>
                 </div>
             </div>
@@ -2225,7 +2225,7 @@ async function submitQuickPhieuChi(event, so_phieu) {
 
 const COMPANY_INFO = {
     name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',
-    address: '106 Phú Thọ 3, Phường Hạc Thành, Thanh Hóa, Việt Nam',
+    address: '454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam',
     brand: 'KHO HÀNG AN NAM',
     hotline: '0386.539.555',
     email: 'contact@laptopannam.com'
