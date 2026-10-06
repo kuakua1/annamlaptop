@@ -1886,7 +1886,7 @@ async function openQuickPhieuThuModal(so_phieu) {
 
                             <div class="col-12">
                                 <label class="form-label form-label-compact">Số Tiền Thu Thực Tế (VNĐ) <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control form-control-sm fs-5 fw-bold text-success" id="qpt-so-tien" value="${so_tien_no}" min="1" step="1000" required>
+                                <input type="number" class="form-control form-control-sm fs-5 fw-bold text-success" id="qpt-so-tien" value="${so_tien_no}" min="1" step="any" required>
                                 <small class="text-muted" style="font-size: 0.75rem;">Mặc định điền toàn bộ số tiền còn nợ của phiếu xuất này.</small>
                             </div>
 
@@ -2100,7 +2100,7 @@ async function openQuickPhieuChiModal(so_phieu) {
 
                             <div class="col-12">
                                 <label class="form-label form-label-compact">Số Tiền Chi Thực Tế (VNĐ) <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control form-control-sm fs-5 fw-bold text-danger" id="qpc-so-tien" value="${so_tien_no}" min="1" step="1000" required>
+                                <input type="number" class="form-control form-control-sm fs-5 fw-bold text-danger" id="qpc-so-tien" value="${so_tien_no}" min="1" step="any" required>
                                 <small class="text-muted" style="font-size: 0.75rem;">Mặc định điền toàn bộ số tiền còn nợ của phiếu nhập này.</small>
                             </div>
 
