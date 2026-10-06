@@ -265,19 +265,24 @@ async function openQuyConfigModal() {
         if (res && res.success) {
             quyBalanceData = res.balances || {};
 
-            const mode = document.querySelector('input[name="quy_mode"]:checked')?.value || 'current';
-            const tmVal = mode === 'current' ? (quyBalanceData.tien_mat || 0) : (quyBalanceData.so_du_dau_tien_mat || 0);
-            const tgVal = mode === 'current' ? (quyBalanceData.tien_gui || 0) : (quyBalanceData.so_du_dau_tien_gui || 0);
+            const radioCurrent = document.getElementById('mode-current');
+            if (radioCurrent) radioCurrent.checked = true;
 
-            document.getElementById('cfg-tien-mat').value = tmVal || '';
-            document.getElementById('cfg-tien-gui').value = tgVal || '';
+            const tmVal = Math.round(quyBalanceData.tien_mat || 0);
+            const tgVal = Math.round(quyBalanceData.tien_gui || 0);
 
-            onModeChange();
+            document.getElementById('cfg-tien-mat').value = tmVal ? tmVal : '';
+            document.getElementById('cfg-tien-gui').value = tgVal ? tgVal : '';
+
+            onModeChange(false);
             onInputAmountChange();
 
             const modalEl = document.getElementById('modal-quy-config');
             if (modalEl) {
-                const bsModal = new bootstrap.Modal(modalEl);
+                let bsModal = bootstrap.Modal.getInstance(modalEl);
+                if (!bsModal) {
+                    bsModal = new bootstrap.Modal(modalEl);
+                }
                 bsModal.show();
             }
         }
@@ -288,7 +293,7 @@ async function openQuyConfigModal() {
     }
 }
 
-function onModeChange() {
+function onModeChange(updateValues = true) {
     const isCurrent = document.getElementById('mode-current')?.checked;
     const lblTm = document.getElementById('lbl-tien-mat');
     const lblTg = document.getElementById('lbl-tien-gui');
@@ -306,6 +311,14 @@ function onModeChange() {
         if (hintTm) hintTm.innerText = 'Số dư tiền mặt trước khi phát sinh thu / chi';
         if (hintTg) hintTg.innerText = 'Số dư ngân hàng trước khi phát sinh thu / chi';
     }
+
+    if (updateValues && quyBalanceData) {
+        const tmVal = isCurrent ? Math.round(quyBalanceData.tien_mat || 0) : Math.round(quyBalanceData.so_du_dau_tien_mat || 0);
+        const tgVal = isCurrent ? Math.round(quyBalanceData.tien_gui || 0) : Math.round(quyBalanceData.so_du_dau_tien_gui || 0);
+        document.getElementById('cfg-tien-mat').value = tmVal ? tmVal : '';
+        document.getElementById('cfg-tien-gui').value = tgVal ? tgVal : '';
+    }
+
     onInputAmountChange();
 }
 
@@ -357,6 +370,10 @@ async function saveQuyConfig() {
         if (res && res.success) {
             showToast('Đã lưu số tiền của công ty vào Config (Google Sheets & Database)!', 'success');
             
+            if (res.balances) {
+                quyBalanceData = res.balances;
+            }
+
             // Đóng modal
             const modalEl = document.getElementById('modal-quy-config');
             if (modalEl) {
@@ -368,6 +385,14 @@ async function saveQuyConfig() {
             await loadSoQuy();
         }
     } catch (e) {
+        showToast('Lỗi lưu số tiền quỹ: ' + e.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
         showToast('Lỗi lưu số tiền quỹ: ' + e.message, 'error');
     } finally {
         if (btn) {

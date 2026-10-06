@@ -20,14 +20,31 @@ def _safe_float(val, default=0.0) -> float:
         return default
     if isinstance(val, (int, float)):
         return float(val)
+    val_str = str(val).strip()
     try:
-        cleaned = str(val).replace("đ", "").replace("Đ", "").replace(",", "").replace(".", "").strip()
+        return float(val_str)
+    except ValueError:
+        pass
+    try:
+        cleaned = val_str.replace("đ", "").replace("Đ", "").replace(" ", "").strip()
+        if "," in cleaned and "." in cleaned:
+            if cleaned.rfind(",") > cleaned.rfind("."):
+                cleaned = cleaned.replace(".", "").replace(",", ".")
+            else:
+                cleaned = cleaned.replace(",", "")
+        elif "," in cleaned:
+            parts = cleaned.split(",")
+            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
+                cleaned = cleaned.replace(",", "")
+            else:
+                cleaned = cleaned.replace(",", ".")
+        elif "." in cleaned:
+            parts = cleaned.split(".")
+            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
+                cleaned = cleaned.replace(".", "")
         return float(cleaned) if cleaned else default
     except Exception:
-        try:
-            return float(val)
-        except Exception:
-            return default
+        return default
 
 def _safe_int(val, default=0) -> int:
     if val is None or val == "":
@@ -37,7 +54,12 @@ def _safe_int(val, default=0) -> int:
     if isinstance(val, float):
         return int(val)
     try:
-        cleaned = "".join(c for c in str(val) if c.isdigit() or c == "-")
+        val_str = str(val).strip()
+        try:
+            return int(float(val_str))
+        except ValueError:
+            pass
+        cleaned = "".join(c for c in val_str if c.isdigit() or c == "-")
         return int(cleaned) if cleaned else default
     except Exception:
         return default
@@ -1333,8 +1355,8 @@ class DatabaseManager:
             so_du_dau_tm = tien_mat
             so_du_dau_tg = tien_gui
 
-        self.set_config("so_du_dau_tien_mat", str(so_du_dau_tm))
-        self.set_config("so_du_dau_tien_gui", str(so_du_dau_tg))
+        self.set_config("so_du_dau_tien_mat", str(int(round(so_du_dau_tm))))
+        self.set_config("so_du_dau_tien_gui", str(int(round(so_du_dau_tg))))
 
         try:
             from datetime import datetime
