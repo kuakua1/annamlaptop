@@ -234,7 +234,7 @@ const TAB_DEFINITIONS = {
         closable: true
     },
     'lich-su': {
-        title: 'Lịch Sử Chung',
+        title: 'Lịch Sử',
         icon: 'bi-clock-history text-secondary',
         url: '/lich-su?embed=1',
         closable: true
