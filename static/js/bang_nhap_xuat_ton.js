@@ -219,10 +219,13 @@ function setQuickPeriod(type) {
     } else if (type === 'year') {
         fromDate = new Date(today.getFullYear(), 0, 1);
         toDate = new Date(today.getFullYear(), 11, 31);
+    } else if (type === 'all') {
+        fromDate = null;
+        toDate = null;
     }
 
-    const fromISO = formatISODate(fromDate);
-    const toISO = formatISODate(toDate);
+    const fromISO = fromDate ? formatISODate(fromDate) : '';
+    const toISO = toDate ? formatISODate(toDate) : '';
 
     const fromInput = document.getElementById('filter-from-date');
     const toInput = document.getElementById('filter-to-date');

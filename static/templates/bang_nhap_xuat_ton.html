@@ -158,31 +158,28 @@
     <div class="card-body p-3">
         <!-- Bộ Lọc Thời Gian & Tiêu Chí -->
         <div class="row g-2 mb-3 align-items-center">
-            <!-- Chọn ngày -->
-            <div class="col-lg-5 col-md-12">
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="fw-semibold text-dark small"><i class="bi bi-calendar-range me-1 text-primary"></i>Kỳ báo cáo:</span>
+            <!-- Chọn ngày & Phím tắt nhanh -->
+            <div class="col-lg-9 col-md-12">
+                <div class="date-range-filter-bar d-flex align-items-center gap-2 flex-wrap">
+                    <span class="fw-semibold text-dark small me-1 text-nowrap"><i class="bi bi-calendar-range me-1 text-primary"></i>Kỳ báo cáo:</span>
                     <div class="input-group input-group-sm" style="width: auto;">
                         <span class="input-group-text bg-light text-muted">Từ ngày</span>
-                        <input type="date" class="form-control" id="filter-from-date" style="max-width: 140px;" onchange="onDateRangeChanged()">
+                        <input type="date" class="form-control" id="filter-from-date" onchange="onDateRangeChanged()">
                     </div>
                     <div class="input-group input-group-sm" style="width: auto;">
                         <span class="input-group-text bg-light text-muted">Đến ngày</span>
-                        <input type="date" class="form-control" id="filter-to-date" style="max-width: 140px;" onchange="onDateRangeChanged()">
+                        <input type="date" class="form-control" id="filter-to-date" onchange="onDateRangeChanged()">
                     </div>
-                    <button class="btn btn-sm btn-primary px-3" onclick="applyCustomRange()">
+                    <button class="btn btn-sm btn-primary px-3 text-nowrap fw-semibold" onclick="applyCustomRange()">
                         <i class="bi bi-funnel-fill me-1"></i>Lọc
                     </button>
-                </div>
-            </div>
-
-            <!-- Nút Lọc Nhanh -->
-            <div class="col-lg-4 col-md-6">
-                <div class="btn-group btn-group-sm">
-                    <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('today')">Hôm nay</button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('week')">Tuần này</button>
-                    <button type="button" class="btn btn-outline-secondary active" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
-                    <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('year')">Năm nay</button>
+                    <div class="btn-group btn-group-sm ms-md-1 date-range-presets" role="group">
+                        <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('today')">Hôm nay</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('week')">Tuần này</button>
+                        <button type="button" class="btn btn-outline-secondary active" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('year')">Năm nay</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('all')">Tất cả</button>
+                    </div>
                 </div>
             </div>
 
@@ -277,5 +274,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/bang_nhap_xuat_ton.js?v=20261006_v7"></script>
+<script src="/static/js/bang_nhap_xuat_ton.js?v=20261007_v1"></script>
 {% endblock %}

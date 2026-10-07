@@ -67,16 +67,50 @@
         </div>
     </div>
     <div class="card-body p-3">
-        <!-- Filters -->
+        <!-- Bộ lọc Ngày tháng (Kỳ báo cáo) & Tìm kiếm & Phân loại -->
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+            <div class="date-range-filter-bar d-flex align-items-center gap-2 flex-wrap">
+                <span class="fw-semibold text-dark small me-1 text-nowrap">
+                    <i class="bi bi-calendar-range me-1 text-primary"></i>Kỳ báo cáo:
+                </span>
+                
+                <div class="input-group input-group-sm" style="width: auto;">
+                    <span class="input-group-text bg-light text-muted">Từ ngày</span>
+                    <input type="date" class="form-control" id="filter-from-date" onchange="onDateRangeChanged()">
+                </div>
+                <div class="input-group input-group-sm" style="width: auto;">
+                    <span class="input-group-text bg-light text-muted">Đến ngày</span>
+                    <input type="date" class="form-control" id="filter-to-date" onchange="onDateRangeChanged()">
+                </div>
+                
+                <button class="btn btn-sm btn-primary px-3 text-nowrap fw-semibold" onclick="applyDateFilter()">
+                    <i class="bi bi-funnel-fill me-1"></i>Lọc
+                </button>
+
+                <!-- Phím tắt nhanh -->
+                <div class="btn-group btn-group-sm ms-md-1 date-range-presets" role="group">
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('today')">Hôm nay</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('week')">Tuần này</button>
+                    <button type="button" class="btn btn-outline-secondary" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('year')">Năm nay</button>
+                    <button type="button" class="btn btn-outline-secondary active" id="btn-quick-all" onclick="setQuickPeriod('all')">Tất cả</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters tìm kiếm, danh mục, tình trạng tồn -->
         <div class="row g-2 mb-3 align-items-center">
             <div class="col-md-4">
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
                     <input type="text" class="form-control border-start-0" id="search-input" placeholder="Tìm theo mã hàng, tên hàng hóa...">
+                    <button class="btn btn-outline-secondary" type="button" onclick="clearSearch()" title="Xóa tìm kiếm">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
                 </div>
             </div>
             <div class="col-md-3">
-                <select class="form-select form-select-sm" id="filter-danh-muc">
+                <select class="form-select form-select-sm" id="filter-danh-muc" onchange="renderStockTable()">
                     <option value="">Tất cả danh mục</option>
                     <option value="Laptop">Laptop</option>
                     <option value="Linh Kiện Laptop">Linh Kiện Laptop</option>
@@ -86,7 +120,7 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <select class="form-select form-select-sm" id="filter-stock-status">
+                <select class="form-select form-select-sm" id="filter-stock-status" onchange="renderStockTable()">
                     <option value="all">Tất cả tình trạng tồn kho</option>
                     <option value="in_stock" selected>Chỉ hàng còn tồn (> 0)</option>
                     <option value="low_stock">⚠️ Sắp hết hàng (1 - 2 cái)</option>
@@ -228,5 +262,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/ton_kho.js?v=20261005_v10"></script>
+<script src="/static/js/ton_kho.js?v=20261007_v1"></script>
 {% endblock %}

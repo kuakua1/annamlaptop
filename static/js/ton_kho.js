@@ -17,6 +17,53 @@ function formatVNDClean(v) {
     return Math.round(Number(v)).toLocaleString('vi-VN');
 }
 
+let currentPeriodLabel = 'Tất cả';
+
+function clearSearch() {
+    const el = document.getElementById('search-input');
+    if (el) {
+        el.value = '';
+        renderStockTable();
+    }
+}
+
+function setQuickPeriod(type) {
+    document.querySelectorAll('.date-range-presets .btn').forEach(btn => btn.classList.remove('active'));
+
+    const range = typeof getPresetDateRange === 'function' ? getPresetDateRange(type) : { from: '', to: '' };
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+
+    if (fromEl) fromEl.value = range.from || '';
+    if (toEl) toEl.value = range.to || '';
+
+    const map = {
+        'today': 'Hôm nay',
+        'week': 'Tuần này',
+        'month': 'Tháng này',
+        'year': 'Năm nay',
+        'all': 'Tất cả'
+    };
+    currentPeriodLabel = map[type] || 'Tùy chọn';
+
+    const clickedBtn = Array.from(document.querySelectorAll('.date-range-presets .btn'))
+        .find(b => b.textContent.trim().toLowerCase() === (map[type] || '').toLowerCase());
+    if (clickedBtn) {
+        clickedBtn.classList.add('active');
+    }
+
+    loadStockData();
+}
+
+function onDateRangeChanged() {
+    document.querySelectorAll('.date-range-presets .btn').forEach(btn => btn.classList.remove('active'));
+    currentPeriodLabel = 'Tùy chọn';
+}
+
+function applyDateFilter() {
+    loadStockData();
+}
+
 async function loadStockData(silent = false) {
     try {
         const tbody = document.getElementById('stock-tbody');
@@ -24,7 +71,17 @@ async function loadStockData(silent = false) {
             tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu tồn kho...</td></tr>';
         }
 
-        const res = await apiRequest('/api/hang-hoa');
+        const fromDate = document.getElementById('filter-from-date')?.value || '';
+        const toDate = document.getElementById('filter-to-date')?.value || '';
+
+        let url = '/api/hang-hoa';
+        const params = new URLSearchParams();
+        if (fromDate) params.append('from_date', fromDate);
+        if (toDate) params.append('to_date', toDate);
+        const qStr = params.toString();
+        if (qStr) url += `?${qStr}`;
+
+        const res = await apiRequest(url);
         allProducts = res.data || [];
         renderStockTable();
     } catch (e) {
@@ -228,6 +285,16 @@ function printStockReport() {
 
     const now = new Date();
     const dateCloseStr = `Ngày ${String(now.getDate()).padStart(2, '0')} tháng ${String(now.getMonth() + 1).padStart(2, '0')} năm ${now.getFullYear()}`;
+    const fromDateVal = document.getElementById('filter-from-date')?.value || '';
+    const toDateVal = document.getElementById('filter-to-date')?.value || '';
+    let periodSubtitle = `Thời điểm: ${dateCloseStr}`;
+    if (fromDateVal && toDateVal) {
+        periodSubtitle = `Kỳ báo cáo: Từ ngày ${formatDate(fromDateVal)} đến ngày ${formatDate(toDateVal)}`;
+    } else if (toDateVal) {
+        periodSubtitle = `Tính đến ngày: ${formatDate(toDateVal)}`;
+    } else if (fromDateVal) {
+        periodSubtitle = `Từ ngày: ${formatDate(fromDateVal)}`;
+    }
 
     let totQty = 0;
     let totVal = 0;
@@ -331,7 +398,7 @@ function printStockReport() {
 
             <div style="text-align: center; margin-bottom: 6px;">
                 <h2 style="font-size: 15pt; margin: 0; text-transform: uppercase; font-weight: bold;">BẢNG TỔNG HỢP HÀNG HÓA TỒN KHO</h2>
-                <div style="font-size: 10pt; margin-top: 3px;">Thời điểm: ${dateCloseStr}</div>
+                <div style="font-size: 10pt; margin-top: 3px;">${periodSubtitle}</div>
             </div>
 
             <div style="text-align: right; font-weight: bold; font-size: 9.5pt; margin-bottom: 4px;">
@@ -411,6 +478,16 @@ async function exportStockExcel() {
 
     const now = new Date();
     const dateCloseStr = `Ngày ${String(now.getDate()).padStart(2, '0')} tháng ${String(now.getMonth() + 1).padStart(2, '0')} năm ${now.getFullYear()}`;
+    const fromDateVal = document.getElementById('filter-from-date')?.value || '';
+    const toDateVal = document.getElementById('filter-to-date')?.value || '';
+    let periodSubtitle = `Thời điểm: ${dateCloseStr}`;
+    if (fromDateVal && toDateVal) {
+        periodSubtitle = `Kỳ báo cáo: Từ ngày ${formatDate(fromDateVal)} đến ngày ${formatDate(toDateVal)}`;
+    } else if (toDateVal) {
+        periodSubtitle = `Tính đến ngày: ${formatDate(toDateVal)}`;
+    } else if (fromDateVal) {
+        periodSubtitle = `Từ ngày: ${formatDate(fromDateVal)}`;
+    }
     const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 
     const wb = new window.ExcelJS.Workbook();
@@ -480,7 +557,7 @@ async function exportStockExcel() {
     // Thời điểm báo cáo
     ws.mergeCells('A6:I6');
     const pCell = ws.getCell('A6');
-    pCell.value = `Thời điểm: ${dateCloseStr}`;
+    pCell.value = periodSubtitle;
     pCell.font = fontNormal;
     pCell.alignment = { horizontal: 'center', vertical: 'middle' };
 

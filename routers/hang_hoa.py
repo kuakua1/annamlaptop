@@ -65,18 +65,47 @@ async def get_hang_hoa(
     danh_muc: str = "",
     search: str = "",
     only_stock: bool = False,
+    from_date: str = "",
+    to_date: str = "",
     user: str = Depends(require_login)
 ):
     try:
         records = db_manager.get_all("HangHoa")
+
+        # Nếu có to_date, tính tồn kho lùi lại đến mốc to_date dựa trên NhapHang và XuatHang
+        sl_nhap_after_map = {}
+        sl_xuat_after_map = {}
+        if to_date:
+            nhap_records = db_manager.get_all("NhapHang")
+            xuat_records = db_manager.get_all("XuatHang")
+            for r in nhap_records:
+                ngay = str(r.get("ngay_nhap", "")).strip()
+                if ngay > to_date:
+                    m = str(r.get("ma_hang", "")).strip()
+                    sl_nhap_after_map[m] = sl_nhap_after_map.get(m, 0) + _safe_num(r.get("so_luong", 0), as_int=True)
+            for r in xuat_records:
+                ngay = str(r.get("ngay_xuat", "")).strip()
+                if ngay > to_date:
+                    m = str(r.get("ma_hang", "")).strip()
+                    sl_xuat_after_map[m] = sl_xuat_after_map.get(m, 0) + _safe_num(r.get("so_luong", 0), as_int=True)
+
         result = []
         for i, rec in enumerate(records):
-            ton_kho = _safe_num(rec.get("ton_kho", 0), as_int=True)
+            current_ton = _safe_num(rec.get("ton_kho", 0), as_int=True)
             gia_nhap = _safe_num(rec.get("gia_nhap", 0))
             gia_ban = _safe_num(rec.get("gia_ban", 0))
             chi_tiet_lo = str(rec.get("chi_tiet_lo", "") or "")
+            ma_hang = str(rec.get("ma_hang", ""))
+
+            if to_date:
+                ton_kho = current_ton + sl_xuat_after_map.get(ma_hang, 0) - sl_nhap_after_map.get(ma_hang, 0)
+                if ton_kho < 0:
+                    ton_kho = 0
+            else:
+                ton_kho = current_ton
+
             batches = parse_batches_str(chi_tiet_lo, ton_kho, gia_nhap)
-            if len(batches) <= 1:
+            if len(batches) <= 1 or to_date:
                 batches = [{"so_luong": ton_kho, "gia_nhap": gia_nhap}]
                 thanh_tien_ton = round(ton_kho * gia_nhap)
             else:
@@ -84,7 +113,7 @@ async def get_hang_hoa(
 
             item = {
                 "id": str(rec.get("id", "")),
-                "ma_hang": str(rec.get("ma_hang", "")),
+                "ma_hang": ma_hang,
                 "ten_hang": str(rec.get("ten_hang", "")),
                 "danh_muc": str(rec.get("danh_muc", "")),
                 "don_vi_tinh": str(rec.get("don_vi_tinh", "")),
@@ -106,11 +135,7 @@ async def get_hang_hoa(
             result.append(item)
 
         total_qty = sum(x["ton_kho"] for x in result)
-        total_val = sum(
-            sum(b["so_luong"] * b["gia_nhap"] for b in x["batches"]) if x.get("batches")
-            else (x["ton_kho"] * x["gia_nhap"])
-            for x in result
-        )
+        total_val = sum(x["thanh_tien_ton"] for x in result)
         return {
             "success": True,
             "data": result,
