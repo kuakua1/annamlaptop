@@ -1,5 +1,5 @@
 /**
- * lich_su.js - Sổ nhật ký chi tiết giao dịch kho hàng
+ * lich_su.js - Sổ nhật ký chi tiết giao dịch kho hàng (Gom nhóm theo Phiếu Giao Dịch)
  */
 
 let currentPage = 1;
@@ -7,8 +7,11 @@ let currentLoai = 'all';
 let currentSearch = '';
 let currentMonth = '';
 
-let currentRecords = [];
-let allHistoryRecords = [];
+let allHistoryRecords = []; // Dữ liệu thô từng dòng mặt hàng từ backend
+let allHistoryReceipts = []; // Danh sách phiếu đã gom nhóm
+let filteredHistoryReceipts = []; // Danh sách phiếu sau khi tìm kiếm/lọc
+let currentRecords = []; // Danh sách phiếu trên trang hiện tại
+const HISTORY_PAGE_SIZE = 50;
 
 function getCurrentMonthStr() {
     const d = new Date();
@@ -17,8 +20,59 @@ function getCurrentMonthStr() {
     return `${y}-${m}`;
 }
 
-let filteredHistoryRecords = [];
-const HISTORY_PAGE_SIZE = 50;
+/**
+ * Gom nhóm danh sách dòng hàng hóa thành danh sách Phiếu Giao Dịch (1 dòng = 1 phiếu)
+ */
+function groupHistoryRecordsByReceipt(records) {
+    const map = new Map();
+    records.forEach(r => {
+        const sp = (r.so_phieu || '').trim();
+        const loaiCode = r.loai_code || ((r.loai || '').toLowerCase().includes('nhập') || sp.startsWith('NH') ? 'nhap' : 'xuat');
+        const key = sp ? `${loaiCode}_${sp}` : `raw_${r.id || Math.random()}`;
+
+        if (!map.has(key)) {
+            const isNhap = loaiCode === 'nhap';
+            map.set(key, {
+                id: r.id,
+                so_phieu: sp || '---',
+                loai: r.loai || (isNhap ? 'Nhập' : 'Xuất'),
+                loai_code: loaiCode,
+                ngay: r.ngay || '',
+                doi_tac: r.doi_tac || (isNhap ? 'Nhà cung cấp lẻ' : 'Khách lẻ'),
+                dien_thoai: (r.dien_thoai || '').replace(/^None$/i, '').trim(),
+                dia_chi: (r.dia_chi || '').replace(/^None$/i, '').trim(),
+                ghi_chu: r.ghi_chu || '',
+                items: [],
+                tong_sl: 0,
+                tong_tien: 0,
+                tong_tien_no: 0
+            });
+        }
+        const rc = map.get(key);
+        const sl = parseInt(r.so_luong) || 0;
+        const donGia = parseFloat(r.don_gia) || 0;
+        const thanhTien = parseFloat(r.thanh_tien) || (sl * donGia);
+        const tienNo = parseFloat(r.tien_no !== undefined ? r.tien_no : (r.cong_no !== undefined ? r.cong_no : 0)) || 0;
+
+        rc.items.push({
+            ma_hang: r.ma_hang || '',
+            ten_hang: r.ten_hang || '',
+            don_vi_tinh: r.don_vi_tinh || 'Cái',
+            so_luong: sl,
+            don_gia: donGia,
+            thanh_tien: thanhTien,
+            tien_no: tienNo
+        });
+
+        rc.tong_sl += sl;
+        rc.tong_tien += thanhTien;
+        rc.tong_tien_no += tienNo;
+    });
+
+    const list = Array.from(map.values());
+    list.sort((a, b) => (b.ngay || '').localeCompare(a.ngay || ''));
+    return list;
+}
 
 async function loadHistory(silent = false) {
     try {
@@ -31,11 +85,12 @@ async function loadHistory(silent = false) {
             loai: currentLoai,
             month: currentMonth,
             page: 1,
-            page_size: 1000
+            page_size: 10000
         });
 
         const res = await apiRequest(`/api/lich-su?${params}`);
         allHistoryRecords = res.all_data || res.data || [];
+        allHistoryReceipts = groupHistoryRecordsByReceipt(allHistoryRecords);
 
         filterAndRenderHistory(1);
     } catch (e) {
@@ -51,21 +106,26 @@ function filterAndRenderHistory(page = 1) {
     const q = (searchInput ? searchInput.value : '').toLowerCase().trim();
 
     if (!q) {
-        filteredHistoryRecords = allHistoryRecords;
+        filteredHistoryReceipts = allHistoryReceipts;
     } else {
-        filteredHistoryRecords = allHistoryRecords.filter(r => {
-            const fullText = `${r.ma_hang || ''} ${r.ten_hang || ''} ${r.so_phieu || ''} ${r.doi_tac || ''} ${r.dien_thoai || ''} ${r.dia_chi || ''} ${r.ghi_chu || ''}`.toLowerCase();
-            return fullText.includes(q);
+        filteredHistoryReceipts = allHistoryReceipts.filter(rc => {
+            const fullText = `${rc.so_phieu || ''} ${rc.doi_tac || ''} ${rc.dien_thoai || ''} ${rc.dia_chi || ''} ${rc.ghi_chu || ''}`.toLowerCase();
+            if (fullText.includes(q)) return true;
+            return rc.items.some(it => {
+                const itemText = `${it.ma_hang || ''} ${it.ten_hang || ''}`.toLowerCase();
+                return itemText.includes(q);
+            });
         });
     }
 
     // Cập nhật Thống kê
-    const totalCount = filteredHistoryRecords.length;
-    const totalQty = filteredHistoryRecords.reduce((s, r) => s + (parseInt(r.so_luong) || 0), 0);
-    const totalCost = filteredHistoryRecords.reduce((s, r) => s + (parseFloat(r.thanh_tien) || 0), 0);
-    const totalDebt = filteredHistoryRecords.reduce((s, r) => s + (parseFloat(r.tien_no !== undefined ? r.tien_no : (r.cong_no !== undefined ? r.cong_no : 0)) || 0), 0);
+    const totalCount = filteredHistoryReceipts.length;
+    const totalQty = filteredHistoryReceipts.reduce((s, r) => s + r.tong_sl, 0);
+    const totalCost = filteredHistoryReceipts.reduce((s, r) => s + r.tong_tien, 0);
+    const totalDebt = filteredHistoryReceipts.reduce((s, r) => s + r.tong_tien_no, 0);
 
-    document.getElementById('total-count').textContent = formatNumber(totalCount);
+    const totalCountBadge = document.getElementById('total-count');
+    if (totalCountBadge) totalCountBadge.textContent = formatNumber(totalCount);
     if (document.getElementById('stat-count')) document.getElementById('stat-count').textContent = formatNumber(totalCount);
     if (document.getElementById('stat-qty')) document.getElementById('stat-qty').textContent = formatNumber(totalQty);
     if (document.getElementById('stat-cost')) document.getElementById('stat-cost').textContent = formatVND(totalCost);
@@ -77,7 +137,7 @@ function filterAndRenderHistory(page = 1) {
 
     const pageInfoEl = document.getElementById('page-info');
     if (pageInfoEl) {
-        pageInfoEl.textContent = totalCount > 0 ? `Trang ${currentPage}/${totalPages} (${totalCount} bản ghi)` : '';
+        pageInfoEl.textContent = totalCount > 0 ? `Trang ${currentPage}/${totalPages} (${totalCount} phiếu giao dịch)` : '';
     }
 
     // Cập nhật tfoot
@@ -98,11 +158,13 @@ function filterAndRenderHistory(page = 1) {
 
     // Slicing for page
     const startIdx = (currentPage - 1) * HISTORY_PAGE_SIZE;
-    const records = filteredHistoryRecords.slice(startIdx, startIdx + HISTORY_PAGE_SIZE);
+    const records = filteredHistoryReceipts.slice(startIdx, startIdx + HISTORY_PAGE_SIZE);
     currentRecords = records;
 
     // Render tbody
     const tbody = document.getElementById('history-tbody');
+    if (!tbody) return;
+
     if (!records.length) {
         tbody.innerHTML = `<tr><td colspan="13" class="text-center text-muted py-5">
             <i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>
@@ -111,21 +173,45 @@ function filterAndRenderHistory(page = 1) {
     } else {
         tbody.innerHTML = records.map((r, i) => {
             const idx = startIdx + i + 1;
-            const sl = parseInt(r.so_luong) || 0;
-            const donGia = parseFloat(r.don_gia) || 0;
-            const thanhTien = parseFloat(r.thanh_tien) || 0;
-            const tienNo = parseFloat(r.tien_no !== undefined ? r.tien_no : (r.cong_no !== undefined ? r.cong_no : 0)) || 0;
-            const isNhap = (r.loai || '').toLowerCase().includes('nhập') || r.loai_code === 'nhap';
+            const isNhap = (r.loai || '').toLowerCase().includes('nhập') || r.loai_code === 'nhap' || (r.so_phieu && r.so_phieu.startsWith('NH'));
 
-            const debtHtml = tienNo > 0
-                ? `<span class="fw-bold text-danger font-monospace">${formatVND(tienNo)}</span>`
-                : `<span class="text-muted font-monospace">0 đ</span>`;
+            const debtHtml = r.tong_tien_no > 0
+                ? `<span class="fw-bold text-danger font-monospace text-nowrap">${formatVND(r.tong_tien_no)}</span>`
+                : `<span class="text-muted font-monospace text-nowrap">0 đ</span>`;
 
             const typeBadge = isNhap
                 ? `<span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill"><i class="bi bi-arrow-down-left me-1"></i>Nhập</span>`
                 : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill"><i class="bi bi-arrow-up-right me-1"></i>Xuất</span>`;
 
             const doiTacInfo = r.doi_tac || (isNhap ? 'Nhà cung cấp lẻ' : 'Khách lẻ');
+            const cleanPhone = (r.dien_thoai || '').replace(/^None$/i, '').trim();
+
+            const previewItems = r.items.slice(0, 3);
+            const hasMore = r.items.length > 3;
+
+            // 1. Mã hàng: Mỗi hàng 1 dòng tương ứng
+            const maHangHtml = previewItems.map(it => `
+                <div class="py-0 my-0 text-truncate" style="min-height: 22px; line-height: 1.5;">
+                    <span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang || '-')}</span>
+                </div>
+            `).join('') + (hasMore ? `<div class="text-muted small fw-bold ps-1" style="min-height: 18px; line-height: 1.5;">...</div>` : '');
+
+            // 2. Tên hàng hóa: Mỗi hàng 1 dòng có bullet • như ảnh 1
+            const tenHangHtml = previewItems.map(it => `
+                <div class="text-truncate py-0 my-0" style="min-height: 22px; line-height: 1.5;" title="${escapeHtml(it.ten_hang)}">
+                    <span class="text-secondary me-1">•</span><span class="fw-semibold text-dark">${escapeHtml(it.ten_hang)}</span>
+                </div>
+            `).join('') + (hasMore ? `<div class="text-muted small fw-bold ps-2 pt-0" style="min-height: 18px; line-height: 1.5;">...</div>` : '');
+
+            // 3. ĐVT: Mỗi hàng 1 dòng tương ứng
+            const dvtHtml = previewItems.map(it => `
+                <div class="text-muted small py-0 my-0" style="min-height: 22px; line-height: 1.5;">${escapeHtml(it.don_vi_tinh || 'Cái')}</div>
+            `).join('') + (hasMore ? `<div class="text-muted small" style="min-height: 18px; line-height: 1.5;">&nbsp;</div>` : '');
+
+            // 4. Đơn giá: Mỗi hàng 1 dòng tương ứng
+            const donGiaHtml = previewItems.map(it => `
+                <div class="text-muted font-monospace small py-0 my-0 text-nowrap" style="min-height: 22px; line-height: 1.5;">${formatVND(it.don_gia || 0)}</div>
+            `).join('') + (hasMore ? `<div class="text-muted small" style="min-height: 18px; line-height: 1.5;">&nbsp;</div>` : '');
 
             return `
                 <tr>
@@ -137,20 +223,42 @@ function filterAndRenderHistory(page = 1) {
                             <i class="bi bi-file-earmark-text me-1"></i>${escapeHtml(r.so_phieu)}
                         </button>
                     </td>
-                    <td><span class="badge bg-secondary font-monospace">${escapeHtml(r.ma_hang)}</span></td>
-                    <td class="fw-semibold text-dark">${escapeHtml(r.ten_hang)}</td>
-                    <td class="text-center text-muted small">${escapeHtml(r.don_vi_tinh || 'Cái')}</td>
-                    <td class="text-center fw-bold fs-6 ${isNhap ? 'text-primary' : 'text-danger'} font-monospace">${formatNumber(sl)}</td>
-                    <td class="text-end text-muted font-monospace text-nowrap" style="white-space: nowrap;">${formatVND(donGia)}</td>
-                    <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">${formatVND(thanhTien)}</td>
-                    <td class="text-end font-monospace text-nowrap" style="white-space: nowrap; min-width: 145px;">${debtHtml}</td>
+                    <td>
+                        <div class="d-flex flex-column gap-1">
+                            ${maHangHtml}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-flex flex-column gap-1" style="max-width: 380px;">
+                            ${tenHangHtml}
+                        </div>
+                    </td>
+                    <td class="text-center">
+                        <div class="d-flex flex-column gap-1">
+                            ${dvtHtml}
+                        </div>
+                    </td>
+                    <td class="text-center fw-bold fs-6 ${isNhap ? 'text-primary' : 'text-danger'} font-monospace" title="Tổng: ${formatNumber(r.tong_sl)} (${r.items.length} mặt hàng)">
+                        ${formatNumber(r.tong_sl)}
+                    </td>
+                    <td class="text-end text-nowrap" style="white-space: nowrap;">
+                        <div class="d-flex flex-column gap-1">
+                            ${donGiaHtml}
+                        </div>
+                    </td>
+                    <td class="text-end fw-bold text-dark font-monospace text-nowrap" style="white-space: nowrap; min-width: 160px;">
+                        ${formatVND(r.tong_tien)}
+                    </td>
+                    <td class="text-end font-monospace text-nowrap" style="white-space: nowrap; min-width: 145px;">
+                        ${debtHtml}
+                    </td>
                     <td>
                         <div class="fw-medium text-dark text-truncate" style="max-width: 220px;" title="${escapeHtml(doiTacInfo)}">${escapeHtml(doiTacInfo)}</div>
-                        ${r.dien_thoai ? `<div class="small text-muted font-monospace"><i class="bi bi-telephone me-1"></i>${escapeHtml(r.dien_thoai)}</div>` : ''}
+                        ${cleanPhone ? `<div class="small text-muted font-monospace"><i class="bi bi-telephone me-1 text-primary"></i>${escapeHtml(cleanPhone)}</div>` : ''}
                     </td>
                     <td class="text-center no-print">
                         <div class="d-flex justify-content-center gap-1">
-                            <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết phiếu">
+                            <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewHistoryReceipt('${escapeHtml(r.loai)}', '${escapeHtml(r.so_phieu)}')" title="Xem chi tiết & in phiếu">
                                 <i class="bi bi-eye"></i>
                             </button>
                             <button class="btn btn-xs btn-outline-danger btn-sm" onclick="confirmDeleteReceipt('${escapeHtml(r.so_phieu)}', '${isNhap ? 'nhap' : 'xuat'}', () => loadHistory())" title="Xóa phiếu">
@@ -200,7 +308,6 @@ function clearSearch() {
     const input = document.getElementById('search-input');
     if (input) input.value = '';
     currentSearch = '';
-    currentPage = 1;
     filterAndRenderHistory(1);
 }
 
@@ -209,9 +316,16 @@ function printHistoryReport() {
 }
 
 function exportHistoryExcel() {
-    const dataToExport = allHistoryRecords && allHistoryRecords.length ? allHistoryRecords : currentRecords;
-    if (!dataToExport || !dataToExport.length) {
+    if (!filteredHistoryReceipts || !filteredHistoryReceipts.length) {
         showToast('Không có dữ liệu giao dịch để xuất Excel!', 'info');
+        return;
+    }
+
+    // Lấy các mặt hàng thuộc các phiếu đang được hiển thị
+    const validSoPhieuSet = new Set(filteredHistoryReceipts.map(r => r.so_phieu));
+    const itemsToExport = allHistoryRecords.filter(r => validSoPhieuSet.has(r.so_phieu));
+    if (!itemsToExport.length) {
+        showToast('Không có dữ liệu chi tiết để xuất Excel!', 'info');
         return;
     }
 
@@ -219,12 +333,12 @@ function exportHistoryExcel() {
     let totalThanhTien = 0;
     let totalDebt = 0;
 
-    const rows = dataToExport.map((r, idx) => {
+    const rows = itemsToExport.map((r, idx) => {
         const sl = parseInt(r.so_luong) || 0;
         const donGia = parseFloat(r.don_gia) || 0;
         const thanhTien = parseFloat(r.thanh_tien) || 0;
         const tienNo = parseFloat(r.tien_no !== undefined ? r.tien_no : (r.cong_no !== undefined ? r.cong_no : 0)) || 0;
-        const isNhap = (r.loai || '').toLowerCase().includes('nhập') || r.loai_code === 'nhap';
+        const isNhap = (r.loai || '').toLowerCase().includes('nhập') || r.loai_code === 'nhap' || (r.so_phieu && r.so_phieu.startsWith('NH'));
 
         totalQty += sl;
         totalThanhTien += thanhTien;
