@@ -1583,6 +1583,216 @@ class DatabaseManager:
             "ghi_chu": ghi_chu
         }
 
+    def update_phieu_thu(self, record_id: str, data: dict) -> dict:
+        """
+        Cập nhật phiếu thu tiền, điều chỉnh công nợ phiếu xuất liên quan và đồng bộ Google Sheets.
+        """
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM SoQuy WHERE id = ? OR ma_phieu = ?", (str(record_id), str(record_id)))
+                rec = cursor.fetchone()
+                if not rec:
+                    return None
+
+                rec_id = str(rec["id"])
+                ma_phieu = str(rec["ma_phieu"])
+                old_loai_quy = str(rec["loai_quy"] or "TIEN_MAT")
+                old_so_tien = float(rec["so_tien"] or 0)
+                old_phieu_lq = str(rec["phieu_lien_quan"] or "").strip()
+
+                new_ngay = data.get("ngay") or rec["ngay"]
+                new_loai_quy = data.get("loai_quy") or old_loai_quy
+                new_doi_tuong = str(data.get("doi_tuong") if data.get("doi_tuong") is not None else rec["doi_tuong"]).strip()
+                new_dien_thoai = str(data.get("dien_thoai") if data.get("dien_thoai") is not None else (rec["dien_thoai"] or "")).strip()
+                new_so_tien = float(data.get("so_tien") if data.get("so_tien") is not None else old_so_tien)
+                new_phieu_lq = str(data.get("phieu_lien_quan") if data.get("phieu_lien_quan") is not None else (rec["phieu_lien_quan"] or "")).strip()
+                new_ghi_chu = str(data.get("ghi_chu") if data.get("ghi_chu") is not None else (rec["ghi_chu"] or "")).strip()
+
+                modified_xuat_ids = []
+
+                # 1. Hoàn trả công nợ phiếu xuất cũ nếu trước đó có liên quan
+                if old_phieu_lq and old_phieu_lq != "ALL":
+                    cursor.execute("SELECT * FROM XuatHang WHERE so_phieu = ?", (old_phieu_lq,))
+                    old_xuat_rows = cursor.fetchall()
+                    if old_xuat_rows:
+                        rem_refund = old_so_tien
+                        for xr in old_xuat_rows:
+                            cur_no = float(xr["tien_khach_no"] if xr["tien_khach_no"] is not None else 0.0)
+                            max_no = float(xr["thanh_tien"] or 0.0)
+                            refund = min(max_no - cur_no, rem_refund)
+                            if refund > 0:
+                                cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (cur_no + refund, xr["id"]))
+                                rem_refund -= refund
+                                modified_xuat_ids.append(xr["id"])
+
+                # 2. Khấu trừ công nợ theo phiếu xuất mới và số tiền mới
+                if new_phieu_lq and new_phieu_lq != "ALL":
+                    cursor.execute("SELECT id, tien_khach_no, thanh_tien FROM XuatHang WHERE so_phieu = ?", (new_phieu_lq,))
+                    new_xuat_rows = cursor.fetchall()
+                    if new_xuat_rows:
+                        rem_payment = new_so_tien
+                        for xr in new_xuat_rows:
+                            cur_no = float(xr["tien_khach_no"] if xr["tien_khach_no"] is not None else xr["thanh_tien"] or 0.0)
+                            deduct = min(cur_no, rem_payment)
+                            new_no = max(0.0, cur_no - deduct)
+                            rem_payment -= deduct
+                            cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (new_no, xr["id"]))
+                            if xr["id"] not in modified_xuat_ids:
+                                modified_xuat_ids.append(xr["id"])
+
+                # 3. Cập nhật dòng trong bảng SoQuy
+                cursor.execute("""
+                    UPDATE SoQuy
+                    SET ngay = ?, loai_quy = ?, doi_tuong = ?, dien_thoai = ?, so_tien = ?, phieu_lien_quan = ?, ghi_chu = ?
+                    WHERE id = ?
+                """, (new_ngay, new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, rec_id))
+                conn.commit()
+
+        # Enqueue cập nhật lên Google Sheet
+        sheet_row = [rec_id, ma_phieu, new_ngay, "THU", new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu]
+        self._enqueue_task("UPDATE_ROW", SHEET_SO_QUY, {"id": rec_id, "row": sheet_row})
+
+        # Cập nhật các dòng phiếu xuất bị ảnh hưởng trên Google Sheets
+        if modified_xuat_ids:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for mid in modified_xuat_ids:
+                    cursor.execute("SELECT * FROM XuatHang WHERE id = ?", (mid,))
+                    ux = cursor.fetchone()
+                    if ux:
+                        u_row = [
+                            ux["id"], ux["so_phieu"], ux["ngay_xuat"], ux["ma_hang"], ux["ten_hang"],
+                            ux["so_luong"], ux["gia_ban"], ux["thanh_tien"], ux["khach_hang_id"],
+                            ux["ghi_chu"], ux["gia_von"], ux["loi_nhuan"], ux["tien_khach_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
+
+        return {
+            "id": rec_id,
+            "ma_phieu": ma_phieu,
+            "ngay": new_ngay,
+            "loai_phieu": "THU",
+            "loai_quy": new_loai_quy,
+            "doi_tuong": new_doi_tuong,
+            "dien_thoai": new_dien_thoai,
+            "so_tien": new_so_tien,
+            "phieu_lien_quan": new_phieu_lq,
+            "ghi_chu": new_ghi_chu
+        }
+
+    def update_phieu_chi(self, record_id: str, data: dict) -> dict:
+        """
+        Cập nhật phiếu chi tiền, điều chỉnh công nợ phiếu nhập liên quan và đồng bộ Google Sheets.
+        """
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM SoQuy WHERE id = ? OR ma_phieu = ?", (str(record_id), str(record_id)))
+                rec = cursor.fetchone()
+                if not rec:
+                    return None
+
+                rec_id = str(rec["id"])
+                ma_phieu = str(rec["ma_phieu"])
+                old_loai_quy = str(rec["loai_quy"] or "TIEN_MAT")
+                old_so_tien = float(rec["so_tien"] or 0)
+                old_phieu_lq = str(rec["phieu_lien_quan"] or "").strip()
+
+                new_ngay = data.get("ngay") or rec["ngay"]
+                new_loai_quy = data.get("loai_quy") or old_loai_quy
+                new_doi_tuong = str(data.get("doi_tuong") if data.get("doi_tuong") is not None else rec["doi_tuong"]).strip()
+                new_dien_thoai = str(data.get("dien_thoai") if data.get("dien_thoai") is not None else (rec["dien_thoai"] or "")).strip()
+                new_so_tien = float(data.get("so_tien") if data.get("so_tien") is not None else old_so_tien)
+                new_phieu_lq = str(data.get("phieu_lien_quan") if data.get("phieu_lien_quan") is not None else (rec["phieu_lien_quan"] or "")).strip()
+                new_ghi_chu = str(data.get("ghi_chu") if data.get("ghi_chu") is not None else (rec["ghi_chu"] or "")).strip()
+
+                modified_nhap_ids = []
+
+                # 1. Hoàn trả công nợ phiếu nhập cũ nếu có
+                if old_phieu_lq and old_phieu_lq != "ALL":
+                    cursor.execute("SELECT * FROM NhapHang WHERE so_phieu = ?", (old_phieu_lq,))
+                    old_nhap_rows = cursor.fetchall()
+                    if old_nhap_rows:
+                        rem_refund = old_so_tien
+                        for nr in old_nhap_rows:
+                            cur_no = float(nr["cong_no"] if nr["cong_no"] is not None else 0.0)
+                            max_no = float(nr["thanh_tien"] or 0.0)
+                            refund = min(max_no - cur_no, rem_refund)
+                            if refund > 0:
+                                cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (cur_no + refund, nr["id"]))
+                                rem_refund -= refund
+                                modified_nhap_ids.append(nr["id"])
+
+                # 2. Khấu trừ công nợ theo phiếu nhập mới và số tiền mới
+                if new_phieu_lq and new_phieu_lq != "ALL":
+                    cursor.execute("SELECT id, cong_no, thanh_tien FROM NhapHang WHERE so_phieu = ?", (new_phieu_lq,))
+                    new_nhap_rows = cursor.fetchall()
+                    if new_nhap_rows:
+                        rem_payment = new_so_tien
+                        for nr in new_nhap_rows:
+                            cur_no = float(nr["cong_no"] if nr["cong_no"] is not None else nr["thanh_tien"] or 0.0)
+                            deduct = min(cur_no, rem_payment)
+                            new_no = max(0.0, cur_no - deduct)
+                            rem_payment -= deduct
+                            cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (new_no, nr["id"]))
+                            if nr["id"] not in modified_nhap_ids:
+                                modified_nhap_ids.append(nr["id"])
+
+                # 3. Cập nhật dòng trong bảng SoQuy
+                cursor.execute("""
+                    UPDATE SoQuy
+                    SET ngay = ?, loai_quy = ?, doi_tuong = ?, dien_thoai = ?, so_tien = ?, phieu_lien_quan = ?, ghi_chu = ?
+                    WHERE id = ?
+                """, (new_ngay, new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, rec_id))
+                conn.commit()
+
+        # Enqueue cập nhật lên Google Sheet
+        sheet_row = [rec_id, ma_phieu, new_ngay, "CHI", new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu]
+        self._enqueue_task("UPDATE_ROW", SHEET_SO_QUY, {"id": rec_id, "row": sheet_row})
+
+        # Cập nhật các dòng phiếu nhập bị ảnh hưởng trên Google Sheets
+        if modified_nhap_ids:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for mid in modified_nhap_ids:
+                    cursor.execute("SELECT * FROM NhapHang WHERE id = ?", (mid,))
+                    un = cursor.fetchone()
+                    if un:
+                        u_row = [
+                            un["id"], un["so_phieu"], un["ngay_nhap"], un["ma_hang"], un["ten_hang"],
+                            un["so_luong"], un["gia_nhap"], un["thanh_tien"], un["nha_cung_cap_id"],
+                            un["ghi_chu"], un["cong_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
+
+        return {
+            "id": rec_id,
+            "ma_phieu": ma_phieu,
+            "ngay": new_ngay,
+            "loai_phieu": "CHI",
+            "loai_quy": new_loai_quy,
+            "doi_tuong": new_doi_tuong,
+            "dien_thoai": new_dien_thoai,
+            "so_tien": new_so_tien,
+            "phieu_lien_quan": new_phieu_lq,
+            "ghi_chu": new_ghi_chu
+        }
+
+    def update_phieu_so_quy(self, record_id: str, data: dict) -> dict:
+        """Dispatcher cập nhật phiếu Sổ Quỹ (tự nhận diện THU hoặc CHI)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT loai_phieu FROM SoQuy WHERE id = ? OR ma_phieu = ?", (str(record_id), str(record_id)))
+            rec = cursor.fetchone()
+            if not rec:
+                return None
+            loai = str(rec["loai_phieu"] or "").upper()
+        if loai == "THU":
+            return self.update_phieu_thu(record_id, data)
+        else:
+            return self.update_phieu_chi(record_id, data)
+
     def delete_phieu_so_quy(self, record_id: str) -> bool:
         """Xóa phiếu thu/chi và đồng bộ."""
         with self._lock:

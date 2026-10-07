@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from datetime import date
 
 from routers.auth import get_current_user, require_login
-from models.schemas import PhieuThuCreate, PhieuChiCreate, QuyConfigUpdate
+from models.schemas import PhieuThuCreate, PhieuThuUpdate, PhieuChiCreate, PhieuChiUpdate, QuyConfigUpdate
 from services.db_service import db_manager
 
 router = APIRouter()
@@ -201,6 +201,54 @@ async def get_so_quy_detail(record_id: str, user: str = Depends(require_login)):
         if str(r.get("id", "")).strip() == record_id.strip() or str(r.get("ma_phieu", "")).strip() == record_id.strip():
             return {"success": True, "data": r}
     raise HTTPException(status_code=404, detail="Không tìm thấy phiếu thu/chi")
+
+
+@router.put("/api/phieu-thu/{record_id}")
+async def update_phieu_thu_endpoint(record_id: str, data: PhieuThuUpdate, user: str = Depends(require_login)):
+    """Cập nhật phiếu thu tiền."""
+    try:
+        updated = db_manager.update_phieu_thu(record_id, data.model_dump(exclude_unset=True))
+        if not updated:
+            raise HTTPException(status_code=404, detail="Không tìm thấy phiếu thu cần cập nhật")
+        return {
+            "success": True,
+            "message": f"Cập nhật phiếu thu {updated.get('ma_phieu')} thành công",
+            "data": updated
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/phieu-chi/{record_id}")
+async def update_phieu_chi_endpoint(record_id: str, data: PhieuChiUpdate, user: str = Depends(require_login)):
+    """Cập nhật phiếu chi tiền."""
+    try:
+        updated = db_manager.update_phieu_chi(record_id, data.model_dump(exclude_unset=True))
+        if not updated:
+            raise HTTPException(status_code=404, detail="Không tìm thấy phiếu chi cần cập nhật")
+        return {
+            "success": True,
+            "message": f"Cập nhật phiếu chi {updated.get('ma_phieu')} thành công",
+            "data": updated
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/so-quy/{record_id}")
+async def update_so_quy_record(record_id: str, data: dict, user: str = Depends(require_login)):
+    """Cập nhật một phiếu trong sổ quỹ (tự nhận diện thu/chi)."""
+    try:
+        updated = db_manager.update_phieu_so_quy(record_id, data)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Không tìm thấy phiếu cần cập nhật")
+        return {
+            "success": True,
+            "message": f"Cập nhật phiếu {updated.get('ma_phieu')} thành công",
+            "data": updated
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/api/so-quy/{record_id}")

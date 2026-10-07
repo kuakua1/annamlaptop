@@ -121,17 +121,32 @@
     </div>
 </div>
 
-<!-- Modal Chi Tiết Phiếu Thu -->
+<!-- Modal Chi Tiết Phiếu Thu (Hỗ Trợ Chỉnh Sửa & Lưu Thay Đổi) -->
 <div class="modal fade" id="modal-detail-phieu-thu" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content shadow border-0">
             <div class="modal-header bg-success text-white py-2">
                 <h6 class="modal-title fw-bold" id="detail-phieu-title">Chi Tiết Phiếu Thu</h6>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" onclick="safeClosePhieuThuDetailModal()" title="Đóng"></button>
             </div>
             <div class="modal-body p-3" id="detail-phieu-body"></div>
-            <div class="modal-footer py-2 bg-light">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+            <div class="modal-footer py-2 bg-light d-flex justify-content-between align-items-center">
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-danger btn-sm" id="btn-modal-delete-phieu-thu">
+                        <i class="bi bi-trash me-1"></i>Xóa Phiếu
+                    </button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btn-modal-print-phieu-thu">
+                        <i class="bi bi-printer me-1"></i>In Phiếu
+                    </button>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="btn btn-secondary btn-sm opacity-50 px-3" id="btn-save-detail-phieu-thu" disabled onclick="savePhieuThuDetail(false)">
+                        <i class="bi bi-floppy2 me-1"></i>Lưu thay đổi
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-close-detail-phieu-thu" onclick="safeClosePhieuThuDetailModal()">
+                        Đóng
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -139,5 +154,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/phieu_thu.js?v=20261006_v5"></script>
+<script src="/static/js/phieu_thu.js?v=20261007_v6"></script>
 {% endblock %}

@@ -262,7 +262,11 @@ function renderSoQuyTable() {
     }).join('');
 }
 
-// ── Xem Chi Tiết & In Phiếu Thu/Chi ─────────────────────────────────────────
+// ── Xem Chi Tiết & Chỉnh Sửa & In Phiếu Thu/Chi ────────────────────────────
+
+window.currentThuChiRecord = null;
+window.initialThuChiData = null;
+window.isThuChiDetailDirty = false;
 
 async function viewThuChiDetail(recordId, loaiPhieu) {
     try {
@@ -276,6 +280,10 @@ async function viewThuChiDetail(recordId, loaiPhieu) {
             return;
         }
 
+        window.currentThuChiRecord = { ...item };
+        window.initialThuChiData = { ...item };
+        resetThuChiClean();
+
         const isThu = (item.loai_phieu || loaiPhieu) === 'THU';
         const titleEl = document.getElementById('detail-thuchi-title');
         if (titleEl) {
@@ -287,69 +295,104 @@ async function viewThuChiDetail(recordId, loaiPhieu) {
             headerEl.className = `modal-header py-2 text-white ${isThu ? 'bg-success' : 'bg-danger'}`;
         }
 
-        const loaiStr = item.loai_quy === 'TIEN_MAT' ? 'Tiền mặt' : 'Tiền gửi ngân hàng (Chuyển khoản)';
         const amountClass = isThu ? 'text-success' : 'text-danger';
-        const partnerLabel = isThu ? 'Người / Đơn Vị Nộp Tiền:' : 'Người / Đơn Vị Nhận Tiền:';
-        const relatedLabel = isThu ? 'Phiếu Xuất Liên Quan:' : 'Phiếu Nhập Liên Quan:';
+        const partnerLabel = isThu ? 'Người / Đơn Vị Nộp Tiền' : 'Người / Đơn Vị Nhận Tiền';
+        const relatedLabel = isThu ? 'Phiếu Xuất Liên Quan' : 'Phiếu Nhập Liên Quan';
         const docTitle = isThu ? 'PHIẾU THU TIỀN' : 'PHIẾU CHI TIỀN';
 
         const modalBody = document.getElementById('detail-thuchi-body');
         if (modalBody) {
             modalBody.innerHTML = `
-                <div class="p-3" id="printable-thuchi-detail">
-                    <div class="text-center mb-3 border-bottom pb-2">
-                        <h5 class="fw-bold text-uppercase mb-1 ${amountClass}">${docTitle}</h5>
-                        <div class="font-monospace text-muted small">Mã số: <strong>${escapeHtml(item.ma_phieu)}</strong> | Ngày: <strong>${formatDate(item.ngay)}</strong></div>
-                    </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-4 text-muted">${partnerLabel}</div>
-                        <div class="col-sm-8 fw-bold text-dark">${escapeHtml(item.doi_tuong)}</div>
-                    </div>
-                    ${item.dien_thoai ? `
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-4 text-muted">Số điện thoại:</div>
-                        <div class="col-sm-8 font-monospace">${escapeHtml(item.dien_thoai)}</div>
-                    </div>` : ''}
-                    ${item.dia_chi ? `
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-4 text-muted">Địa chỉ:</div>
-                        <div class="col-sm-8">${escapeHtml(item.dia_chi)}</div>
-                    </div>` : ''}
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-4 text-muted">Hình thức thanh toán:</div>
-                        <div class="col-sm-8">${loaiStr}</div>
-                    </div>
-                    ${item.phieu_lien_quan ? `
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-4 text-muted">${relatedLabel}</div>
-                        <div class="col-sm-8 font-monospace fw-bold ${item.phieu_lien_quan.startsWith('XH') ? 'text-danger' : 'text-primary'}">
-                            ${escapeHtml(item.phieu_lien_quan)}
+                <!-- Khung tiêu đề phiếu -->
+                <div class="card bg-light border-0 mb-3 shadow-none">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 pb-2 border-bottom">
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="badge ${isThu ? 'bg-success' : 'bg-danger'} fs-6 px-3 py-1 font-monospace">
+                                    ${escapeHtml(item.ma_phieu)}
+                                </span>
+                                <span class="badge ${isThu ? 'bg-success-subtle text-success border border-success' : 'bg-danger-subtle text-danger border border-danger'}">
+                                    ${isThu ? 'PHIẾU THU' : 'PHIẾU CHI'}
+                                </span>
+                            </div>
+                            <div class="text-end">
+                                <span class="text-muted small me-1">Số tiền:</span>
+                                <span class="fs-4 fw-bold ${amountClass} font-monospace" id="edit-thuchi-so-tien-preview">
+                                    ${formatVND(item.so_tien)}
+                                </span>
+                            </div>
                         </div>
-                    </div>` : ''}
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-4 text-muted">Số tiền:</div>
-                        <div class="col-sm-8 fs-4 fw-bold font-monospace ${amountClass}">
-                            ${formatVND(item.so_tien)}
+
+                        <!-- Form chỉnh sửa thông tin phiếu -->
+                        <div class="row g-2 pt-2">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold text-muted mb-1">
+                                    <i class="bi bi-calendar3 me-1"></i>Ngày ${isThu ? 'Thu' : 'Chi'} <span class="text-danger">*</span>
+                                </label>
+                                <input type="date" id="edit-thuchi-ngay" class="form-control form-control-sm font-monospace fw-semibold" value="${item.ngay || ''}" onchange="checkThuChiDirty()">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold text-muted mb-1">
+                                    <i class="bi bi-credit-card me-1"></i>Hình Thức Thanh Toán <span class="text-danger">*</span>
+                                </label>
+                                <select id="edit-thuchi-loai-quy" class="form-select form-select-sm" onchange="checkThuChiDirty()">
+                                    <option value="TIEN_MAT" ${item.loai_quy === 'TIEN_MAT' ? 'selected' : ''}>Tiền mặt (Két tiền)</option>
+                                    <option value="NGAN_HANG" ${item.loai_quy === 'NGAN_HANG' ? 'selected' : ''}>Tiền gửi ngân hàng (Chuyển khoản)</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-7">
+                                <label class="form-label small fw-semibold text-muted mb-1">
+                                    <i class="bi bi-person me-1"></i>${partnerLabel} <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" id="edit-thuchi-doi-tuong" class="form-control form-control-sm fw-bold text-dark" value="${escapeHtml(item.doi_tuong || '')}" placeholder="Tên đối tượng..." oninput="checkThuChiDirty()">
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label small fw-semibold text-muted mb-1">
+                                    <i class="bi bi-telephone me-1"></i>Số Điện Thoại
+                                </label>
+                                <input type="text" id="edit-thuchi-dien-thoai" class="form-control form-control-sm font-monospace" value="${escapeHtml(item.dien_thoai || '')}" placeholder="Số điện thoại..." oninput="checkThuChiDirty()">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold text-muted mb-1">
+                                    <i class="bi bi-receipt me-1"></i>${relatedLabel}
+                                </label>
+                                <input type="text" id="edit-thuchi-phieu-lq" class="form-control form-control-sm font-monospace fw-semibold ${item.phieu_lien_quan && item.phieu_lien_quan.startsWith('XH') ? 'text-danger' : 'text-primary'}" value="${escapeHtml(item.phieu_lien_quan || '')}" placeholder="Ví dụ: XH1003/10 (hoặc để trống)" oninput="checkThuChiDirty()">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-semibold text-muted mb-1">
+                                    <i class="bi bi-cash-coin me-1"></i>Số Tiền (VNĐ) <span class="text-danger">*</span>
+                                </label>
+                                <input type="number" min="1" step="1000" id="edit-thuchi-so-tien" class="form-control form-control-sm fs-6 fw-bold font-monospace ${amountClass}" value="${item.so_tien || 0}" oninput="onEditSoTienInput(this)">
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold text-muted mb-1">
+                                    <i class="bi bi-chat-left-text me-1"></i>Nội Dung / Ghi Chú
+                                </label>
+                                <textarea id="edit-thuchi-ghi-chu" class="form-control form-control-sm" rows="2" placeholder="Ghi chú nội dung thu chi..." oninput="checkThuChiDirty()">${escapeHtml(item.ghi_chu || '')}</textarea>
+                            </div>
                         </div>
-                    </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-sm-4 text-muted">Nội dung / Ghi chú:</div>
-                        <div class="col-sm-8 p-2 bg-light rounded">${escapeHtml(item.ghi_chu || 'Không có')}</div>
                     </div>
                 </div>
+
+                <!-- Vùng in phiếu chuẩn khổ giấy (ẩn trên giao diện, chỉ hiển thị khi in) -->
+                <div class="d-none" id="printable-thuchi-container"></div>
             `;
         }
 
         // Cập nhật nút in & xóa
         const btnPrint = document.getElementById('btn-print-thuchi-detail');
         if (btnPrint) {
-            btnPrint.onclick = () => printReceiptModal('printable-thuchi-detail', docTitle);
+            btnPrint.onclick = () => printCurrentThuChiReceipt(docTitle);
         }
 
         const btnDelete = document.getElementById('btn-delete-thuchi-detail');
         if (btnDelete) {
             btnDelete.onclick = () => {
                 deleteReceipt(item.id, item.ma_phieu, () => {
+                    window.isThuChiDetailDirty = false;
                     const modalEl = document.getElementById('modal-detail-thuchi');
                     if (modalEl) {
                         const bsModal = bootstrap.Modal.getInstance(modalEl);
@@ -358,6 +401,8 @@ async function viewThuChiDetail(recordId, loaiPhieu) {
                 });
             };
         }
+
+        setupThuChiModalUnsavedHook('modal-detail-thuchi');
 
         const modalEl = document.getElementById('modal-detail-thuchi');
         if (modalEl) {
@@ -368,6 +413,267 @@ async function viewThuChiDetail(recordId, loaiPhieu) {
     } catch (e) {
         showToast('Lỗi hiển thị chi tiết phiếu: ' + e.message, 'error');
     }
+}
+
+function onEditSoTienInput(input) {
+    const val = parseFloat(input.value || 0) || 0;
+    const previewEl = document.getElementById('edit-thuchi-so-tien-preview');
+    if (previewEl) {
+        previewEl.innerText = formatVND(val);
+    }
+    checkThuChiDirty();
+}
+
+function checkThuChiDirty() {
+    if (!window.initialThuChiData) return;
+    const init = window.initialThuChiData;
+
+    const curNgay = document.getElementById('edit-thuchi-ngay')?.value || '';
+    const curLoaiQuy = document.getElementById('edit-thuchi-loai-quy')?.value || '';
+    const curDoiTuong = document.getElementById('edit-thuchi-doi-tuong')?.value.trim() || '';
+    const curSdt = document.getElementById('edit-thuchi-dien-thoai')?.value.trim() || '';
+    const curPhieuLq = document.getElementById('edit-thuchi-phieu-lq')?.value.trim() || '';
+    const curSoTien = parseFloat(document.getElementById('edit-thuchi-so-tien')?.value || 0) || 0;
+    const curGhiChu = document.getElementById('edit-thuchi-ghi-chu')?.value.trim() || '';
+
+    const isDirty = (
+        curNgay !== (init.ngay || '') ||
+        curLoaiQuy !== (init.loai_quy || '') ||
+        curDoiTuong !== (init.doi_tuong || '').trim() ||
+        curSdt !== (init.dien_thoai || '').trim() ||
+        curPhieuLq !== (init.phieu_lien_quan || '').trim() ||
+        curSoTien !== (parseFloat(init.so_tien || 0) || 0) ||
+        curGhiChu !== (init.ghi_chu || '').trim()
+    );
+
+    if (isDirty) {
+        markThuChiDirty();
+    } else {
+        resetThuChiClean();
+    }
+}
+
+function markThuChiDirty() {
+    window.isThuChiDetailDirty = true;
+    const saveBtn = document.getElementById('btn-save-thuchi-detail');
+    if (saveBtn) {
+        saveBtn.className = 'btn btn-success btn-sm fw-bold shadow px-3';
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-floppy2-fill me-1"></i>Lưu thay đổi';
+    }
+}
+
+function resetThuChiClean() {
+    window.isThuChiDetailDirty = false;
+    const saveBtn = document.getElementById('btn-save-thuchi-detail');
+    if (saveBtn) {
+        saveBtn.className = 'btn btn-secondary btn-sm opacity-50 px-3';
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="bi bi-floppy2 me-1"></i>Lưu thay đổi';
+    }
+}
+
+async function saveThuChiDetail(shouldCloseAfterSave = false) {
+    if (!window.currentThuChiRecord) return;
+    const item = window.currentThuChiRecord;
+
+    const curNgay = document.getElementById('edit-thuchi-ngay')?.value || '';
+    const curLoaiQuy = document.getElementById('edit-thuchi-loai-quy')?.value || '';
+    const curDoiTuong = document.getElementById('edit-thuchi-doi-tuong')?.value.trim() || '';
+    const curSdt = document.getElementById('edit-thuchi-dien-thoai')?.value.trim() || '';
+    const curPhieuLq = document.getElementById('edit-thuchi-phieu-lq')?.value.trim() || '';
+    const curSoTien = parseFloat(document.getElementById('edit-thuchi-so-tien')?.value || 0) || 0;
+    const curGhiChu = document.getElementById('edit-thuchi-ghi-chu')?.value.trim() || '';
+
+    if (!curDoiTuong) {
+        showToast('Vui lòng nhập tên người / đơn vị!', 'warning');
+        return;
+    }
+    if (curSoTien <= 0) {
+        showToast('Số tiền phải lớn hơn 0!', 'warning');
+        return;
+    }
+    if (!curNgay) {
+        showToast('Vui lòng chọn ngày thu/chi!', 'warning');
+        return;
+    }
+
+    const saveBtn = document.getElementById('btn-save-thuchi-detail');
+    const origHtml = saveBtn ? saveBtn.innerHTML : '';
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang lưu...';
+    }
+
+    try {
+        showLoading();
+        const payload = {
+            ngay: curNgay,
+            loai_quy: curLoaiQuy,
+            doi_tuong: curDoiTuong,
+            dien_thoai: curSdt,
+            phieu_lien_quan: curPhieuLq,
+            so_tien: curSoTien,
+            ghi_chu: curGhiChu
+        };
+
+        const res = await apiRequest(`/api/so-quy/${encodeURIComponent(item.id)}`, 'PUT', payload);
+        if (res && res.success) {
+            showToast(res.message || `Đã lưu cập nhật phiếu ${item.ma_phieu} thành công!`, 'success');
+
+            const updatedData = res.data || { ...item, ...payload };
+            window.initialThuChiData = { ...updatedData };
+            window.currentThuChiRecord = { ...updatedData };
+            resetThuChiClean();
+
+            // Cập nhật mảng local & render lại bảng tức thì
+            const idx = allTransactions.findIndex(x => String(x.id) === String(item.id));
+            if (idx >= 0) {
+                allTransactions[idx] = updatedData;
+            }
+            filterAndRenderSoQuy();
+
+            // Tải lại quỹ trên server và phát sự kiện đồng bộ
+            await loadSoQuy(true);
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('BALANCE_UPDATED');
+                broadcastDataUpdate('DEBT_UPDATED');
+            }
+
+            if (shouldCloseAfterSave) {
+                closeModal('confirm-unsaved-receipt-modal');
+                const modalEl = document.getElementById('modal-detail-thuchi');
+                if (modalEl) {
+                    const bsModal = bootstrap.Modal.getInstance(modalEl);
+                    if (bsModal) bsModal.hide();
+                }
+            }
+        }
+    } catch (e) {
+        showToast('Lỗi khi lưu phiếu: ' + (e.message || 'Không thể lưu'), 'error');
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = origHtml;
+        }
+    } finally {
+        hideLoading();
+    }
+}
+
+function safeCloseThuChiModal() {
+    if (window.isThuChiDetailDirty) {
+        const unsavedModalEl = document.getElementById('confirm-unsaved-receipt-modal');
+        if (unsavedModalEl) {
+            const btnSave = document.getElementById('btn-unsaved-save');
+            const btnDiscard = document.getElementById('btn-unsaved-discard');
+            const btnCancel = document.getElementById('btn-unsaved-cancel');
+
+            if (btnSave) {
+                btnSave.onclick = () => saveThuChiDetail(true);
+            }
+            if (btnDiscard) {
+                btnDiscard.onclick = () => {
+                    window.isThuChiDetailDirty = false;
+                    closeModal('confirm-unsaved-receipt-modal');
+                    const modalEl = document.getElementById('modal-detail-thuchi');
+                    if (modalEl) {
+                        const bsModal = bootstrap.Modal.getInstance(modalEl);
+                        if (bsModal) bsModal.hide();
+                    }
+                };
+            }
+            if (btnCancel) {
+                btnCancel.onclick = () => {
+                    closeModal('confirm-unsaved-receipt-modal');
+                };
+            }
+            openModal('confirm-unsaved-receipt-modal');
+            return;
+        }
+    }
+    const modalEl = document.getElementById('modal-detail-thuchi');
+    if (modalEl) {
+        const bsModal = bootstrap.Modal.getInstance(modalEl);
+        if (bsModal) bsModal.hide();
+    }
+}
+
+function setupThuChiModalUnsavedHook(modalId) {
+    const el = document.getElementById(modalId);
+    if (!el || el._unsavedHooked) return;
+    el._unsavedHooked = true;
+
+    el.addEventListener('hide.bs.modal', function(e) {
+        if (window.isThuChiDetailDirty) {
+            e.preventDefault();
+            safeCloseThuChiModal();
+        }
+    });
+}
+
+function printCurrentThuChiReceipt(docTitle) {
+    if (!window.currentThuChiRecord) return;
+    const item = window.currentThuChiRecord;
+
+    const curNgay = document.getElementById('edit-thuchi-ngay')?.value || item.ngay;
+    const curLoaiQuy = document.getElementById('edit-thuchi-loai-quy')?.value || item.loai_quy;
+    const curDoiTuong = document.getElementById('edit-thuchi-doi-tuong')?.value || item.doi_tuong;
+    const curSdt = document.getElementById('edit-thuchi-dien-thoai')?.value || item.dien_thoai;
+    const curPhieuLq = document.getElementById('edit-thuchi-phieu-lq')?.value || item.phieu_lien_quan;
+    const curSoTien = parseFloat(document.getElementById('edit-thuchi-so-tien')?.value || item.so_tien) || 0;
+    const curGhiChu = document.getElementById('edit-thuchi-ghi-chu')?.value || item.ghi_chu;
+
+    const isThu = item.loai_phieu === 'THU';
+    const amountClass = isThu ? 'text-success' : 'text-danger';
+    const partnerLabel = isThu ? 'Người / Đơn Vị Nộp Tiền:' : 'Người / Đơn Vị Nhận Tiền:';
+    const relatedLabel = isThu ? 'Phiếu Xuất Liên Quan:' : 'Phiếu Nhập Liên Quan:';
+    const loaiStr = curLoaiQuy === 'TIEN_MAT' ? 'Tiền mặt' : 'Tiền gửi ngân hàng (Chuyển khoản)';
+
+    const printContainer = document.getElementById('printable-thuchi-container');
+    if (!printContainer) return;
+
+    printContainer.innerHTML = `
+        <div class="p-3">
+            <div class="text-center mb-3 border-bottom pb-2">
+                <h5 class="fw-bold text-uppercase mb-1 ${amountClass}">${docTitle}</h5>
+                <div class="font-monospace text-muted small">
+                    Mã số: <strong>${escapeHtml(item.ma_phieu)}</strong> | Ngày: <strong>${formatDate(curNgay)}</strong>
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-sm-4 text-muted">${partnerLabel}</div>
+                <div class="col-sm-8 fw-bold text-dark">${escapeHtml(curDoiTuong)}</div>
+            </div>
+            ${curSdt ? `
+            <div class="row g-2 mb-2">
+                <div class="col-sm-4 text-muted">Số điện thoại:</div>
+                <div class="col-sm-8 font-monospace">${escapeHtml(curSdt)}</div>
+            </div>` : ''}
+            <div class="row g-2 mb-2">
+                <div class="col-sm-4 text-muted">Hình thức thanh toán:</div>
+                <div class="col-sm-8">${loaiStr}</div>
+            </div>
+            ${curPhieuLq ? `
+            <div class="row g-2 mb-2">
+                <div class="col-sm-4 text-muted">${relatedLabel}</div>
+                <div class="col-sm-8 font-monospace fw-bold ${curPhieuLq.startsWith('XH') ? 'text-danger' : 'text-primary'}">
+                    ${escapeHtml(curPhieuLq)}
+                </div>
+            </div>` : ''}
+            <div class="row g-2 mb-2">
+                <div class="col-sm-4 text-muted">Số tiền:</div>
+                <div class="col-sm-8 fs-4 fw-bold font-monospace ${amountClass}">
+                    ${formatVND(curSoTien)}
+                </div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-sm-4 text-muted">Nội dung / Ghi chú:</div>
+                <div class="col-sm-8 p-2 bg-light rounded">${escapeHtml(curGhiChu || 'Không có')}</div>
+            </div>
+        </div>
+    `;
+
+    printReceiptModal('printable-thuchi-container', docTitle);
 }
 
 // ── Xem Phiếu Xuất / Nhập Liên Quan ─────────────────────────────────────────

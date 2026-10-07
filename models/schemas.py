@@ -252,6 +252,17 @@ class PhieuThuCreate(BaseModel):
     ghi_chu: Optional[str] = ""
 
 
+class PhieuThuUpdate(BaseModel):
+    loai_quy: Optional[str] = "TIEN_MAT"
+    ngay: Optional[str] = None
+    doi_tuong: Optional[str] = None
+    dien_thoai: Optional[str] = ""
+    dia_chi: Optional[str] = ""
+    so_tien: Optional[float] = None
+    phieu_lien_quan: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+
+
 class PhieuChiCreate(BaseModel):
     loai_quy: str = "TIEN_MAT"
     ngay: str
@@ -261,6 +272,17 @@ class PhieuChiCreate(BaseModel):
     doi_tuong_id: Optional[str] = ""
     nha_cung_cap_id: Optional[str] = ""
     so_tien: float
+    phieu_lien_quan: Optional[str] = ""
+    ghi_chu: Optional[str] = ""
+
+
+class PhieuChiUpdate(BaseModel):
+    loai_quy: Optional[str] = "TIEN_MAT"
+    ngay: Optional[str] = None
+    doi_tuong: Optional[str] = None
+    dien_thoai: Optional[str] = ""
+    dia_chi: Optional[str] = ""
+    so_tien: Optional[float] = None
     phieu_lien_quan: Optional[str] = ""
     ghi_chu: Optional[str] = ""
 

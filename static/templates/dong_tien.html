@@ -173,25 +173,32 @@
     </div>
 </div>
 
-<!-- Modal Chi Tiết Phiếu Thu / Chi -->
+<!-- Modal Chi Tiết Phiếu Thu / Chi (Hỗ Trợ Chỉnh Sửa & Lưu Thay Đổi) -->
 <div class="modal fade" id="modal-detail-thuchi" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content shadow border-0">
-            <div class="modal-header py-2 text-white bg-primary" id="detail-thuchi-header">
+            <div class="modal-header py-2 text-white bg-success" id="detail-thuchi-header">
                 <h6 class="modal-title fw-bold" id="detail-thuchi-title">Chi Tiết Phiếu</h6>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" onclick="safeCloseThuChiModal()" title="Đóng"></button>
             </div>
-            <div class="modal-body p-0" id="detail-thuchi-body"></div>
-            <div class="modal-footer py-2 bg-light d-flex justify-content-between">
-                <div>
+            <div class="modal-body p-3" id="detail-thuchi-body"></div>
+            <div class="modal-footer py-2 bg-light d-flex justify-content-between align-items-center">
+                <div class="d-flex gap-2">
                     <button type="button" class="btn btn-outline-danger btn-sm" id="btn-delete-thuchi-detail">
                         <i class="bi bi-trash me-1"></i>Xóa Phiếu
                     </button>
-                    <button type="button" class="btn btn-outline-primary btn-sm ms-1" id="btn-print-thuchi-detail">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="btn-print-thuchi-detail">
                         <i class="bi bi-printer me-1"></i>In Phiếu
                     </button>
                 </div>
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+                <div class="d-flex gap-2 align-items-center">
+                    <button type="button" class="btn btn-secondary btn-sm opacity-50 px-3" id="btn-save-thuchi-detail" disabled onclick="saveThuChiDetail(false)">
+                        <i class="bi bi-floppy2 me-1"></i>Lưu thay đổi
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-close-thuchi-detail" onclick="safeCloseThuChiModal()">
+                        Đóng
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -291,5 +298,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/dong_tien.js?v=20261007_v1"></script>
+<script src="/static/js/dong_tien.js?v=20261007_v2"></script>
 {% endblock %}
