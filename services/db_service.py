@@ -1927,8 +1927,11 @@ class DatabaseManager:
         thu_map = {}
         for sq in sq_rows:
             plq = str(sq["phieu_lien_quan"] or "").strip().upper()
+            amt = float(sq["so_tien"] or 0)
             if plq and plq != "ALL":
-                thu_map[plq] = thu_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
+                split_plqs = [p.strip() for p in plq.replace(";", ",").split(",") if p.strip()]
+                for p in split_plqs:
+                    thu_map[p] = thu_map.get(p, 0.0) + (amt / len(split_plqs))
 
         # Map danh mục KhachHang & DoiTuong tra cứu chéo
         kh_lookup_by_id = {}
@@ -2030,11 +2033,14 @@ class DatabaseManager:
         for sp, inv in receipt_map.items():
             # Đối soát trực tiếp với Sổ Quỹ (bảo vệ tuyệt đối khỏi lệch pha dữ liệu)
             paid_amt = thu_map.get(sp.upper(), 0.0)
-            actual_no = max(0.0, inv["tong_tien"] - paid_amt)
+            if paid_amt > 0:
+                actual_no = max(0.0, inv["tong_tien"] - paid_amt)
+            else:
+                actual_no = max(0.0, inv["tong_no"])
             inv["da_thu"] = paid_amt
             inv["tong_no"] = actual_no
 
-            if inv["tong_no"] <= 0:
+            if inv["tong_no"] <= 0.01:
                 continue  # Đã thanh toán xong
 
             inv_kh = str(inv["khach_hang_id"] or "").strip()
@@ -2081,8 +2087,11 @@ class DatabaseManager:
         chi_map = {}
         for sq in sq_rows:
             plq = str(sq["phieu_lien_quan"] or "").strip().upper()
+            amt = float(sq["so_tien"] or 0)
             if plq and plq != "ALL":
-                chi_map[plq] = chi_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
+                split_plqs = [p.strip() for p in plq.replace(";", ",").split(",") if p.strip()]
+                for p in split_plqs:
+                    chi_map[p] = chi_map.get(p, 0.0) + (amt / len(split_plqs))
 
         # Map danh mục DoiTuong & NhaCungCap tra cứu chéo
         ncc_lookup_by_id = {}
@@ -2184,12 +2193,15 @@ class DatabaseManager:
         matched_invoices = []
         for sp, inv in receipt_map.items():
             paid_amt = chi_map.get(sp.upper(), 0.0)
-            actual_no = max(0.0, inv["tong_tien"] - paid_amt)
+            if paid_amt > 0:
+                actual_no = max(0.0, inv["tong_tien"] - paid_amt)
+            else:
+                actual_no = max(0.0, inv["tong_no"])
             inv["da_chi"] = paid_amt
             inv["tong_no"] = actual_no
             inv["cong_no"] = actual_no
 
-            if inv["tong_no"] <= 0:
+            if inv["tong_no"] <= 0.01:
                 continue  # Đã thanh toán hết
 
             inv_ncc = str(inv["nha_cung_cap_id"] or "").strip()
@@ -2228,15 +2240,23 @@ class DatabaseManager:
                 cursor = conn.cursor()
 
                 # 1. Đối soát Phiếu Xuất (Công nợ phải thu từ khách hàng)
-                cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'THU'")
+                cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan, doi_tuong, dien_thoai FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'THU'")
                 thu_rows = cursor.fetchall()
                 thu_map = {}
+                general_thu = []
                 for sq in thu_rows:
                     plq = str(sq["phieu_lien_quan"] or "").strip().upper()
-                    if plq and plq != "ALL":
-                        thu_map[plq] = thu_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
+                    st = float(sq["so_tien"] or 0)
+                    if not plq or plq == "ALL":
+                        dt = str(sq["doi_tuong"] or "").strip().lower()
+                        p = _clean_p(sq["dien_thoai"])
+                        general_thu.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": st})
+                    else:
+                        split_plqs = [p.strip() for p in plq.replace(";", ",").split(",") if p.strip()]
+                        for p in split_plqs:
+                            thu_map[p] = thu_map.get(p, 0.0) + (st / len(split_plqs))
 
-                cursor.execute("SELECT id, so_phieu, thanh_tien, tien_khach_no FROM XuatHang ORDER BY so_phieu ASC, id ASC")
+                cursor.execute("SELECT id, so_phieu, ngay_xuat, khach_hang_id, dien_thoai, thanh_tien, tien_khach_no FROM XuatHang ORDER BY ngay_xuat ASC, so_phieu ASC, id ASC")
                 all_xuat = cursor.fetchall()
 
                 xuat_by_sp = {}
@@ -2254,6 +2274,23 @@ class DatabaseManager:
                     paid = thu_map.get(sp_key, 0.0)
                     rem_debt = max(0.0, tot_invoice - paid)
 
+                    # Cấn trừ tiếp nếu khách hàng có phiếu thu gộp hoặc thu toàn bộ 'ALL'
+                    if rem_debt > 0.01 and general_thu:
+                        first_r = rows[0]
+                        kh_ref = str(first_r["khach_hang_id"] or "").strip().lower()
+                        kh_phone = _clean_p(first_r["dien_thoai"])
+                        for g in general_thu:
+                            if g["so_tien"] <= 0:
+                                continue
+                            match_kh = (g["doi_tuong"] and (g["doi_tuong"] == kh_ref or g["doi_tuong"] in kh_ref or kh_ref in g["doi_tuong"]))
+                            match_p = (kh_phone and g["dien_thoai"] and (g["dien_thoai"] == kh_phone or g["dien_thoai"].endswith(kh_phone) or kh_phone.endswith(g["dien_thoai"])))
+                            if match_kh or match_p:
+                                deduct_g = min(rem_debt, g["so_tien"])
+                                rem_debt -= deduct_g
+                                g["so_tien"] -= deduct_g
+                                if rem_debt <= 0.01:
+                                    break
+
                     for r in rows:
                         row_tt = float(r["thanh_tien"] or 0)
                         cur_no = float(r["tien_khach_no"] if r["tien_khach_no"] is not None else row_tt)
@@ -2265,15 +2302,23 @@ class DatabaseManager:
                             updated_xuat_ids.append(r["id"])
 
                 # 2. Đối soát Phiếu Nhập (Công nợ phải trả cho nhà cung cấp)
-                cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'CHI'")
+                cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan, doi_tuong, dien_thoai FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'CHI'")
                 chi_rows = cursor.fetchall()
                 chi_map = {}
+                general_chi = []
                 for sq in chi_rows:
                     plq = str(sq["phieu_lien_quan"] or "").strip().upper()
-                    if plq and plq != "ALL":
-                        chi_map[plq] = chi_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
+                    st = float(sq["so_tien"] or 0)
+                    if not plq or plq == "ALL":
+                        dt = str(sq["doi_tuong"] or "").strip().lower()
+                        p = _clean_p(sq["dien_thoai"])
+                        general_chi.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": st})
+                    else:
+                        split_plqs = [p.strip() for p in plq.replace(";", ",").split(",") if p.strip()]
+                        for p in split_plqs:
+                            chi_map[p] = chi_map.get(p, 0.0) + (st / len(split_plqs))
 
-                cursor.execute("SELECT id, so_phieu, thanh_tien, cong_no FROM NhapHang ORDER BY so_phieu ASC, id ASC")
+                cursor.execute("SELECT id, so_phieu, ngay_nhap, nha_cung_cap_id, dien_thoai, thanh_tien, cong_no FROM NhapHang ORDER BY ngay_nhap ASC, so_phieu ASC, id ASC")
                 all_nhap = cursor.fetchall()
 
                 nhap_by_sp = {}
@@ -2290,6 +2335,23 @@ class DatabaseManager:
                     tot_invoice = sum(float(r["thanh_tien"] or 0) for r in rows)
                     paid = chi_map.get(sp_key, 0.0)
                     rem_debt = max(0.0, tot_invoice - paid)
+
+                    # Cấn trừ tiếp nếu NCC có phiếu chi gộp hoặc chi toàn bộ 'ALL'
+                    if rem_debt > 0.01 and general_chi:
+                        first_r = rows[0]
+                        ncc_ref = str(first_r["nha_cung_cap_id"] or "").strip().lower()
+                        ncc_phone = _clean_p(first_r["dien_thoai"])
+                        for g in general_chi:
+                            if g["so_tien"] <= 0:
+                                continue
+                            match_ncc = (g["doi_tuong"] and (g["doi_tuong"] == ncc_ref or g["doi_tuong"] in ncc_ref or ncc_ref in g["doi_tuong"]))
+                            match_p = (ncc_phone and g["dien_thoai"] and (g["dien_thoai"] == ncc_phone or g["dien_thoai"].endswith(ncc_phone) or ncc_phone.endswith(g["dien_thoai"])))
+                            if match_ncc or match_p:
+                                deduct_g = min(rem_debt, g["so_tien"])
+                                rem_debt -= deduct_g
+                                g["so_tien"] -= deduct_g
+                                if rem_debt <= 0.01:
+                                    break
 
                     for r in rows:
                         row_tt = float(r["thanh_tien"] or 0)

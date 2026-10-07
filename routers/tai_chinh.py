@@ -353,15 +353,26 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
     # Map số tiền thực tế đã thu và đã chi từ Sổ Quỹ
     thu_map = {}
     chi_map = {}
+    general_thu = []
+    general_chi = []
     for sq in so_quy:
         lp = str(sq.get("loai_phieu", "")).strip().upper()
         plq = str(sq.get("phieu_lien_quan", "")).strip().upper()
         amt = float(sq.get("so_tien", 0) or 0)
-        if plq and plq != "ALL":
+        dt = str(sq.get("doi_tuong", "")).strip().lower()
+        p = _clean_phone(sq.get("dien_thoai"))
+        if not plq or plq == "ALL":
             if lp == "THU":
-                thu_map[plq] = thu_map.get(plq, 0.0) + amt
+                general_thu.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": amt})
             elif lp == "CHI":
-                chi_map[plq] = chi_map.get(plq, 0.0) + amt
+                general_chi.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": amt})
+        else:
+            split_plqs = [x.strip() for x in plq.replace(";", ",").split(",") if x.strip()]
+            for x in split_plqs:
+                if lp == "THU":
+                    thu_map[x] = thu_map.get(x, 0.0) + (amt / len(split_plqs))
+                elif lp == "CHI":
+                    chi_map[x] = chi_map.get(x, 0.0) + (amt / len(split_plqs))
 
     # Map tra cứu khách hàng theo ID hoặc Tên
     kh_map = {}
@@ -410,6 +421,21 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
         kh_ten_val = matched_kh.get("ten_kh") or (kh_ref if not (kh_ref.isdigit() and len(kh_ref) > 8) and not kh_ref.startswith("KH") else "Khách hàng " + kh_ref)
         sdt_val = matched_kh.get("dien_thoai") or raw_sdt
         dia_chi_val = matched_kh.get("dia_chi") or str(first_r.get("dia_chi", "") or "").replace("None", "").strip()
+
+        # Cấn trừ tiếp nếu khách có phiếu thu gộp 'ALL'
+        if rem_debt > 0.01 and general_thu:
+            target_names = {kh_ref.lower(), kh_ten_val.lower()}
+            for g in general_thu:
+                if g["so_tien"] <= 0:
+                    continue
+                match_kh = g["doi_tuong"] and (g["doi_tuong"] in target_names or any(g["doi_tuong"] in tn for tn in target_names))
+                match_p = (sdt_val and g["dien_thoai"] and (g["dien_thoai"] == sdt_val or g["dien_thoai"].endswith(sdt_val) or sdt_val.endswith(g["dien_thoai"])))
+                if match_kh or match_p:
+                    deduct_g = min(rem_debt, g["so_tien"])
+                    rem_debt -= deduct_g
+                    g["so_tien"] -= deduct_g
+                    if rem_debt <= 0.01:
+                        break
 
         key = kh_id_val or kh_ten_val or kh_ref
         if key not in kh_debts:
@@ -494,6 +520,21 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
                 "so_phieu_list": []
             }
         ncc_debts[key]["tong_nhap"] += tot_invoice
+
+        # Cấn trừ tiếp nếu NCC có phiếu chi gộp 'ALL'
+        if rem_debt > 0.01 and general_chi:
+            target_names = {ncc_ref.lower(), ncc_ten_val.lower()}
+            for g in general_chi:
+                if g["so_tien"] <= 0:
+                    continue
+                match_ncc = g["doi_tuong"] and (g["doi_tuong"] in target_names or any(g["doi_tuong"] in tn for tn in target_names))
+                match_p = (sdt_val and g["dien_thoai"] and (g["dien_thoai"] == sdt_val or g["dien_thoai"].endswith(sdt_val) or sdt_val.endswith(g["dien_thoai"])))
+                if match_ncc or match_p:
+                    deduct_g = min(rem_debt, g["so_tien"])
+                    rem_debt -= deduct_g
+                    g["so_tien"] -= deduct_g
+                    if rem_debt <= 0.01:
+                        break
 
         if rem_debt > 0.01:
             tong_phai_chi += rem_debt
