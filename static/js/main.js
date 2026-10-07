@@ -1047,9 +1047,36 @@ function printOfficialReceipt(receiptData = null, receiptType = null) {
 
     // Đối tác
     const doiTac = isXuat ? (data.khach_hang || {}) : (data.nha_cung_cap || {});
-    const tenDoiTac = doiTac.ten_kh || doiTac.ten_ncc || data.nha_cung_cap_id || data.khach_hang_id || (isXuat ? 'Khách lẻ' : 'Nhà cung cấp lẻ');
-    const diaChiDoiTac = doiTac.dia_chi || data.dia_chi || '';
-    const sdtDoiTac = doiTac.dien_thoai || data.dien_thoai || '';
+    let tenDoiTac = isXuat 
+        ? (doiTac.ten_kh || doiTac.ten || data.khach_hang_ten || data.kh_ten || '')
+        : (doiTac.ten_ncc || doiTac.ten || data.nha_cung_cap_ten || data.ncc_ten || '');
+    let diaChiDoiTac = doiTac.dia_chi || data.dia_chi || '';
+    let sdtDoiTac = doiTac.dien_thoai || data.dien_thoai || data.sdt || '';
+
+    tenDoiTac = String(tenDoiTac || '').trim();
+    diaChiDoiTac = String(diaChiDoiTac || '').replace(/^None$/i, '').trim();
+    sdtDoiTac = String(sdtDoiTac || '').replace(/^None$/i, '').trim();
+
+    // Fallback nếu tenDoiTac là ID hoặc rỗng
+    if (!tenDoiTac || /^(DT|KH|NCC)\d+/i.test(tenDoiTac) || /^\d{10,}$/.test(tenDoiTac)) {
+        if (window.allPartnersCache && window.allPartnersCache.length) {
+            const refKey = (data.khach_hang_id || data.nha_cung_cap_id || doiTac.id || tenDoiTac || '').trim().toLowerCase();
+            const found = window.allPartnersCache.find(p => {
+                const pid = String(p.id || '').trim().toLowerCase();
+                const pma = String(p.ma || p.ma_doi_tuong || '').trim().toLowerCase();
+                const pten = String(p.ten || p.ten_kh || p.ten_ncc || '').trim().toLowerCase();
+                return (refKey && (refKey === pid || refKey === pma || refKey === pten));
+            });
+            if (found) {
+                tenDoiTac = found.ten || found.ten_kh || found.ten_ncc || tenDoiTac;
+                if (!sdtDoiTac) sdtDoiTac = String(found.dien_thoai || '').replace(/^None$/i, '').trim();
+                if (!diaChiDoiTac) diaChiDoiTac = String(found.dia_chi || '').replace(/^None$/i, '').trim();
+            }
+        }
+    }
+    if (!tenDoiTac || /^(DT|KH|NCC)\d+/i.test(tenDoiTac) || /^\d{10,}$/.test(tenDoiTac)) {
+        tenDoiTac = isXuat ? 'Khách lẻ' : 'Nhà cung cấp lẻ';
+    }
     const ghiChu = data.ghi_chu || '';
 
     const items = data.items || [];
@@ -1180,7 +1207,11 @@ function printOfficialReceipt(receiptData = null, receiptType = null) {
                 </div>
                 <div style="border-bottom: 1px dotted #000; display: flex;">
                     <span style="white-space: nowrap;">Địa chỉ :</span>
-                    <span style="flex-grow: 1; padding-left: 8px;">${escapeHtml(diaChiDoiTac)}${sdtDoiTac ? ' ' + escapeHtml(sdtDoiTac) : ''}</span>
+                    <span style="flex-grow: 1; padding-left: 8px;">${escapeHtml(diaChiDoiTac)}</span>
+                </div>
+                <div style="border-bottom: 1px dotted #000; display: flex;">
+                    <span style="white-space: nowrap;">Số điện thoại :</span>
+                    <span style="flex-grow: 1; padding-left: 8px; font-weight: bold; font-family: 'Times New Roman', monospace;">${escapeHtml(sdtDoiTac)}</span>
                 </div>
                 <div style="border-bottom: 1px dotted #000; display: flex;">
                     <span style="white-space: nowrap;">Lý do :</span>
@@ -1335,9 +1366,69 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
     if (!modalBody) return;
 
     const partner = isXuat ? (res.khach_hang || {}) : (res.nha_cung_cap || {});
-    const partnerName = isXuat ? (partner.ten_kh || 'Khách lẻ') : (partner.ten_ncc || 'Không xác định');
-    const partnerPhone = partner.dien_thoai || '';
-    const partnerAddress = partner.dia_chi || '';
+    let partnerName = isXuat 
+        ? (partner.ten_kh || partner.ten || res.khach_hang_ten || res.doi_tac || res.kh_ten || '')
+        : (partner.ten_ncc || partner.ten || res.nha_cung_cap_ten || res.doi_tac || res.ncc_ten || '');
+    let partnerPhone = partner.dien_thoai || res.dien_thoai || res.sdt || '';
+    let partnerAddress = partner.dia_chi || res.dia_chi || '';
+
+    // Làm sạch chuỗi
+    partnerPhone = String(partnerPhone || '').replace(/^None$/i, '').trim();
+    partnerAddress = String(partnerAddress || '').replace(/^None$/i, '').trim();
+
+    // Fallback nếu partnerName có dạng ID (DT..., KH..., NCC...) hoặc còn thiếu thông tin
+    const isIdLike = /^(DT|KH|NCC)\d+/i.test(partnerName) || /^\d{10,}$/.test(partnerName);
+    if (!partnerName || isIdLike || (!partnerPhone && !partnerAddress)) {
+        if (!window.allPartnersCache) {
+            try {
+                const dtRes = await apiRequest('/api/doi-tuong');
+                window.allPartnersCache = dtRes.data || [];
+            } catch (e) {
+                window.allPartnersCache = [];
+            }
+        }
+        if (window.allPartnersCache && window.allPartnersCache.length) {
+            const refKey = (res.khach_hang_id || res.nha_cung_cap_id || partner.id || partnerName || '').trim().toLowerCase();
+            const found = window.allPartnersCache.find(p => {
+                const pid = String(p.id || '').trim().toLowerCase();
+                const pma = String(p.ma || p.ma_doi_tuong || '').trim().toLowerCase();
+                const pten = String(p.ten || p.ten_kh || p.ten_ncc || '').trim().toLowerCase();
+                return (refKey && (refKey === pid || refKey === pma || refKey === pten));
+            });
+            if (found) {
+                const realTen = found.ten || found.ten_kh || found.ten_ncc || '';
+                if (realTen) partnerName = realTen;
+                if (!partnerPhone) partnerPhone = String(found.dien_thoai || '').replace(/^None$/i, '').trim();
+                if (!partnerAddress) partnerAddress = String(found.dia_chi || '').replace(/^None$/i, '').trim();
+            }
+        }
+    }
+    if (!partnerName || isIdLike) {
+        partnerName = isXuat ? 'Khách lẻ' : 'Nhà cung cấp lẻ';
+    }
+
+    // Đồng bộ lại vào window.currentReceiptDetail để nút In Phiếu dùng đúng 100%
+    if (isXuat) {
+        window.currentReceiptDetail.khach_hang = {
+            id: res.khach_hang_id || partner.id,
+            ten_kh: partnerName,
+            dien_thoai: partnerPhone,
+            dia_chi: partnerAddress
+        };
+        window.currentReceiptDetail.khach_hang_ten = partnerName;
+        window.currentReceiptDetail.dien_thoai = partnerPhone;
+        window.currentReceiptDetail.dia_chi = partnerAddress;
+    } else {
+        window.currentReceiptDetail.nha_cung_cap = {
+            id: res.nha_cung_cap_id || partner.id,
+            ten_ncc: partnerName,
+            dien_thoai: partnerPhone,
+            dia_chi: partnerAddress
+        };
+        window.currentReceiptDetail.nha_cung_cap_ten = partnerName;
+        window.currentReceiptDetail.dien_thoai = partnerPhone;
+        window.currentReceiptDetail.dia_chi = partnerAddress;
+    }
     const ngay = isXuat ? res.ngay_xuat : res.ngay_nhap;
 
     // Tải danh sách tất cả sản phẩm cho dropdown "Thêm hàng"
@@ -1368,9 +1459,9 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                 </div>
                 <div class="row g-2 small">
                     <div class="col-md-7">
-                        <div class="fw-bold text-dark fs-6">${escapeHtml(partnerName)}</div>
-                        ${partnerPhone ? `<div class="text-muted">SĐT: <strong class="text-dark font-monospace">${escapeHtml(partnerPhone)}</strong></div>` : ''}
-                        ${partnerAddress ? `<div class="text-muted">Địa chỉ: <span class="text-dark">${escapeHtml(partnerAddress)}</span></div>` : ''}
+                        <div class="fw-bold text-dark fs-6 mb-1">${escapeHtml(partnerName)}</div>
+                        ${partnerPhone ? `<div class="text-secondary small mb-1"><i class="bi bi-telephone text-primary me-1"></i>SĐT: <strong class="text-dark font-monospace">${escapeHtml(partnerPhone)}</strong></div>` : ''}
+                        ${partnerAddress ? `<div class="text-secondary small"><i class="bi bi-geo-alt text-danger me-1"></i>Địa chỉ: <span class="text-dark">${escapeHtml(partnerAddress)}</span></div>` : ''}
                     </div>
                     <div class="col-md-5">
                         <div class="mb-1">

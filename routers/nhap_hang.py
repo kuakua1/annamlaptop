@@ -232,7 +232,7 @@ async def get_nhap_hang_detail(
 ):
     try:
         records = db_manager.get_all("NhapHang")
-        ncc_records = db_manager.get_all("DoiTuong") or db_manager.get_all("NhaCungCap")
+        all_partners = db_manager.get_all("DoiTuong") + db_manager.get_all("NhaCungCap")
         hang_records = db_manager.get_all("HangHoa")
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
@@ -243,6 +243,8 @@ async def get_nhap_hang_detail(
         ngay_nhap = ""
         ncc_name = ""
         ghi_chu = ""
+        rec_phone = ""
+        rec_addr = ""
 
         for rec in records:
             if str(rec.get("so_phieu", "")) == so_phieu:
@@ -259,6 +261,10 @@ async def get_nhap_hang_detail(
                     ncc_name = str(rec.get("nha_cung_cap_id", ""))
                 if not ghi_chu:
                     ghi_chu = str(rec.get("ghi_chu", ""))
+                if not rec_phone and rec.get("dien_thoai"):
+                    rec_phone = str(rec.get("dien_thoai")).replace("None", "").strip()
+                if not rec_addr and rec.get("dia_chi"):
+                    rec_addr = str(rec.get("dia_chi")).replace("None", "").strip()
                 ma_hang = str(rec.get("ma_hang", ""))
                 items.append({
                     "id": str(rec.get("id", "")),
@@ -287,22 +293,43 @@ async def get_nhap_hang_detail(
         ma_phieu_chi = phieu_chi_list[0].get("ma_phieu") if phieu_chi_list else None
         da_thanh_toan = (total_no <= 0) or (len(phieu_chi_list) > 0 and (so_tien_da_chi >= total or total_no <= 0))
 
-        ncc_info = {"ten_ncc": ncc_name, "dien_thoai": "", "dia_chi": ""}
+        ncc_info = {
+            "id": ncc_name,
+            "ten_ncc": ncc_name,
+            "dien_thoai": rec_phone,
+            "dia_chi": rec_addr
+        }
         if ncc_name:
-            for n in ncc_records:
-                n_ten = str(n.get("ten") or n.get("ten_ncc") or "")
-                n_id = str(n.get("id") or "")
-                if n_ten.strip().lower() == ncc_name.lower() or n_id == ncc_name:
-                    ncc_info["ten_ncc"] = n_ten or ncc_name
-                    ncc_info["dien_thoai"] = str(n.get("dien_thoai", ""))
-                    ncc_info["dia_chi"] = str(n.get("dia_chi", ""))
+            matched_partner = None
+            for n in all_partners:
+                nid = str(n.get("id") or "").strip()
+                nma = str(n.get("ma") or n.get("ma_doi_tuong") or "").strip()
+                if ncc_name.lower() in (nid.lower(), nma.lower()):
+                    matched_partner = n
                     break
+            if not matched_partner:
+                for n in all_partners:
+                    nname = str(n.get("ten") or n.get("ten_ncc") or "").strip()
+                    if nname and ncc_name.lower() == nname.lower():
+                        matched_partner = n
+                        break
+            if matched_partner:
+                real_name = str(matched_partner.get("ten") or matched_partner.get("ten_ncc") or "").strip()
+                p_phone = str(matched_partner.get("dien_thoai") or "").replace("None", "").strip()
+                p_addr = str(matched_partner.get("dia_chi") or "").replace("None", "").strip()
+                ncc_info["ten_ncc"] = real_name or ncc_name
+                ncc_info["dien_thoai"] = p_phone or rec_phone
+                ncc_info["dia_chi"] = p_addr or rec_addr
 
         return {
             "success": True,
             "so_phieu": so_phieu,
             "ngay_nhap": ngay_nhap,
             "nha_cung_cap": ncc_info,
+            "nha_cung_cap_id": ncc_info.get("id") or ncc_name,
+            "nha_cung_cap_ten": ncc_info.get("ten_ncc") or ncc_name,
+            "dien_thoai": ncc_info.get("dien_thoai", ""),
+            "dia_chi": ncc_info.get("dia_chi", ""),
             "ghi_chu": ghi_chu,
             "tong_so_luong": total_sl,
             "so_mat_hang": len(items),
@@ -358,22 +385,25 @@ async def update_nhap_hang(
         ncc_dia_chi = (data.nha_cung_cap_dia_chi or data.dia_chi or "").strip()
         ncc_sdt = (data.nha_cung_cap_sdt or data.dien_thoai or "").strip()
 
-        if ncc_ten or ncc_sdt:
-            ncc_list = db_manager.get_all("NhaCungCap")
+        if ncc_ten or ncc_sdt or ncc_id:
+            ncc_list = db_manager.get_all("DoiTuong") + db_manager.get_all("NhaCungCap")
             matched = None
             if ncc_id:
                 for n in ncc_list:
-                    if str(n.get("id", "")).strip() == ncc_id:
+                    nid = str(n.get("id", "")).strip()
+                    nma = str(n.get("ma") or n.get("ma_doi_tuong") or "").strip()
+                    if ncc_id.lower() in (nid.lower(), nma.lower()):
                         matched = n
                         break
             if not matched and ncc_sdt:
                 for n in ncc_list:
-                    if str(n.get("dien_thoai", "")).strip() == ncc_sdt:
+                    if str(n.get("dien_thoai", "")).replace("None", "").strip() == ncc_sdt:
                         matched = n
                         break
             if not matched and ncc_ten:
                 for n in ncc_list:
-                    if str(n.get("ten_ncc", "")).strip().lower() == ncc_ten.lower():
+                    nname = str(n.get("ten") or n.get("ten_ncc") or "").strip()
+                    if nname.lower() == ncc_ten.lower():
                         matched = n
                         break
 

@@ -266,7 +266,7 @@ async def get_xuat_hang_detail(
 ):
     try:
         records = db_manager.get_all("XuatHang")
-        kh_records = db_manager.get_all("KhachHang")
+        all_partners = db_manager.get_all("DoiTuong") + db_manager.get_all("KhachHang")
         hang_records = db_manager.get_all("HangHoa")
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
@@ -276,6 +276,8 @@ async def get_xuat_hang_detail(
         ngay_xuat = ""
         kh_name = ""
         ghi_chu = ""
+        rec_phone = ""
+        rec_addr = ""
 
         total_no = 0.0
         for rec in records:
@@ -293,6 +295,10 @@ async def get_xuat_hang_detail(
                     kh_name = str(rec.get("khach_hang_id", ""))
                 if not ghi_chu:
                     ghi_chu = str(rec.get("ghi_chu", ""))
+                if not rec_phone and rec.get("dien_thoai"):
+                    rec_phone = str(rec.get("dien_thoai")).replace("None", "").strip()
+                if not rec_addr and rec.get("dia_chi"):
+                    rec_addr = str(rec.get("dia_chi")).replace("None", "").strip()
                 ma_hang = str(rec.get("ma_hang", ""))
                 items.append({
                     "id": str(rec.get("id", "")),
@@ -321,20 +327,43 @@ async def get_xuat_hang_detail(
         ma_phieu_thu = phieu_thu_list[0].get("ma_phieu") if phieu_thu_list else None
         da_thanh_toan = (total_no <= 0) or (len(phieu_thu_list) > 0 and (so_tien_da_thu >= total or total_no <= 0))
 
-        kh_info = {"ten_kh": kh_name, "dien_thoai": "", "dia_chi": ""}
+        kh_info = {
+            "id": kh_name,
+            "ten_kh": kh_name,
+            "dien_thoai": rec_phone,
+            "dia_chi": rec_addr
+        }
         if kh_name:
-            for k in kh_records:
-                if str(k.get("ten_kh", "")).strip().lower() == kh_name.lower() or str(k.get("id", "")) == kh_name:
-                    kh_info["ten_kh"] = str(k.get("ten_kh", "")) or kh_name
-                    kh_info["dien_thoai"] = str(k.get("dien_thoai", ""))
-                    kh_info["dia_chi"] = str(k.get("dia_chi", ""))
+            matched_partner = None
+            for k in all_partners:
+                kid = str(k.get("id") or "").strip()
+                kma = str(k.get("ma") or k.get("ma_doi_tuong") or "").strip()
+                if kh_name.lower() in (kid.lower(), kma.lower()):
+                    matched_partner = k
                     break
+            if not matched_partner:
+                for k in all_partners:
+                    kname = str(k.get("ten") or k.get("ten_kh") or "").strip()
+                    if kname and kh_name.lower() == kname.lower():
+                        matched_partner = k
+                        break
+            if matched_partner:
+                real_name = str(matched_partner.get("ten") or matched_partner.get("ten_kh") or "").strip()
+                p_phone = str(matched_partner.get("dien_thoai") or "").replace("None", "").strip()
+                p_addr = str(matched_partner.get("dia_chi") or "").replace("None", "").strip()
+                kh_info["ten_kh"] = real_name or kh_name
+                kh_info["dien_thoai"] = p_phone or rec_phone
+                kh_info["dia_chi"] = p_addr or rec_addr
 
         return {
             "success": True,
             "so_phieu": so_phieu,
             "ngay_xuat": ngay_xuat,
             "khach_hang": kh_info,
+            "khach_hang_id": kh_info.get("id") or kh_name,
+            "khach_hang_ten": kh_info.get("ten_kh") or kh_name,
+            "dien_thoai": kh_info.get("dien_thoai", ""),
+            "dia_chi": kh_info.get("dia_chi", ""),
             "ghi_chu": ghi_chu,
             "tong_so_luong": total_sl,
             "so_mat_hang": len(items),
@@ -397,22 +426,25 @@ async def update_xuat_hang(
         kh_dia_chi = (data.khach_hang_dia_chi or data.dia_chi or "").strip()
         kh_sdt = (data.khach_hang_sdt or data.dien_thoai or "").strip()
 
-        if kh_ten or kh_sdt:
-            kh_list = db_manager.get_all("KhachHang")
+        if kh_ten or kh_sdt or kh_id:
+            kh_list = db_manager.get_all("DoiTuong") + db_manager.get_all("KhachHang")
             matched = None
             if kh_id:
                 for k in kh_list:
-                    if str(k.get("id", "")).strip() == kh_id:
+                    kid = str(k.get("id", "")).strip()
+                    kma = str(k.get("ma") or k.get("ma_doi_tuong") or "").strip()
+                    if kh_id.lower() in (kid.lower(), kma.lower()):
                         matched = k
                         break
             if not matched and kh_sdt:
                 for k in kh_list:
-                    if str(k.get("dien_thoai", "")).strip() == kh_sdt:
+                    if str(k.get("dien_thoai", "")).replace("None", "").strip() == kh_sdt:
                         matched = k
                         break
             if not matched and kh_ten:
                 for k in kh_list:
-                    if str(k.get("ten_kh", "")).strip().lower() == kh_ten.lower():
+                    kname = str(k.get("ten") or k.get("ten_kh") or "").strip()
+                    if kname.lower() == kh_ten.lower():
                         matched = k
                         break
 
