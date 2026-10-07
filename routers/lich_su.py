@@ -53,8 +53,28 @@ async def get_lich_su(
 
         s_lower = search.lower().strip() if search else ""
 
+        # Đối soát với Sổ Quỹ để đảm bảo phiếu đã thu/chi tiền không hiển thị nợ
+        so_quy_records = db_manager.get_all("SoQuy")
+        thu_by_sp = {}
+        chi_by_sp = {}
+        for sq in so_quy_records:
+            loai_sq = str(sq.get("loai_phieu") or sq.get("loai") or "").strip().upper()
+            plq = str(sq.get("phieu_lien_quan") or sq.get("so_phieu_lien_quan") or "").strip().upper()
+            st = float(sq.get("so_tien", 0) or 0)
+            if plq and plq != "ALL" and st > 0:
+                if loai_sq == "THU":
+                    thu_by_sp[plq] = thu_by_sp.get(plq, 0.0) + st
+                elif loai_sq == "CHI":
+                    chi_by_sp[plq] = chi_by_sp.get(plq, 0.0) + st
+
         if loai in ("all", "nhap"):
             nhap_records = db_manager.get_all("NhapHang")
+            tot_nhap_by_sp = {}
+            for r in nhap_records:
+                sp_k = str(r.get("so_phieu", "")).strip().upper()
+                if sp_k:
+                    tot_nhap_by_sp[sp_k] = tot_nhap_by_sp.get(sp_k, 0.0) + float(r.get("thanh_tien", 0) or 0)
+
             for rec in nhap_records:
                 ngay = str(rec.get("ngay_nhap", "") or rec.get("ngay", ""))
                 if month and not ngay.startswith(month):
@@ -82,6 +102,15 @@ async def get_lich_su(
                 raw_no = rec.get("cong_no")
                 cong_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
 
+                sp_key = so_phieu.strip().upper()
+                paid_chi = chi_by_sp.get(sp_key, 0.0)
+                tot_nhap = tot_nhap_by_sp.get(sp_key, 0.0)
+                if paid_chi >= tot_nhap and tot_nhap > 0:
+                    cong_no = 0.0
+                elif paid_chi > 0:
+                    rem_nhap = max(0.0, tot_nhap - paid_chi)
+                    cong_no = min(cong_no, rem_nhap)
+
                 combined.append({
                     "id": str(rec.get("id", "")),
                     "loai": "Nhập",
@@ -104,6 +133,12 @@ async def get_lich_su(
 
         if loai in ("all", "xuat"):
             xuat_records = db_manager.get_all("XuatHang")
+            tot_xuat_by_sp = {}
+            for r in xuat_records:
+                sp_k = str(r.get("so_phieu", "")).strip().upper()
+                if sp_k:
+                    tot_xuat_by_sp[sp_k] = tot_xuat_by_sp.get(sp_k, 0.0) + float(r.get("thanh_tien", 0) or 0)
+
             for rec in xuat_records:
                 ngay = str(rec.get("ngay_xuat", "") or rec.get("ngay", ""))
                 if month and not ngay.startswith(month):
@@ -130,6 +165,15 @@ async def get_lich_su(
                 thanh_tien = float(rec.get("thanh_tien", 0) or 0)
                 raw_no = rec.get("tien_khach_no") if rec.get("tien_khach_no") is not None else rec.get("cong_no")
                 tien_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
+
+                sp_key = so_phieu.strip().upper()
+                paid_thu = thu_by_sp.get(sp_key, 0.0)
+                tot_xuat = tot_xuat_by_sp.get(sp_key, 0.0)
+                if paid_thu >= tot_xuat and tot_xuat > 0:
+                    tien_no = 0.0
+                elif paid_thu > 0:
+                    rem_xuat = max(0.0, tot_xuat - paid_thu)
+                    tien_no = min(tien_no, rem_xuat)
 
                 combined.append({
                     "id": str(rec.get("id", "")),

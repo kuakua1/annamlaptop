@@ -59,6 +59,23 @@ async def get_nhap_hang(
 
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
+        # Bảng phụ đối soát phiếu chi từ Sổ Quỹ để triệt tiêu công nợ NCC ảo
+        so_quy_records = db_manager.get_all("SoQuy")
+        chi_by_sp = {}
+        for sq in so_quy_records:
+            loai = str(sq.get("loai_phieu") or sq.get("loai") or "").strip().upper()
+            if loai == "CHI":
+                plq = str(sq.get("phieu_lien_quan") or sq.get("so_phieu_lien_quan") or "").strip().upper()
+                st = float(sq.get("so_tien", 0) or 0)
+                if plq and plq != "ALL" and st > 0:
+                    chi_by_sp[plq] = chi_by_sp.get(plq, 0.0) + st
+
+        tot_by_sp = {}
+        for r in records:
+            sp_key = str(r.get("so_phieu", "")).strip().upper()
+            if sp_key:
+                tot_by_sp[sp_key] = tot_by_sp.get(sp_key, 0.0) + float(r.get("thanh_tien", 0) or 0)
+
         result = []
         for i, rec in enumerate(records):
             ngay = str(rec.get("ngay_nhap", ""))
@@ -89,6 +106,16 @@ async def get_nhap_hang(
             thanh_tien = float(rec.get("thanh_tien", 0) or 0)
             raw_no = rec.get("cong_no")
             cong_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
+
+            # Tự động triệt tiêu công nợ nếu phiếu nhập đã được thanh toán
+            sp_key = so_phieu.strip().upper()
+            paid_amount = chi_by_sp.get(sp_key, 0.0)
+            tot_invoice = tot_by_sp.get(sp_key, 0.0)
+            if paid_amount >= tot_invoice and tot_invoice > 0:
+                cong_no = 0.0
+            elif paid_amount > 0:
+                rem_receipt_debt = max(0.0, tot_invoice - paid_amount)
+                cong_no = min(cong_no, rem_receipt_debt)
 
             item = {
                 "id": str(rec.get("id", "")),
@@ -285,13 +312,19 @@ async def get_nhap_hang_detail(
 
         # Kiểm tra phiếu chi liên quan trong Sổ Quỹ
         so_quy_records = db_manager.get_all("SoQuy")
+        sp_clean = so_phieu.strip().upper()
         phieu_chi_list = [
             sq for sq in so_quy_records
-            if str(sq.get("loai_phieu", "")).upper() == "CHI" and str(sq.get("phieu_lien_quan", "")).strip() == so_phieu
+            if str(sq.get("loai_phieu", "")).upper() == "CHI" and str(sq.get("phieu_lien_quan", "") or sq.get("so_phieu_lien_quan", "")).strip().upper() == sp_clean
         ]
         so_tien_da_chi = sum(float(sq.get("so_tien", 0) or 0) for sq in phieu_chi_list)
         ma_phieu_chi = phieu_chi_list[0].get("ma_phieu") if phieu_chi_list else None
         da_thanh_toan = (total_no <= 0) or (len(phieu_chi_list) > 0 and (so_tien_da_chi >= total or total_no <= 0))
+        if so_tien_da_chi >= total and total > 0:
+            total_no = 0.0
+            da_thanh_toan = True
+            for it in items:
+                it["cong_no"] = 0.0
 
         ncc_info = {
             "id": ncc_name,

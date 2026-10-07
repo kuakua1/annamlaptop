@@ -426,9 +426,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchHandler = typeof debounce === 'function' ? debounce(filterAndRenderExportTable, 200) : filterAndRenderExportTable;
     document.getElementById('search-input')?.addEventListener('input', searchHandler);
 
-    // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
+    // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho / thu chi / công nợ
     window.addEventListener('message', (e) => {
-        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'SO_QUY_UPDATED' || e.data.type === 'BALANCE_UPDATED')) {
             loadExportData(true);
         }
     });
@@ -437,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof BroadcastChannel !== 'undefined') {
             const bc = new BroadcastChannel('inventory_sync');
             bc.onmessage = (e) => {
-                if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED')) {
+                if (e.data && (e.data.type === 'PRODUCTS_UPDATED' || e.data.type === 'DATA_CHANGED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'SO_QUY_UPDATED' || e.data.type === 'BALANCE_UPDATED')) {
                     loadExportData(true);
                 }
             };

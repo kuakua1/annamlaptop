@@ -343,10 +343,25 @@ def _clean_phone(p: str) -> str:
 
 @router.get("/api/cong-no/tong-quan")
 async def get_tong_quan_cong_no(user: str = Depends(require_login)):
-    """Thống kê tổng công nợ phải thu (khách nợ) và công nợ phải trả (nợ NCC)."""
-    # 1. Phải thu: từ bảng XuatHang có tien_khach_no > 0
+    """Thống kê tổng công nợ phải thu (khách nợ) và công nợ phải trả (nợ NCC) có đối soát thực tế với Sổ Quỹ."""
     all_xuat = db_manager.get_all("XuatHang")
     kh_records = db_manager.get_all("DoiTuong") or db_manager.get_all("KhachHang")
+    all_nhap = db_manager.get_all("NhapHang")
+    dt_records = db_manager.get_all("DoiTuong") or db_manager.get_all("NhaCungCap")
+    so_quy = db_manager.get_all("SoQuy")
+
+    # Map số tiền thực tế đã thu và đã chi từ Sổ Quỹ
+    thu_map = {}
+    chi_map = {}
+    for sq in so_quy:
+        lp = str(sq.get("loai_phieu", "")).strip().upper()
+        plq = str(sq.get("phieu_lien_quan", "")).strip().upper()
+        amt = float(sq.get("so_tien", 0) or 0)
+        if plq and plq != "ALL":
+            if lp == "THU":
+                thu_map[plq] = thu_map.get(plq, 0.0) + amt
+            elif lp == "CHI":
+                chi_map[plq] = chi_map.get(plq, 0.0) + amt
 
     # Map tra cứu khách hàng theo ID hoặc Tên
     kh_map = {}
@@ -367,52 +382,60 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
         if sdt_clean:
             kh_map[sdt_clean] = info
 
+    # 1. Phải thu: Gom theo số phiếu xuất và đối soát với Sổ Quỹ
+    xuat_by_sp = {}
+    for r in all_xuat:
+        sp = str(r.get("so_phieu", "")).strip()
+        if not sp:
+            continue
+        sp_key = sp.upper()
+        if sp_key not in xuat_by_sp:
+            xuat_by_sp[sp_key] = []
+        xuat_by_sp[sp_key].append(r)
+
     kh_debts = {}
     tong_phai_thu = 0.0
 
-    for r in all_xuat:
-        tt = float(r.get("thanh_tien", 0) or 0)
-        no = float(r.get("tien_khach_no") if r.get("tien_khach_no") is not None else tt)
-        if no > 0:
-            tong_phai_thu += no
-            kh_ref = str(r.get("khach_hang_id", "") or "Khách lẻ").strip()
-            raw_sdt = _clean_phone(r.get("dien_thoai"))
-            
-            # Tra cứu thông tin khách hàng từ danh mục KhachHang
-            matched_kh = kh_map.get(kh_ref) or kh_map.get(kh_ref.lower()) or (kh_map.get(raw_sdt) if raw_sdt else None) or {}
-            
-            # Xác định ID, Tên, SĐT chuẩn
-            kh_id_val = matched_kh.get("id") or (kh_ref if kh_ref.startswith("KH") or (kh_ref.isdigit() and len(kh_ref) > 8) else "")
-            kh_ten_val = matched_kh.get("ten_kh") or (kh_ref if not (kh_ref.isdigit() and len(kh_ref) > 8) and not kh_ref.startswith("KH") else "Khách hàng " + kh_ref)
-            
-            # SĐT và Địa chỉ ưu tiên lấy từ danh mục KhachHang hoặc XuatHang
-            sdt_val = matched_kh.get("dien_thoai") or raw_sdt
-            dia_chi_val = matched_kh.get("dia_chi") or str(r.get("dia_chi", "") or "").replace("None", "").strip()
+    for sp_key, items in xuat_by_sp.items():
+        tot_invoice = sum(float(r.get("thanh_tien", 0) or 0) for r in items)
+        paid = thu_map.get(sp_key, 0.0)
+        rem_debt = max(0.0, tot_invoice - paid)
 
-            key = kh_id_val or kh_ten_val or kh_ref
-            if key not in kh_debts:
-                kh_debts[key] = {
-                    "id": kh_id_val,
-                    "ten_kh": kh_ten_val,
-                    "dien_thoai": sdt_val,
-                    "dia_chi": dia_chi_val,
-                    "tong_mua": 0.0,
-                    "con_no": 0.0,
-                    "so_phieu_list": []
-                }
-            kh_debts[key]["tong_mua"] += tt
-            kh_debts[key]["con_no"] += no
-            sp = str(r.get("so_phieu", ""))
-            if sp and sp not in kh_debts[key]["so_phieu_list"]:
-                kh_debts[key]["so_phieu_list"].append(sp)
+        first_r = items[0]
+        kh_ref = str(first_r.get("khach_hang_id", "") or "Khách lẻ").strip()
+        raw_sdt = _clean_phone(first_r.get("dien_thoai"))
 
-    danh_sach_thu = list(kh_debts.values())
+        matched_kh = kh_map.get(kh_ref) or kh_map.get(kh_ref.lower()) or (kh_map.get(raw_sdt) if raw_sdt else None) or {}
+        kh_id_val = matched_kh.get("id") or (kh_ref if kh_ref.startswith("KH") or (kh_ref.isdigit() and len(kh_ref) > 8) else "")
+        kh_ten_val = matched_kh.get("ten_kh") or (kh_ref if not (kh_ref.isdigit() and len(kh_ref) > 8) and not kh_ref.startswith("KH") else "Khách hàng " + kh_ref)
+        sdt_val = matched_kh.get("dien_thoai") or raw_sdt
+        dia_chi_val = matched_kh.get("dia_chi") or str(first_r.get("dia_chi", "") or "").replace("None", "").strip()
+
+        key = kh_id_val or kh_ten_val or kh_ref
+        if key not in kh_debts:
+            kh_debts[key] = {
+                "id": kh_id_val,
+                "ten_kh": kh_ten_val,
+                "dien_thoai": sdt_val,
+                "dia_chi": dia_chi_val,
+                "tong_mua": 0.0,
+                "con_no": 0.0,
+                "so_phieu_list": []
+            }
+        kh_debts[key]["tong_mua"] += tot_invoice
+
+        if rem_debt > 0.01:
+            tong_phai_thu += rem_debt
+            kh_debts[key]["con_no"] += rem_debt
+            orig_sp = str(first_r.get("so_phieu", "")).strip()
+            if orig_sp and orig_sp not in kh_debts[key]["so_phieu_list"]:
+                kh_debts[key]["so_phieu_list"].append(orig_sp)
+
+    # Lọc chỉ giữ các khách hàng thực sự còn nợ
+    danh_sach_thu = [v for v in kh_debts.values() if v["con_no"] > 0.01]
     danh_sach_thu.sort(key=lambda x: x["con_no"], reverse=True)
 
-    # 2. Phải chi: từ bảng NhapHang có cong_no > 0
-    all_nhap = db_manager.get_all("NhapHang")
-    dt_records = db_manager.get_all("DoiTuong") or db_manager.get_all("NhaCungCap")
-
+    # 2. Phải chi: Gom theo số phiếu nhập và đối soát với Sổ Quỹ
     ncc_map = {}
     for d in dt_records:
         did = str(d.get("id", "")).strip()
@@ -431,41 +454,55 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
         if sdt_clean:
             ncc_map[sdt_clean] = info
 
+    nhap_by_sp = {}
+    for r in all_nhap:
+        sp = str(r.get("so_phieu", "")).strip()
+        if not sp:
+            continue
+        sp_key = sp.upper()
+        if sp_key not in nhap_by_sp:
+            nhap_by_sp[sp_key] = []
+        nhap_by_sp[sp_key].append(r)
+
     ncc_debts = {}
     tong_phai_chi = 0.0
 
-    for r in all_nhap:
-        tt = float(r.get("thanh_tien", 0) or 0)
-        no = float(r.get("cong_no") if r.get("cong_no") is not None else tt)
-        if no > 0:
-            tong_phai_chi += no
-            ncc_ref = str(r.get("nha_cung_cap_id", "") or "Nhà cung cấp").strip()
-            raw_sdt = _clean_phone(r.get("dien_thoai"))
+    for sp_key, items in nhap_by_sp.items():
+        tot_invoice = sum(float(r.get("thanh_tien", 0) or 0) for r in items)
+        paid = chi_map.get(sp_key, 0.0)
+        rem_debt = max(0.0, tot_invoice - paid)
 
-            matched_ncc = ncc_map.get(ncc_ref) or ncc_map.get(ncc_ref.lower()) or (ncc_map.get(raw_sdt) if raw_sdt else None) or {}
-            ncc_id_val = matched_ncc.get("id") or (ncc_ref if ncc_ref.startswith("DT") or ncc_ref.startswith("NCC") or (ncc_ref.isdigit() and len(ncc_ref) > 8) else "")
-            ncc_ten_val = matched_ncc.get("ten_ncc") or (ncc_ref if not (ncc_ref.isdigit() and len(ncc_ref) > 8) and not ncc_ref.startswith("DT") and not ncc_ref.startswith("NCC") else "Đối tác " + ncc_ref)
-            sdt_val = matched_ncc.get("dien_thoai") or raw_sdt
-            dia_chi_val = matched_ncc.get("dia_chi") or str(r.get("dia_chi", "") or "").replace("None", "").strip()
+        first_r = items[0]
+        ncc_ref = str(first_r.get("nha_cung_cap_id", "") or "Nhà cung cấp").strip()
+        raw_sdt = _clean_phone(first_r.get("dien_thoai"))
 
-            key = ncc_id_val or ncc_ten_val or ncc_ref
-            if key not in ncc_debts:
-                ncc_debts[key] = {
-                    "id": ncc_id_val,
-                    "ten_ncc": ncc_ten_val,
-                    "dien_thoai": sdt_val,
-                    "dia_chi": dia_chi_val,
-                    "tong_nhap": 0.0,
-                    "con_no": 0.0,
-                    "so_phieu_list": []
-                }
-            ncc_debts[key]["tong_nhap"] += tt
-            ncc_debts[key]["con_no"] += no
-            sp = str(r.get("so_phieu", ""))
-            if sp and sp not in ncc_debts[key]["so_phieu_list"]:
-                ncc_debts[key]["so_phieu_list"].append(sp)
+        matched_ncc = ncc_map.get(ncc_ref) or ncc_map.get(ncc_ref.lower()) or (ncc_map.get(raw_sdt) if raw_sdt else None) or {}
+        ncc_id_val = matched_ncc.get("id") or (ncc_ref if ncc_ref.startswith("DT") or ncc_ref.startswith("NCC") or (ncc_ref.isdigit() and len(ncc_ref) > 8) else "")
+        ncc_ten_val = matched_ncc.get("ten_ncc") or (ncc_ref if not (ncc_ref.isdigit() and len(ncc_ref) > 8) and not ncc_ref.startswith("DT") and not ncc_ref.startswith("NCC") else "Đối tác " + ncc_ref)
+        sdt_val = matched_ncc.get("dien_thoai") or raw_sdt
+        dia_chi_val = matched_ncc.get("dia_chi") or str(first_r.get("dia_chi", "") or "").replace("None", "").strip()
 
-    danh_sach_chi = list(ncc_debts.values())
+        key = ncc_id_val or ncc_ten_val or ncc_ref
+        if key not in ncc_debts:
+            ncc_debts[key] = {
+                "id": ncc_id_val,
+                "ten_ncc": ncc_ten_val,
+                "dien_thoai": sdt_val,
+                "dia_chi": dia_chi_val,
+                "tong_nhap": 0.0,
+                "con_no": 0.0,
+                "so_phieu_list": []
+            }
+        ncc_debts[key]["tong_nhap"] += tot_invoice
+
+        if rem_debt > 0.01:
+            tong_phai_chi += rem_debt
+            ncc_debts[key]["con_no"] += rem_debt
+            orig_sp = str(first_r.get("so_phieu", "")).strip()
+            if orig_sp and orig_sp not in ncc_debts[key]["so_phieu_list"]:
+                ncc_debts[key]["so_phieu_list"].append(orig_sp)
+
+    danh_sach_chi = [v for v in ncc_debts.values() if v["con_no"] > 0.01]
     danh_sach_chi.sort(key=lambda x: x["con_no"], reverse=True)
 
     return {
@@ -473,5 +510,19 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
         "phai_thu": tong_phai_thu,
         "phai_chi": tong_phai_chi,
         "danh_sach_thu": danh_sach_thu,
-        "danh_sach_chi": danh_sach_chi
+        "danh_sach_chi": danh_sach_chi,
     }
+
+
+@router.post("/api/cong-no/reconcile")
+async def reconcile_all_debts_endpoint(user: str = Depends(require_login)):
+    """API đối soát và tự động cấn trừ toàn bộ công nợ giữa Sổ Quỹ và Bảng Xuất/Nhập."""
+    try:
+        stats = db_manager.reconcile_all_debts()
+        return {
+            "success": True,
+            "message": "Đối soát và cấn trừ công nợ thành công",
+            "stats": stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi đối soát công nợ: {str(e)}")

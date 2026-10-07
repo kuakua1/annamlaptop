@@ -59,6 +59,23 @@ async def get_xuat_hang(
 
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
+        # Bảng phụ đối soát phiếu thu từ Sổ Quỹ để triệt tiêu công nợ ảo
+        so_quy_records = db_manager.get_all("SoQuy")
+        thu_by_sp = {}
+        for sq in so_quy_records:
+            loai = str(sq.get("loai_phieu") or sq.get("loai") or "").strip().upper()
+            if loai == "THU":
+                plq = str(sq.get("phieu_lien_quan") or sq.get("so_phieu_lien_quan") or "").strip().upper()
+                st = float(sq.get("so_tien", 0) or 0)
+                if plq and plq != "ALL" and st > 0:
+                    thu_by_sp[plq] = thu_by_sp.get(plq, 0.0) + st
+
+        tot_by_sp = {}
+        for r in records:
+            sp_key = str(r.get("so_phieu", "")).strip().upper()
+            if sp_key:
+                tot_by_sp[sp_key] = tot_by_sp.get(sp_key, 0.0) + float(r.get("thanh_tien", 0) or 0)
+
         result = []
         for i, rec in enumerate(records):
             ngay = str(rec.get("ngay_xuat", ""))
@@ -91,6 +108,16 @@ async def get_xuat_hang(
             loi_nhuan = float(rec.get("loi_nhuan", 0) or 0)
             raw_no = rec.get("tien_khach_no")
             tien_khach_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
+
+            # Tự động triệt tiêu công nợ nếu phiếu xuất đã được lập phiếu thu
+            sp_key = so_phieu.strip().upper()
+            paid_amount = thu_by_sp.get(sp_key, 0.0)
+            tot_invoice = tot_by_sp.get(sp_key, 0.0)
+            if paid_amount >= tot_invoice and tot_invoice > 0:
+                tien_khach_no = 0.0
+            elif paid_amount > 0:
+                rem_receipt_debt = max(0.0, tot_invoice - paid_amount)
+                tien_khach_no = min(tien_khach_no, rem_receipt_debt)
 
             item = {
                 "id": str(rec.get("id", "")),
@@ -319,13 +346,19 @@ async def get_xuat_hang_detail(
 
         # Kiểm tra phiếu thu liên quan trong Sổ Quỹ
         so_quy_records = db_manager.get_all("SoQuy")
+        sp_clean = so_phieu.strip().upper()
         phieu_thu_list = [
             sq for sq in so_quy_records
-            if str(sq.get("loai_phieu", "")).upper() == "THU" and str(sq.get("phieu_lien_quan", "")).strip() == so_phieu
+            if str(sq.get("loai_phieu", "")).upper() == "THU" and str(sq.get("phieu_lien_quan", "") or sq.get("so_phieu_lien_quan", "")).strip().upper() == sp_clean
         ]
         so_tien_da_thu = sum(float(sq.get("so_tien", 0) or 0) for sq in phieu_thu_list)
         ma_phieu_thu = phieu_thu_list[0].get("ma_phieu") if phieu_thu_list else None
         da_thanh_toan = (total_no <= 0) or (len(phieu_thu_list) > 0 and (so_tien_da_thu >= total or total_no <= 0))
+        if so_tien_da_thu >= total and total > 0:
+            total_no = 0.0
+            da_thanh_toan = True
+            for it in items:
+                it["tien_khach_no"] = 0.0
 
         kh_info = {
             "id": kh_name,

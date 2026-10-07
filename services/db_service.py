@@ -1079,6 +1079,11 @@ class DatabaseManager:
             ]
             self._enqueue_task("APPEND_ROW", SHEET_NHAP_HANG, {"row": sheet_row})
 
+        try:
+            self.reconcile_all_debts(so_phieu)
+        except Exception:
+            pass
+
         return created_rows
 
 
@@ -1331,6 +1336,11 @@ class DatabaseManager:
             ]
             self._enqueue_task("APPEND_ROW", SHEET_XUAT_HANG, {"row": sheet_row})
 
+        try:
+            self.reconcile_all_debts(so_phieu)
+        except Exception:
+            pass
+
         return created_rows
 
 
@@ -1469,6 +1479,11 @@ class DatabaseManager:
                         ]
                         self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
 
+        try:
+            self.reconcile_all_debts(phieu_lien_quan if phieu_lien_quan and phieu_lien_quan != 'ALL' else None)
+        except Exception:
+            pass
+
         return {
             "id": record_id,
             "ma_phieu": ma_phieu,
@@ -1570,6 +1585,11 @@ class DatabaseManager:
                         ]
                         self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
 
+        try:
+            self.reconcile_all_debts(phieu_lien_quan if phieu_lien_quan and phieu_lien_quan != 'ALL' else None)
+        except Exception:
+            pass
+
         return {
             "id": record_id,
             "ma_phieu": ma_phieu,
@@ -1668,6 +1688,11 @@ class DatabaseManager:
                         ]
                         self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
 
+        try:
+            self.reconcile_all_debts()
+        except Exception:
+            pass
+
         return {
             "id": rec_id,
             "ma_phieu": ma_phieu,
@@ -1765,6 +1790,11 @@ class DatabaseManager:
                             un["ghi_chu"], un["cong_no"]
                         ]
                         self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
+
+        try:
+            self.reconcile_all_debts()
+        except Exception:
+            pass
 
         return {
             "id": rec_id,
@@ -1865,6 +1895,11 @@ class DatabaseManager:
                         ]
                         self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
 
+        try:
+            self.reconcile_all_debts()
+        except Exception:
+            pass
+
         return True
 
     def get_customer_unpaid_invoices(self, kh_id_or_name: str, dien_thoai: str = "") -> list[dict]:
@@ -1883,8 +1918,19 @@ class DatabaseManager:
             all_rows = cursor.fetchall()
             cursor.execute("SELECT * FROM KhachHang")
             kh_rows = cursor.fetchall()
+            cursor.execute("SELECT * FROM DoiTuong")
+            dt_rows = cursor.fetchall()
+            cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'THU'")
+            sq_rows = cursor.fetchall()
 
-        # Map danh mục KhachHang tra cứu chéo
+        # Map số tiền đã thu theo từng số phiếu xuất từ Sổ Quỹ
+        thu_map = {}
+        for sq in sq_rows:
+            plq = str(sq["phieu_lien_quan"] or "").strip().upper()
+            if plq and plq != "ALL":
+                thu_map[plq] = thu_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
+
+        # Map danh mục KhachHang & DoiTuong tra cứu chéo
         kh_lookup_by_id = {}
         kh_lookup_by_name = {}
         kh_lookup_by_phone = {}
@@ -1906,6 +1952,25 @@ class DatabaseManager:
                 kh_lookup_by_phone[kphone] = kinfo
                 if kphone.startswith("0"):
                     kh_lookup_by_phone[kphone[1:]] = kinfo
+
+        for d in dt_rows:
+            did = str(d["id"] or "").strip()
+            dname = str(d["ten"] or "").strip()
+            dphone = _clean_p(d["dien_thoai"])
+            dinfo = {
+                "id": did,
+                "ten_kh": dname,
+                "dia_chi": str(d["dia_chi"] or "").strip(),
+                "dien_thoai": dphone
+            }
+            if did:
+                kh_lookup_by_id[did] = dinfo
+            if dname:
+                kh_lookup_by_name[dname.lower()] = dinfo
+            if dphone:
+                kh_lookup_by_phone[dphone] = dinfo
+                if dphone.startswith("0"):
+                    kh_lookup_by_phone[dphone[1:]] = dinfo
 
         q_raw = str(kh_id_or_name or "").strip()
         q_phone = _clean_p(dien_thoai)
@@ -1953,6 +2018,7 @@ class DatabaseManager:
                     "ghi_chu": str(r["ghi_chu"] or ""),
                     "tong_tien": 0.0,
                     "tong_no": 0.0,
+                    "da_thu": 0.0,
                     "items": []
                 }
 
@@ -1962,8 +2028,14 @@ class DatabaseManager:
 
         matched_invoices = []
         for sp, inv in receipt_map.items():
+            # Đối soát trực tiếp với Sổ Quỹ (bảo vệ tuyệt đối khỏi lệch pha dữ liệu)
+            paid_amt = thu_map.get(sp.upper(), 0.0)
+            actual_no = max(0.0, inv["tong_tien"] - paid_amt)
+            inv["da_thu"] = paid_amt
+            inv["tong_no"] = actual_no
+
             if inv["tong_no"] <= 0:
-                continue  # Đã trả hết
+                continue  # Đã thanh toán xong
 
             inv_kh = str(inv["khach_hang_id"] or "").strip()
             inv_phone = _clean_p(inv["dien_thoai"])
@@ -1971,6 +2043,7 @@ class DatabaseManager:
             is_match = (
                 inv_kh in target_ids or
                 inv_kh.lower() in target_names or
+                str(inv.get("ten_kh", "")).strip().lower() in target_names or
                 (inv_phone and inv_phone in target_phones)
             )
             if not is_match and inv_kh in kh_lookup_by_id:
@@ -2001,6 +2074,15 @@ class DatabaseManager:
             dt_rows = cursor.fetchall()
             cursor.execute("SELECT * FROM NhaCungCap")
             ncc_rows = cursor.fetchall()
+            cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'CHI'")
+            sq_rows = cursor.fetchall()
+
+        # Map số tiền đã chi theo từng số phiếu nhập từ Sổ Quỹ
+        chi_map = {}
+        for sq in sq_rows:
+            plq = str(sq["phieu_lien_quan"] or "").strip().upper()
+            if plq and plq != "ALL":
+                chi_map[plq] = chi_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
 
         # Map danh mục DoiTuong & NhaCungCap tra cứu chéo
         ncc_lookup_by_id = {}
@@ -2090,6 +2172,7 @@ class DatabaseManager:
                     "tong_tien": 0.0,
                     "tong_no": 0.0,
                     "cong_no": 0.0,
+                    "da_chi": 0.0,
                     "items": []
                 }
 
@@ -2100,6 +2183,12 @@ class DatabaseManager:
 
         matched_invoices = []
         for sp, inv in receipt_map.items():
+            paid_amt = chi_map.get(sp.upper(), 0.0)
+            actual_no = max(0.0, inv["tong_tien"] - paid_amt)
+            inv["da_chi"] = paid_amt
+            inv["tong_no"] = actual_no
+            inv["cong_no"] = actual_no
+
             if inv["tong_no"] <= 0:
                 continue  # Đã thanh toán hết
 
@@ -2121,6 +2210,132 @@ class DatabaseManager:
                 matched_invoices.append(inv)
 
         return matched_invoices
+
+    def reconcile_all_debts(self, target_so_phieu: str = None) -> dict:
+        """
+        Tự động đối soát và cấn trừ công nợ 2 chiều chuẩn xác giữa Sổ Quỹ (SoQuy)
+        và Bảng Xuất Hàng (XuatHang) / Bảng Nhập Hàng (NhapHang).
+        Đảm bảo:
+        - Mọi phiếu xuất có phiếu thu trong SoQuy sẽ được trừ nợ chính xác 100%.
+        - Mọi phiếu nhập có phiếu chi trong SoQuy sẽ được trừ nợ chính xác 100%.
+        - Tự động đồng bộ lại vào SQLite và enqueue cập nhật lên Google Sheets.
+        """
+        updated_xuat_ids = []
+        updated_nhap_ids = []
+
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # 1. Đối soát Phiếu Xuất (Công nợ phải thu từ khách hàng)
+                cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'THU'")
+                thu_rows = cursor.fetchall()
+                thu_map = {}
+                for sq in thu_rows:
+                    plq = str(sq["phieu_lien_quan"] or "").strip().upper()
+                    if plq and plq != "ALL":
+                        thu_map[plq] = thu_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
+
+                cursor.execute("SELECT id, so_phieu, thanh_tien, tien_khach_no FROM XuatHang ORDER BY so_phieu ASC, id ASC")
+                all_xuat = cursor.fetchall()
+
+                xuat_by_sp = {}
+                for r in all_xuat:
+                    sp = str(r["so_phieu"] or "").strip()
+                    if not sp:
+                        continue
+                    sp_key = sp.upper()
+                    if sp_key not in xuat_by_sp:
+                        xuat_by_sp[sp_key] = []
+                    xuat_by_sp[sp_key].append(r)
+
+                for sp_key, rows in xuat_by_sp.items():
+                    tot_invoice = sum(float(r["thanh_tien"] or 0) for r in rows)
+                    paid = thu_map.get(sp_key, 0.0)
+                    rem_debt = max(0.0, tot_invoice - paid)
+
+                    for r in rows:
+                        row_tt = float(r["thanh_tien"] or 0)
+                        cur_no = float(r["tien_khach_no"] if r["tien_khach_no"] is not None else row_tt)
+                        allocated_no = min(row_tt, rem_debt)
+                        rem_debt = max(0.0, rem_debt - allocated_no)
+
+                        if abs(allocated_no - cur_no) > 0.01:
+                            cursor.execute("UPDATE XuatHang SET tien_khach_no = ? WHERE id = ?", (allocated_no, r["id"]))
+                            updated_xuat_ids.append(r["id"])
+
+                # 2. Đối soát Phiếu Nhập (Công nợ phải trả cho nhà cung cấp)
+                cursor.execute("SELECT loai_phieu, so_tien, phieu_lien_quan FROM SoQuy WHERE UPPER(TRIM(loai_phieu)) = 'CHI'")
+                chi_rows = cursor.fetchall()
+                chi_map = {}
+                for sq in chi_rows:
+                    plq = str(sq["phieu_lien_quan"] or "").strip().upper()
+                    if plq and plq != "ALL":
+                        chi_map[plq] = chi_map.get(plq, 0.0) + float(sq["so_tien"] or 0)
+
+                cursor.execute("SELECT id, so_phieu, thanh_tien, cong_no FROM NhapHang ORDER BY so_phieu ASC, id ASC")
+                all_nhap = cursor.fetchall()
+
+                nhap_by_sp = {}
+                for r in all_nhap:
+                    sp = str(r["so_phieu"] or "").strip()
+                    if not sp:
+                        continue
+                    sp_key = sp.upper()
+                    if sp_key not in nhap_by_sp:
+                        nhap_by_sp[sp_key] = []
+                    nhap_by_sp[sp_key].append(r)
+
+                for sp_key, rows in nhap_by_sp.items():
+                    tot_invoice = sum(float(r["thanh_tien"] or 0) for r in rows)
+                    paid = chi_map.get(sp_key, 0.0)
+                    rem_debt = max(0.0, tot_invoice - paid)
+
+                    for r in rows:
+                        row_tt = float(r["thanh_tien"] or 0)
+                        cur_no = float(r["cong_no"] if r["cong_no"] is not None else row_tt)
+                        allocated_no = min(row_tt, rem_debt)
+                        rem_debt = max(0.0, rem_debt - allocated_no)
+
+                        if abs(allocated_no - cur_no) > 0.01:
+                            cursor.execute("UPDATE NhapHang SET cong_no = ? WHERE id = ?", (allocated_no, r["id"]))
+                            updated_nhap_ids.append(r["id"])
+
+                conn.commit()
+
+        # Enqueue đồng bộ lên Google Sheets cho các dòng bị thay đổi
+        if updated_xuat_ids:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for mid in updated_xuat_ids:
+                    cursor.execute("SELECT * FROM XuatHang WHERE id = ?", (mid,))
+                    ux = cursor.fetchone()
+                    if ux:
+                        u_row = [
+                            ux["id"], ux["so_phieu"], ux["ngay_xuat"], ux["ma_hang"], ux["ten_hang"],
+                            ux["so_luong"], ux["gia_ban"], ux["thanh_tien"], ux["khach_hang_id"],
+                            ux["ghi_chu"], ux["gia_von"], ux["loi_nhuan"], ux["tien_khach_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_XUAT_HANG, {"id": ux["id"], "row": u_row})
+
+        if updated_nhap_ids:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                for mid in updated_nhap_ids:
+                    cursor.execute("SELECT * FROM NhapHang WHERE id = ?", (mid,))
+                    un = cursor.fetchone()
+                    if un:
+                        u_row = [
+                            un["id"], un["so_phieu"], un["ngay_nhap"], un["ma_hang"], un["ten_hang"],
+                            un["so_luong"], un["gia_nhap"], un["thanh_tien"], un["nha_cung_cap_id"],
+                            un["ghi_chu"], un["cong_no"]
+                        ]
+                        self._enqueue_task("UPDATE_ROW", SHEET_NHAP_HANG, {"id": un["id"], "row": u_row})
+
+        return {
+            "reconciled_xuat_count": len(updated_xuat_ids),
+            "reconciled_nhap_count": len(updated_nhap_ids)
+        }
 
     def get_so_quy_balances(self) -> dict:
         """Tính số dư hiện tại của Tiền mặt, Tiền gửi và Tổng quỹ."""
@@ -2451,6 +2666,13 @@ class DatabaseManager:
                         counts["Config_err"] = str(e)
 
                 conn.commit()
+
+        # Tự động đối soát và cấn trừ công nợ sau khi đồng bộ
+        try:
+            recon_res = self.reconcile_all_debts()
+            counts["Reconcile"] = recon_res
+        except Exception as e:
+            counts["Reconcile_err"] = str(e)
 
         return counts
 
