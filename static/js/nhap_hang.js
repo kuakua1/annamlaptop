@@ -494,24 +494,26 @@ function _appendRow(id, ma_hang, so_luong, gia_nhap) {
     const tr = document.createElement('tr');
     tr.id = `row-${id}`;
     tr.innerHTML = `
-        <td class="position-relative" style="min-width: 260px;">
-            <div class="input-group input-group-sm">
-                <input type="text" class="form-control form-control-sm" id="prod-input-${id}"
-                    value="${prodName}"
-                    placeholder="Gõ mã hoặc tên hàng..."
-                    autocomplete="off"
-                    onfocus="onProductInputFocus(${id}, this)"
-                    onkeydown="onProductInputKeydown(${id}, event)"
-                    oninput="onProductSearchInput(${id}, this)">
-                <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearProductRow(${id})" title="Xóa chọn">
-                    <i class="bi bi-x"></i>
-                </button>
-                <button class="btn btn-outline-primary btn-sm btn-toggle-prod-dd" type="button" onclick="toggleProductDropdown(${id}, event)" title="Chọn hàng hóa từ danh sách">
-                    <i class="bi bi-chevron-down"></i>
-                </button>
+        <td style="min-width: 260px;">
+            <div class="position-relative">
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control form-control-sm" id="prod-input-${id}"
+                        value="${prodName}"
+                        placeholder="Gõ mã hoặc tên hàng..."
+                        autocomplete="off"
+                        onfocus="onProductInputFocus(${id}, this)"
+                        onkeydown="onProductInputKeydown(${id}, event)"
+                        oninput="onProductSearchInput(${id}, this)">
+                    <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearProductRow(${id})" title="Xóa chọn">
+                        <i class="bi bi-x"></i>
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm btn-toggle-prod-dd" type="button" onclick="toggleProductDropdown(${id}, event)" title="Chọn hàng hóa từ danh sách">
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                </div>
+                <input type="hidden" id="prod-ma-${id}" value="${ma_hang}">
+                <div id="prod-sug-${id}" class="autocomplete-dropdown d-none shadow" style="max-height: 450px; width: 100%; z-index: 1060;"></div>
             </div>
-            <input type="hidden" id="prod-ma-${id}" value="${ma_hang}">
-            <div id="prod-sug-${id}" class="autocomplete-dropdown d-none shadow" style="max-height: 430px; min-width: 420px; z-index: 1060;"></div>
             <small id="prod-info-${id}" class="text-muted d-block text-truncate mt-1">${infoText}</small>
         </td>
         <td style="width: 15%;"><input type="number" class="form-control form-control-sm" id="sl-${id}" min="1" value="${so_luong}" onkeydown="onQuantityInputKeydown(${id}, event)" onchange="calcRow(${id})"></td>

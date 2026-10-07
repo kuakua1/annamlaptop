@@ -413,6 +413,8 @@ body.is-embedded-tab .content-area {
   border: 1px solid #e2e8f0;
   border-radius: 4px;
   background: #fff;
+  overflow: visible !important;
+  position: relative;
 }
 
 .receipt-history-card {
@@ -901,13 +903,15 @@ html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
   top: 100%;
   left: 0;
   right: 0;
+  width: 100%;
+  box-sizing: border-box;
   z-index: 1060;
   background: #fff;
   border: 1px solid #cbd5e1;
   border-top: none;
   border-radius: 0 0 0.5rem 0.5rem;
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-  max-height: 430px !important;
+  max-height: 450px !important;
   overflow-y: auto;
 }
 
@@ -925,7 +929,7 @@ html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
 }
 
 .autocomplete-item {
-  padding: 0.6rem 0.85rem;
+  padding: 0.55rem 0.75rem;
   cursor: pointer;
   border-bottom: 1px solid #f1f5f9;
   transition: background 0.15s ease;
@@ -940,6 +944,12 @@ html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
 }
 
 .card-body > .table-responsive,
-.receipt-table-wrapper {
+.receipt-table-wrapper,
+.receipt-table-wrapper table,
+.receipt-table-wrapper tbody,
+.receipt-table-wrapper tr,
+.receipt-table-wrapper td,
+.receipt-layout-container .card,
+.receipt-layout-container .card-body {
   overflow: visible !important;
 }
