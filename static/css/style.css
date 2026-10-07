@@ -961,3 +961,96 @@ html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
 .receipt-layout-container .card-body {
   overflow: visible !important;
 }
+
+/* ── Confirm Delete Receipt Modal (Pixel-perfect match to screenshot) ── */
+#confirm-delete-receipt-modal {
+  z-index: 1070 !important;
+}
+
+#confirm-delete-receipt-modal .modal-dialog {
+  max-width: 480px;
+}
+
+#confirm-delete-receipt-modal .modal-content {
+  border-radius: 12px;
+  overflow: hidden;
+  border: none;
+  box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.3), 0 10px 15px -6px rgba(0, 0, 0, 0.2);
+}
+
+#confirm-delete-receipt-modal .modal-header {
+  background-color: #dc3545 !important;
+  color: #ffffff !important;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+  padding: 0.65rem 1.1rem;
+}
+
+#confirm-delete-receipt-modal .modal-body {
+  padding: 1.75rem 1.5rem 1.25rem;
+}
+
+#confirm-delete-receipt-modal .modal-body i.bi-trash3-fill,
+#confirm-delete-receipt-modal .modal-body i.bi-trash3 {
+  font-size: 3.2rem;
+  color: #dc3545;
+  display: inline-block;
+}
+
+#confirm-delete-receipt-modal #del-receipt-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+#confirm-delete-receipt-modal #del-receipt-desc {
+  color: #64748b;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+#confirm-delete-receipt-modal .modal-footer {
+  background-color: #ffffff;
+  border-top: none;
+  padding: 0.75rem 1.25rem 1.25rem;
+}
+
+#confirm-delete-receipt-modal .modal-footer .btn-secondary {
+  background-color: #64748b;
+  border-color: #64748b;
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 0.4rem 1.1rem;
+  font-weight: 500;
+}
+
+#confirm-delete-receipt-modal .modal-footer .btn-secondary:hover {
+  background-color: #475569;
+  border-color: #475569;
+}
+
+#confirm-delete-receipt-modal .modal-footer .btn-danger {
+  background-color: #dc3545;
+  border-color: #dc3545;
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 0.4rem 1.1rem;
+  font-weight: 600;
+}
+
+#confirm-delete-receipt-modal .modal-footer .btn-danger:hover {
+  background-color: #bb2d3b;
+  border-color: #b02a37;
+}
+
+/* Backdrops stacking when multiple modals open */
+.modal-backdrop.show:nth-of-type(2) {
+  z-index: 1065 !important;
+}
+
+.modal-backdrop.show:nth-of-type(3) {
+  z-index: 1075 !important;
+}
+

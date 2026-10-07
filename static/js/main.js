@@ -1574,16 +1574,36 @@ async function fetchAllProductsForReceipt() {
 
 /**
  * Mở hộp thoại xác nhận xóa phiếu lần 2 (Đồng ý hoặc Không)
+ * Hỗ trợ: Phiếu Xuất, Phiếu Nhập, Phiếu Thu, Phiếu Chi
  */
-function confirmDeleteReceipt(so_phieu, type, onDone) {
-    if (!so_phieu) return;
-    const isXuat = (type === 'xuat') || so_phieu.startsWith('XH');
-    const typeLabel = isXuat ? 'phiếu xuất kho' : 'phiếu nhập kho';
+function confirmDeleteReceipt(so_phieu, type, onDone, record_id = null) {
+    if (!so_phieu && !record_id) return;
+    const isThu = (type === 'thu') || (type === 'THU') || String(so_phieu).startsWith('TM') || String(so_phieu).startsWith('TG');
+    const isChi = (type === 'chi') || (type === 'CHI') || String(so_phieu).startsWith('CM') || String(so_phieu).startsWith('CG');
+    const isXuat = (type === 'xuat') || String(so_phieu).startsWith('XH');
+    const isNhap = (type === 'nhap') || String(so_phieu).startsWith('NH');
+
+    let typeLabel = 'phiếu';
+    let descText = `Hành động này sẽ xóa vĩnh viễn phiếu ${so_phieu}. Không thể hoàn tác.`;
+
+    if (isThu) {
+        typeLabel = 'phiếu thu';
+        descText = `Hành động này sẽ xóa vĩnh viễn phiếu ${so_phieu}, đồng thời tự động hoàn trả công nợ về phiếu xuất kho và khấu trừ lại quỹ tiền của công ty. Không thể hoàn tác.`;
+    } else if (isChi) {
+        typeLabel = 'phiếu chi';
+        descText = `Hành động này sẽ xóa vĩnh viễn phiếu ${so_phieu}, đồng thời tự động hoàn trả công nợ về phiếu nhập kho và hoàn tiền lại vào quỹ của công ty. Không thể hoàn tác.`;
+    } else if (isXuat) {
+        typeLabel = 'phiếu xuất kho';
+        descText = `Hành động này sẽ xóa vĩnh viễn phiếu ${so_phieu} và tự động hoàn trả số lượng hàng tồn kho tương ứng vào hệ thống. Không thể hoàn tác.`;
+    } else if (isNhap) {
+        typeLabel = 'phiếu nhập kho';
+        descText = `Hành động này sẽ xóa vĩnh viễn phiếu ${so_phieu} và tự động khấu trừ số lượng hàng tồn kho tương ứng khỏi hệ thống. Không thể hoàn tác.`;
+    }
 
     const modalEl = document.getElementById('confirm-delete-receipt-modal');
     if (!modalEl) {
-        if (confirm(`Bạn có chắc chắn muốn xóa ${typeLabel} "${so_phieu}"? Thao tác này sẽ tự động hoàn trả tồn kho.`)) {
-            executeDeleteReceiptApi(so_phieu, isXuat ? 'xuat' : 'nhap', onDone);
+        if (confirm(`Bạn có chắc chắn muốn xóa ${typeLabel} "${so_phieu}"?\n${descText}`)) {
+            executeDeleteReceiptApi(so_phieu, type, onDone, record_id);
         }
         return;
     }
@@ -1591,7 +1611,7 @@ function confirmDeleteReceipt(so_phieu, type, onDone) {
     const titleEl = document.getElementById('del-receipt-title');
     const descEl = document.getElementById('del-receipt-desc');
     if (titleEl) titleEl.textContent = `Xác nhận xóa ${typeLabel} "${so_phieu}"?`;
-    if (descEl) descEl.textContent = `Hành động này sẽ xóa vĩnh viễn phiếu ${so_phieu} và tự động hoàn trả số lượng hàng tồn kho tương ứng vào hệ thống. Không thể hoàn tác.`;
+    if (descEl) descEl.textContent = descText;
 
     const confirmBtn = document.getElementById('btn-confirm-delete-receipt');
     if (confirmBtn) {
@@ -1599,11 +1619,16 @@ function confirmDeleteReceipt(so_phieu, type, onDone) {
             confirmBtn.disabled = true;
             confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang xóa...';
             try {
-                await executeDeleteReceiptApi(so_phieu, isXuat ? 'xuat' : 'nhap', onDone);
+                await executeDeleteReceiptApi(so_phieu, type, onDone, record_id);
                 closeModal('confirm-delete-receipt-modal');
                 window.isReceiptDetailDirty = false;
+                window.isThuChiDetailDirty = false;
+                window.isPhieuThuDetailDirty = false;
                 closeModal('detail-modal');
                 closeModal('history-detail-modal');
+                closeModal('modal-detail-thuchi');
+                closeModal('modal-detail-phieu-thu');
+                closeModal('modal-detail-phieu-chi');
             } catch (err) {
                 // Lỗi đã được toast trong executeDeleteReceiptApi
             } finally {
@@ -1615,6 +1640,8 @@ function confirmDeleteReceipt(so_phieu, type, onDone) {
 
     openModal('confirm-delete-receipt-modal');
 }
+window.confirmDeleteReceipt = confirmDeleteReceipt;
+window.confirmDeleteThuChi = confirmDeleteReceipt;
 
 function confirmDeleteCurrentReceipt() {
     if (!window.currentReceiptDetail || !window.currentReceiptDetail.so_phieu) return;
@@ -1625,16 +1652,29 @@ function confirmDeleteCurrentReceipt() {
     );
 }
 
-async function executeDeleteReceiptApi(so_phieu, type, onDone) {
-    const isXuat = type === 'xuat' || so_phieu.startsWith('XH');
-    const apiUrl = isXuat ? `/api/xuat-hang/${encodeURIComponent(so_phieu)}` : `/api/nhap-hang/${encodeURIComponent(so_phieu)}`;
+async function executeDeleteReceiptApi(so_phieu, type, onDone, record_id = null) {
+    const isThu = (type === 'thu') || (type === 'THU') || String(so_phieu).startsWith('TM') || String(so_phieu).startsWith('TG');
+    const isChi = (type === 'chi') || (type === 'CHI') || String(so_phieu).startsWith('CM') || String(so_phieu).startsWith('CG');
+    const isXuat = (type === 'xuat') || String(so_phieu).startsWith('XH');
+
+    let apiUrl = '';
+    if (isThu || isChi) {
+        const idToDel = record_id || so_phieu;
+        apiUrl = `/api/so-quy/${encodeURIComponent(idToDel)}`;
+    } else if (isXuat) {
+        apiUrl = `/api/xuat-hang/${encodeURIComponent(so_phieu)}`;
+    } else {
+        apiUrl = `/api/nhap-hang/${encodeURIComponent(so_phieu)}`;
+    }
+
     try {
         showLoading();
         const res = await apiRequest(apiUrl, 'DELETE');
         showToast(res.message || `Đã xóa phiếu ${so_phieu} thành công!`, 'success');
 
-        // Báo cho các tab iframe khác cập nhật kho & công nợ tức thì
+        // Báo cho các tab iframe khác cập nhật kho, công nợ và số dư tức thì
         broadcastDataUpdate('DEBT_UPDATED');
+        broadcastDataUpdate('BALANCE_UPDATED');
 
         if (typeof onDone === 'function') {
             await onDone();

@@ -252,7 +252,7 @@ function renderSoQuyTable() {
                         <button class="btn btn-xs btn-outline-primary btn-sm" onclick="viewThuChiDetail('${item.id}', '${item.loai_phieu}')" title="Xem chi tiết & in phiếu">
                             <i class="bi bi-eye"></i>
                         </button>
-                        <button class="btn btn-xs btn-outline-danger btn-sm" onclick="deleteReceipt('${item.id}', '${item.ma_phieu}')" title="Xóa phiếu">
+                        <button class="btn btn-xs btn-outline-danger btn-sm" onclick="deleteReceipt('${item.id}', '${item.ma_phieu}', '${item.loai_phieu}')" title="Xóa phiếu">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
@@ -391,7 +391,7 @@ async function viewThuChiDetail(recordId, loaiPhieu) {
         const btnDelete = document.getElementById('btn-delete-thuchi-detail');
         if (btnDelete) {
             btnDelete.onclick = () => {
-                deleteReceipt(item.id, item.ma_phieu, () => {
+                deleteReceipt(item.id, item.ma_phieu, item.loai_phieu, () => {
                     window.isThuChiDetailDirty = false;
                     const modalEl = document.getElementById('modal-detail-thuchi');
                     if (modalEl) {
@@ -707,12 +707,31 @@ async function viewRelatedInvoice(soPhieu) {
 
 // ── Xóa Phiếu Thu/Chi ────────────────────────────────────────────────────────
 
-async function deleteReceipt(id, maPhieu, onSuccess = null) {
+function deleteReceipt(id, maPhieu, loaiPhieu = null, onSuccess = null) {
+    if (typeof loaiPhieu === 'function') {
+        onSuccess = loaiPhieu;
+        loaiPhieu = null;
+    }
+    const type = loaiPhieu || (String(maPhieu).startsWith('TM') || String(maPhieu).startsWith('TG') ? 'thu' : 'chi');
+    
+    if (typeof confirmDeleteReceipt === 'function') {
+        confirmDeleteReceipt(maPhieu, type, async () => {
+            await loadSoQuy(true);
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('BALANCE_UPDATED');
+                broadcastDataUpdate('DEBT_UPDATED');
+            }
+            if (typeof onSuccess === 'function') {
+                await onSuccess();
+            }
+        }, id);
+        return;
+    }
+
     if (!confirm(`Bạn có chắc chắn muốn xóa phiếu ${maPhieu}?\nNếu phiếu có liên quan đến công nợ, số tiền nợ và quỹ tiền sẽ được hoàn trả tự động.`)) {
         return;
     }
-    try {
-        const res = await apiRequest(`/api/so-quy/${encodeURIComponent(id)}`, 'DELETE');
+    apiRequest(`/api/so-quy/${encodeURIComponent(id)}`, 'DELETE').then(async res => {
         if (res && res.success) {
             showToast(`Đã xóa thành công phiếu ${maPhieu}`, 'success');
             await loadSoQuy();
@@ -722,9 +741,9 @@ async function deleteReceipt(id, maPhieu, onSuccess = null) {
             }
             if (onSuccess) onSuccess();
         }
-    } catch (e) {
+    }).catch(e => {
         showToast('Lỗi khi xóa phiếu: ' + e.message, 'error');
-    }
+    });
 }
 
 // ── Xuất Báo Cáo Kế Toán & Excel Chuẩn ────────────────────────────────────────

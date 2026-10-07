@@ -542,6 +542,23 @@ function renderReceiptsPage(page) {
 }
 
 async function confirmDeletePhieuThu(recordId, maPhieu) {
+    if (typeof confirmDeleteReceipt === 'function') {
+        confirmDeleteReceipt(maPhieu, 'THU', async () => {
+            const modalEl = document.getElementById('modal-detail-phieu-thu');
+            if (modalEl) {
+                const bsModal = bootstrap.Modal.getInstance(modalEl);
+                if (bsModal) bsModal.hide();
+            }
+            await fetchNextCode();
+            await loadRecentReceipts();
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('DEBT_UPDATED');
+                broadcastDataUpdate('BALANCE_UPDATED');
+            }
+        }, recordId);
+        return;
+    }
+
     if (!confirm(`Bạn có chắc chắn muốn xóa phiếu thu ${maPhieu}?\nNếu phiếu có liên quan đến phiếu xuất kho, số tiền nợ sẽ được hoàn lại và quỹ tiền sẽ được khấu trừ lại.`)) {
         return;
     }

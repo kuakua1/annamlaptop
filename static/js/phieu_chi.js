@@ -726,6 +726,26 @@ async function viewDetailChi(recordId) {
 }
 
 async function confirmDeletePhieuChi(recordId, maPhieu) {
+    if (typeof confirmDeleteReceipt === 'function') {
+        confirmDeleteReceipt(maPhieu, 'CHI', async () => {
+            const modalEl = document.getElementById('modal-detail-phieu-chi');
+            if (modalEl) {
+                const bsModal = bootstrap.Modal.getInstance(modalEl);
+                if (bsModal) bsModal.hide();
+            }
+            await fetchNextCodeChi();
+            await loadRecentChi();
+            if (typeof loadCompanyBalances === 'function') {
+                await loadCompanyBalances();
+            }
+            if (typeof broadcastDataUpdate === 'function') {
+                broadcastDataUpdate('DEBT_UPDATED');
+                broadcastDataUpdate('BALANCE_UPDATED');
+            }
+        }, recordId);
+        return;
+    }
+
     if (!confirm(`Bạn có chắc chắn muốn xóa phiếu chi ${maPhieu}?\nNếu phiếu có liên quan đến phiếu nhập kho, số tiền nợ sẽ được hoàn lại và quỹ tiền sẽ được cộng lại.`)) {
         return;
     }
