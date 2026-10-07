@@ -221,21 +221,23 @@ function renderProductSuggestions(id, matches) {
     if (!box) return;
 
     if (!matches || !matches.length) {
-        box.innerHTML = `<div class="p-2 text-muted small text-center">Không tìm thấy hàng khớp</div>`;
+        box.innerHTML = `<div class="p-3 text-muted small text-center"><i class="bi bi-inbox me-1"></i>Không tìm thấy hàng khớp</div>`;
         box.classList.remove('d-none');
         return;
     }
 
     box.innerHTML = matches.map(p => `
-        <div class="autocomplete-item py-2 px-2 border-bottom" onclick="selectProductForRow(${id}, '${p.id}')">
-            <div class="d-flex justify-content-between align-items-center">
-                <span class="badge bg-primary bg-opacity-10 text-primary me-2 font-monospace">${escapeHtml(p.ma_hang)}</span>
-                <span class="fw-semibold text-truncate small flex-grow-1">${escapeHtml(p.ten_hang)}</span>
-                <span class="text-success fw-bold small ms-2 text-nowrap">${formatVND(p.gia_nhap)}</span>
+        <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectProductForRow(${id}, '${p.id}')">
+            <div class="d-flex align-items-start justify-content-between gap-2">
+                <div class="d-flex align-items-start gap-2 flex-grow-1" style="min-width: 0;">
+                    <span class="badge bg-primary bg-opacity-10 text-primary font-monospace flex-shrink-0 mt-1">${escapeHtml(p.ma_hang)}</span>
+                    <span class="fw-semibold small text-dark" style="white-space: normal; word-break: break-word; line-height: 1.35;">${escapeHtml(p.ten_hang)}</span>
+                </div>
+                <span class="text-success fw-bold small flex-shrink-0 text-nowrap ms-2">${formatVND(p.gia_nhap)}</span>
             </div>
-            <div class="text-muted small mt-1 d-flex justify-content-between" style="font-size: 0.75rem;">
+            <div class="text-muted small mt-1 d-flex justify-content-between align-items-center" style="font-size: 0.75rem;">
                 <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${escapeHtml(p.danh_muc)}</span>` : ''} ĐVT: ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
-                <span>Tồn hiện tại: <strong>${formatNumber(p.ton_kho)}</strong></span>
+                <span>Tồn hiện tại: <strong class="text-dark">${formatNumber(p.ton_kho)}</strong></span>
             </div>
         </div>
     `).join('');
@@ -316,7 +318,11 @@ function selectProductForRow(id, prodIdOrMa) {
     const p = products.find(x => x.id === prodIdOrMa || x.ma_hang === prodIdOrMa);
     if (!p) return;
 
-    document.getElementById(`prod-input-${id}`).value = `${p.ma_hang} - ${p.ten_hang}`;
+    const input = document.getElementById(`prod-input-${id}`);
+    if (input) {
+        input.value = `${p.ma_hang} - ${p.ten_hang}`;
+        input.title = `${p.ma_hang} - ${p.ten_hang}`;
+    }
     document.getElementById(`prod-ma-${id}`).value = p.ma_hang;
     document.getElementById(`prod-sug-${id}`).classList.add('d-none');
 
@@ -505,7 +511,7 @@ function _appendRow(id, ma_hang, so_luong, gia_nhap) {
                 </button>
             </div>
             <input type="hidden" id="prod-ma-${id}" value="${ma_hang}">
-            <div id="prod-sug-${id}" class="autocomplete-dropdown d-none shadow" style="max-height: 250px; z-index: 1060;"></div>
+            <div id="prod-sug-${id}" class="autocomplete-dropdown d-none shadow" style="max-height: 430px; min-width: 420px; z-index: 1060;"></div>
             <small id="prod-info-${id}" class="text-muted d-block text-truncate mt-1">${infoText}</small>
         </td>
         <td style="width: 15%;"><input type="number" class="form-control form-control-sm" id="sl-${id}" min="1" value="${so_luong}" onkeydown="onQuantityInputKeydown(${id}, event)" onchange="calcRow(${id})"></td>
