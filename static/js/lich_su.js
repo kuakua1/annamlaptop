@@ -74,16 +74,54 @@ function groupHistoryRecordsByReceipt(records) {
     return list;
 }
 
+let currentFromDate = '';
+let currentToDate = '';
+
+function setQuickPeriod(type) {
+    const range = (typeof getPresetDateRange === 'function') ? getPresetDateRange(type) : { from: '', to: '' };
+    currentFromDate = range.from;
+    currentToDate = range.to;
+
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+    if (fromEl) fromEl.value = currentFromDate;
+    if (toEl) toEl.value = currentToDate;
+
+    // Cập nhật trạng thái active của nút
+    document.querySelectorAll('.date-range-presets .btn').forEach(b => b.classList.remove('active'));
+    if (window.event && window.event.target && window.event.target.classList.contains('btn')) {
+        window.event.target.classList.add('active');
+    }
+
+    currentPage = 1;
+    loadHistory();
+}
+
+function onDateRangeChanged() {
+    document.querySelectorAll('.date-range-presets .btn').forEach(b => b.classList.remove('active'));
+    currentFromDate = document.getElementById('filter-from-date')?.value || '';
+    currentToDate = document.getElementById('filter-to-date')?.value || '';
+    if (currentFromDate && currentToDate && currentFromDate <= currentToDate) {
+        currentPage = 1;
+        loadHistory();
+    }
+}
+
+function applyDateFilter() {
+    currentFromDate = document.getElementById('filter-from-date')?.value || '';
+    currentToDate = document.getElementById('filter-to-date')?.value || '';
+    currentPage = 1;
+    loadHistory();
+}
+
 async function loadHistory(silent = false) {
     try {
         if (!silent) showLoading();
 
-        const monthInput = document.getElementById('filter-month');
-        if (monthInput) currentMonth = monthInput.value;
-
         const params = new URLSearchParams({
             loai: currentLoai,
-            month: currentMonth,
+            from_date: currentFromDate,
+            to_date: currentToDate,
             page: 1,
             page_size: 10000
         });
@@ -365,11 +403,16 @@ function exportHistoryExcel() {
     const monthInput = document.getElementById('filter-month');
     const selectedMonth = monthInput ? monthInput.value : '';
     let monthText = 'Tất cả các kỳ';
-    if (selectedMonth) {
-        const parts = selectedMonth.split('-');
-        if (parts.length === 2) {
-            monthText = `Tháng ${parseInt(parts[1])} năm ${parts[0]}`;
-        }
+    let fileSuffix = 'all';
+    if (currentFromDate && currentToDate) {
+        monthText = `Từ ${formatDate(currentFromDate)} đến ${formatDate(currentToDate)}`;
+        fileSuffix = `${currentFromDate}_${currentToDate}`;
+    } else if (currentFromDate) {
+        monthText = `Từ ngày ${formatDate(currentFromDate)}`;
+        fileSuffix = `from_${currentFromDate}`;
+    } else if (currentToDate) {
+        monthText = `Đến ngày ${formatDate(currentToDate)}`;
+        fileSuffix = `to_${currentToDate}`;
     }
 
     exportAccountingReportToExcel({
@@ -393,7 +436,7 @@ function exportHistoryExcel() {
         ],
         rows,
         summaryRow,
-        fileName: `Nhat_Ky_Giao_Dich_${selectedMonth || todayISO()}.xlsx`,
+        fileName: `Nhat_Ky_Giao_Dich_${fileSuffix}.xlsx`,
         sheetName: 'LichSu'
     });
 }
@@ -420,16 +463,15 @@ async function viewHistoryReceipt(loai, so_phieu) {
 }
 
 function initLichSu() {
-    // Mặc định chọn tháng hiện tại
-    const monthInput = document.getElementById('filter-month');
-    if (monthInput) {
-        monthInput.value = getCurrentMonthStr();
-        currentMonth = monthInput.value;
-        monthInput.addEventListener('change', () => {
-            currentPage = 1;
-            loadHistory();
-        });
-    }
+    // Mặc định chọn Tháng này
+    const range = (typeof getPresetDateRange === 'function') ? getPresetDateRange('month') : { from: '', to: '' };
+    currentFromDate = range.from;
+    currentToDate = range.to;
+
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+    if (fromEl) fromEl.value = currentFromDate;
+    if (toEl) toEl.value = currentToDate;
 
     loadHistory();
 

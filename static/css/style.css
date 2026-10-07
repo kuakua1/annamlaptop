@@ -1054,3 +1054,39 @@ html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
   z-index: 1075 !important;
 }
 
+/* ── Date Range Filter Bar (Chuẩn Kỳ báo cáo theo mẫu) ── */
+.date-range-filter-bar {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.date-range-filter-bar .form-control[type="date"] {
+  max-width: 145px;
+  min-width: 135px;
+  font-family: inherit;
+}
+
+.date-range-presets .btn {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #475569;
+  border-color: #cbd5e1;
+  background-color: #ffffff;
+}
+
+.date-range-presets .btn:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.date-range-presets .btn.active {
+  background-color: #475569 !important;
+  border-color: #475569 !important;
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+

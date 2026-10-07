@@ -262,16 +262,27 @@ async def delete_phieu_so_quy(record_id: str, user: str = Depends(require_login)
 # ── Tổng quan Dòng Tiền & Cấu Hình Quỹ ───────────────────────────────────────
 
 @router.get("/api/dong-tien/tong-quan")
-async def get_tong_quan_dong_tien(month: str = "", user: str = Depends(require_login)):
+async def get_tong_quan_dong_tien(
+    month: str = "",
+    from_date: str = "",
+    to_date: str = "",
+    user: str = Depends(require_login)
+):
     """Thống kê quỹ tiền hiện tại và danh sách giao dịch gần nhất."""
     balances = db_manager.get_so_quy_balances()
     all_rows = db_manager.get_all("SoQuy")
     all_rows.sort(key=lambda x: (str(x.get("ngay", "")), str(x.get("id", ""))), reverse=True)
 
-    if month:
-        filtered_rows = [r for r in all_rows if str(r.get("ngay", "")).startswith(month)]
-    else:
-        filtered_rows = all_rows
+    filtered_rows = []
+    for r in all_rows:
+        ngay = str(r.get("ngay", "")).strip()
+        if month and not ngay.startswith(month):
+            continue
+        if from_date and ngay < from_date:
+            continue
+        if to_date and ngay > to_date:
+            continue
+        filtered_rows.append(r)
 
     return {
         "success": True,

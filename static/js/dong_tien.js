@@ -15,13 +15,47 @@ function getCurrentMonthStr() {
     return `${y}-${m}`;
 }
 
-// ── Tải Dữ Liệu Sổ Quỹ ────────────────────────────────────────────────────────
+// ── Bộ Lọc Ngày Tháng (Kỳ Báo Cáo) & Tải Dữ Liệu Sổ Quỹ ──────────────────────
+
+let currentFromDate = '';
+let currentToDate = '';
+
+function setQuickPeriod(type) {
+    const range = (typeof getPresetDateRange === 'function') ? getPresetDateRange(type) : { from: '', to: '' };
+    currentFromDate = range.from;
+    currentToDate = range.to;
+
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+    if (fromEl) fromEl.value = currentFromDate;
+    if (toEl) toEl.value = currentToDate;
+
+    // Cập nhật trạng thái active của nút
+    document.querySelectorAll('.date-range-presets .btn').forEach(b => b.classList.remove('active'));
+    if (window.event && window.event.target && window.event.target.classList.contains('btn')) {
+        window.event.target.classList.add('active');
+    }
+
+    loadSoQuy();
+}
+
+function onDateRangeChanged() {
+    document.querySelectorAll('.date-range-presets .btn').forEach(b => b.classList.remove('active'));
+    currentFromDate = document.getElementById('filter-from-date')?.value || '';
+    currentToDate = document.getElementById('filter-to-date')?.value || '';
+    if (currentFromDate && currentToDate && currentFromDate <= currentToDate) {
+        loadSoQuy();
+    }
+}
+
+function applyDateFilter() {
+    currentFromDate = document.getElementById('filter-from-date')?.value || '';
+    currentToDate = document.getElementById('filter-to-date')?.value || '';
+    loadSoQuy();
+}
 
 async function loadSoQuy(silent = false) {
     try {
-        const monthInput = document.getElementById('filter-month');
-        const month = monthInput ? monthInput.value : '';
-
         const tbody = document.getElementById('tbody-so-quy');
         if (!silent && tbody) {
             tbody.innerHTML = `
@@ -33,10 +67,9 @@ async function loadSoQuy(silent = false) {
             `;
         }
 
-        let url = '/api/dong-tien/tong-quan';
-        if (month) {
-            url += `?month=${encodeURIComponent(month)}`;
-        }
+        let url = '/api/dong-tien/tong-quan?';
+        if (currentFromDate) url += `from_date=${encodeURIComponent(currentFromDate)}&`;
+        if (currentToDate) url += `to_date=${encodeURIComponent(currentToDate)}&`;
 
         const res = await apiRequest(url);
         if (res && res.success) {
@@ -783,14 +816,17 @@ function getReportSoQuyData() {
     const netSign = netAmount >= 0 ? '+' : '-';
     const summaryRow = ['Tổng cộng', '', '', '', '', '', 'Thu: ' + formatNumber(totalThu) + ' | Chi: ' + formatNumber(totalChi), netSign + ' ' + formatNumber(Math.abs(netAmount)), ''];
 
-    const monthInput = document.getElementById('filter-month')?.value;
-    const now = new Date();
-    let monthLabel = `Tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
-    let fileSuffix = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}`;
-    if (monthInput && monthInput.includes('-')) {
-        const [y, m] = monthInput.split('-');
-        monthLabel = `Tháng ${m} năm ${y}`;
-        fileSuffix = `${y}_${m}`;
+    let monthLabel = 'Tất cả các ngày';
+    let fileSuffix = 'all';
+    if (currentFromDate && currentToDate) {
+        monthLabel = `Từ ${formatDate(currentFromDate)} đến ${formatDate(currentToDate)}`;
+        fileSuffix = `${currentFromDate}_${currentToDate}`;
+    } else if (currentFromDate) {
+        monthLabel = `Từ ngày ${formatDate(currentFromDate)}`;
+        fileSuffix = `from_${currentFromDate}`;
+    } else if (currentToDate) {
+        monthLabel = `Đến ngày ${formatDate(currentToDate)}`;
+        fileSuffix = `to_${currentToDate}`;
     }
 
     const columns = [
@@ -1002,15 +1038,17 @@ function escapeHtml(text) {
 // ── Khởi Chạy Khi DOM Sẵn Sàng ───────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Mặc định chọn tháng hiện tại
-    const monthInput = document.getElementById('filter-month');
-    if (monthInput) {
-        monthInput.value = getCurrentMonthStr();
-    }
+    // Mặc định chọn Tháng này
+    const range = (typeof getPresetDateRange === 'function') ? getPresetDateRange('month') : { from: '', to: '' };
+    currentFromDate = range.from;
+    currentToDate = range.to;
+
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+    if (fromEl) fromEl.value = currentFromDate;
+    if (toEl) toEl.value = currentToDate;
 
     loadSoQuy();
-
-    monthInput?.addEventListener('change', () => loadSoQuy());
 
     const searchHandler = typeof debounce === 'function' ? debounce(filterAndRenderSoQuy, 200) : filterAndRenderSoQuy;
     document.getElementById('search-input')?.addEventListener('input', searchHandler);

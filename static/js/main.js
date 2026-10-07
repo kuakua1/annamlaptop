@@ -3358,3 +3358,38 @@ try {
     };
 } catch (err) {}
 
+// ── Shared Date Range Presets Helper ─────────────────────────────────────────
+function getPresetDateRange(type) {
+    const today = new Date();
+    let fromDate = new Date();
+    let toDate = new Date();
+
+    if (type === 'today') {
+        fromDate = today;
+        toDate = today;
+    } else if (type === 'week') {
+        const day = today.getDay();
+        const diff = today.getDate() - day + (day === 0 ? -6 : 1); // Thứ 2 đầu tuần
+        fromDate = new Date(today.getFullYear(), today.getMonth(), diff);
+        toDate = new Date(today.getFullYear(), today.getMonth(), diff + 6);
+    } else if (type === 'month') {
+        fromDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        toDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    } else if (type === 'year') {
+        fromDate = new Date(today.getFullYear(), 0, 1);
+        toDate = new Date(today.getFullYear(), 11, 31);
+    } else if (type === 'all') {
+        return { from: '', to: '' };
+    }
+
+    const pad = n => String(n).padStart(2, '0');
+    const formatISO = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    return {
+        from: formatISO(fromDate),
+        to: formatISO(toDate)
+    };
+}
+window.getPresetDateRange = getPresetDateRange;
+
+

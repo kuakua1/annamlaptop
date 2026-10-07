@@ -57,18 +57,53 @@ function groupImportRecordsByReceipt(records) {
     return Array.from(map.values());
 }
 
+let currentFromDate = '';
+let currentToDate = '';
+
+function setQuickPeriod(type) {
+    const range = (typeof getPresetDateRange === 'function') ? getPresetDateRange(type) : { from: '', to: '' };
+    currentFromDate = range.from;
+    currentToDate = range.to;
+
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+    if (fromEl) fromEl.value = currentFromDate;
+    if (toEl) toEl.value = currentToDate;
+
+    // Cập nhật trạng thái active của nút
+    document.querySelectorAll('.date-range-presets .btn').forEach(b => b.classList.remove('active'));
+    if (window.event && window.event.target && window.event.target.classList.contains('btn')) {
+        window.event.target.classList.add('active');
+    }
+
+    loadImportData();
+}
+
+function onDateRangeChanged() {
+    document.querySelectorAll('.date-range-presets .btn').forEach(b => b.classList.remove('active'));
+    currentFromDate = document.getElementById('filter-from-date')?.value || '';
+    currentToDate = document.getElementById('filter-to-date')?.value || '';
+    if (currentFromDate && currentToDate && currentFromDate <= currentToDate) {
+        loadImportData();
+    }
+}
+
+function applyDateFilter() {
+    currentFromDate = document.getElementById('filter-from-date')?.value || '';
+    currentToDate = document.getElementById('filter-to-date')?.value || '';
+    loadImportData();
+}
+
 async function loadImportData(silent = false) {
     try {
-        const monthInput = document.getElementById('filter-month');
-        const month = monthInput ? monthInput.value : '';
-
         const tbody = document.getElementById('import-tbody');
         if (!silent && tbody) {
             tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu phiếu nhập kho...</td></tr>';
         }
 
         let url = '/api/nhap-hang?';
-        if (month) url += `month=${encodeURIComponent(month)}&`;
+        if (currentFromDate) url += `from_date=${encodeURIComponent(currentFromDate)}&`;
+        if (currentToDate) url += `to_date=${encodeURIComponent(currentToDate)}&`;
 
         const res = await apiRequest(url);
         allMonthImportRecords = res.data || [];
@@ -111,10 +146,20 @@ function filterAndRenderImportTable() {
 }
 
 function renderImportTable() {
-    const month = document.getElementById('filter-month')?.value || '';
-    const monthLabel = month ? `tháng ${month.split('-')[1]}/${month.split('-')[0]}` : 'tất cả các tháng';
+    let periodLabel = 'tất cả các ngày';
+    if (currentFromDate && currentToDate) {
+        if (currentFromDate === currentToDate) {
+            periodLabel = `ngày ${formatDate(currentFromDate)}`;
+        } else {
+            periodLabel = `từ ${formatDate(currentFromDate)} đến ${formatDate(currentToDate)}`;
+        }
+    } else if (currentFromDate) {
+        periodLabel = `từ ngày ${formatDate(currentFromDate)}`;
+    } else if (currentToDate) {
+        periodLabel = `đến ngày ${formatDate(currentToDate)}`;
+    }
     const monthLabelEl = document.getElementById('stat-month-label');
-    if (monthLabelEl) monthLabelEl.textContent = monthLabel;
+    if (monthLabelEl) monthLabelEl.textContent = periodLabel;
 
     const receiptCount = filteredImportReceipts.length;
     const totalQty = filteredImportReceipts.reduce((sum, r) => sum + r.tong_so_luong, 0);
@@ -278,14 +323,17 @@ function getReportExportData() {
 
     const summaryRow = ['Tổng cộng', '', '', '', '-', totalQty, '-', totalThanhTien, totalDebt, '-'];
 
-    const monthInput = document.getElementById('filter-month')?.value;
-    const now = new Date();
-    let monthLabel = `Tháng ${now.getMonth() + 1} năm ${now.getFullYear()}`;
-    let fileSuffix = `${now.getFullYear()}_${String(now.getMonth() + 1).padStart(2, '0')}`;
-    if (monthInput && monthInput.includes('-')) {
-        const [y, m] = monthInput.split('-');
-        monthLabel = `Tháng ${m} năm ${y}`;
-        fileSuffix = `${y}_${m}`;
+    let monthLabel = 'Tất cả các ngày';
+    let fileSuffix = 'all';
+    if (currentFromDate && currentToDate) {
+        monthLabel = `Từ ${formatDate(currentFromDate)} đến ${formatDate(currentToDate)}`;
+        fileSuffix = `${currentFromDate}_${currentToDate}`;
+    } else if (currentFromDate) {
+        monthLabel = `Từ ngày ${formatDate(currentFromDate)}`;
+        fileSuffix = `from_${currentFromDate}`;
+    } else if (currentToDate) {
+        monthLabel = `Đến ngày ${formatDate(currentToDate)}`;
+        fileSuffix = `to_${currentToDate}`;
     }
 
     const columns = [
@@ -356,15 +404,17 @@ function exportImportToExcel() {
 
 // ── Bind Events ───────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-    // Mặc định chọn tháng hiện tại
-    const monthInput = document.getElementById('filter-month');
-    if (monthInput) {
-        monthInput.value = getCurrentMonthStr();
-    }
+    // Mặc định chọn Tháng này
+    const range = (typeof getPresetDateRange === 'function') ? getPresetDateRange('month') : { from: '', to: '' };
+    currentFromDate = range.from;
+    currentToDate = range.to;
+
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+    if (fromEl) fromEl.value = currentFromDate;
+    if (toEl) toEl.value = currentToDate;
 
     loadImportData();
-
-    monthInput?.addEventListener('change', loadImportData);
 
     const searchHandler = typeof debounce === 'function' ? debounce(filterAndRenderImportTable, 200) : filterAndRenderImportTable;
     document.getElementById('search-input')?.addEventListener('input', searchHandler);
