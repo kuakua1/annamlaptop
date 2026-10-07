@@ -375,11 +375,14 @@ body.is-embedded-tab .content-area {
 .receipt-layout-container {
   width: 100%;
   margin: 0;
+  min-height: calc(100vh - 40px);
 }
 
 .receipt-layout-container .card {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   border: 1px solid #e2e8f0;
+  overflow: visible !important;
+  min-height: 520px;
 }
 
 .receipt-layout-container .card-header {
@@ -391,6 +394,9 @@ body.is-embedded-tab .content-area {
 
 .receipt-layout-container .card-body {
   padding: 0.75rem 0.85rem;
+  overflow: visible !important;
+  display: flex;
+  flex-direction: column;
 }
 
 .form-label-compact {
@@ -415,6 +421,8 @@ body.is-embedded-tab .content-area {
   background: #fff;
   overflow: visible !important;
   position: relative;
+  min-height: 320px;
+  flex-grow: 1;
 }
 
 .receipt-history-card {
