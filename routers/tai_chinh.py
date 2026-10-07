@@ -193,6 +193,16 @@ async def create_phieu_chi(data: PhieuChiCreate, user: str = Depends(require_log
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/api/so-quy/{record_id}")
+async def get_so_quy_detail(record_id: str, user: str = Depends(require_login)):
+    """Lấy chi tiết một phiếu trong sổ quỹ."""
+    all_rows = db_manager.get_all("SoQuy")
+    for r in all_rows:
+        if str(r.get("id", "")).strip() == record_id.strip() or str(r.get("ma_phieu", "")).strip() == record_id.strip():
+            return {"success": True, "data": r}
+    raise HTTPException(status_code=404, detail="Không tìm thấy phiếu thu/chi")
+
+
 @router.delete("/api/so-quy/{record_id}")
 async def delete_phieu_so_quy(record_id: str, user: str = Depends(require_login)):
     success = db_manager.delete_phieu_so_quy(record_id)
@@ -204,11 +214,16 @@ async def delete_phieu_so_quy(record_id: str, user: str = Depends(require_login)
 # ── Tổng quan Dòng Tiền & Cấu Hình Quỹ ───────────────────────────────────────
 
 @router.get("/api/dong-tien/tong-quan")
-async def get_tong_quan_dong_tien(user: str = Depends(require_login)):
+async def get_tong_quan_dong_tien(month: str = "", user: str = Depends(require_login)):
     """Thống kê quỹ tiền hiện tại và danh sách giao dịch gần nhất."""
     balances = db_manager.get_so_quy_balances()
     all_rows = db_manager.get_all("SoQuy")
     all_rows.sort(key=lambda x: (str(x.get("ngay", "")), str(x.get("id", ""))), reverse=True)
+
+    if month:
+        filtered_rows = [r for r in all_rows if str(r.get("ngay", "")).startswith(month)]
+    else:
+        filtered_rows = all_rows
 
     return {
         "success": True,
@@ -221,7 +236,7 @@ async def get_tong_quan_dong_tien(user: str = Depends(require_login)):
         "tm_chi": balances.get("tm_chi", 0.0),
         "tg_thu": balances.get("tg_thu", 0.0),
         "tg_chi": balances.get("tg_chi", 0.0),
-        "transactions": all_rows[:50]
+        "transactions": filtered_rows
     }
 
 
