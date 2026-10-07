@@ -500,14 +500,14 @@ function renderReceiptsPage(page) {
 
     container.innerHTML = pageItems.map(r => {
         const loaiBadge = r.loai_quy === 'TIEN_MAT'
-            ? '<span class="badge bg-success-subtle text-success border border-success px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">TM</span>'
-            : '<span class="badge bg-primary-subtle text-primary border border-primary px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">TG</span>';
+            ? '<span class="badge bg-success-subtle text-success border border-success px-1.5 py-0.5 ms-2 font-monospace" style="font-size: 0.7rem;">TM</span>'
+            : '<span class="badge bg-primary-subtle text-primary border border-primary px-1.5 py-0.5 ms-2 font-monospace" style="font-size: 0.7rem;">TG</span>';
 
         return `
             <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailReceipt('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
                 <!-- Dòng 1: Ngày + ID phiếu + Quỹ (trái) và Số tiền (phải) -->
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <div class="d-flex align-items-center gap-1.5 flex-wrap">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
                         <span class="badge bg-primary-subtle text-primary border border-primary-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
                             <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
                         </span>

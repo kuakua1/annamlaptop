@@ -622,14 +622,14 @@ function renderChiPage(page) {
 
     container.innerHTML = pageItems.map(r => {
         const loaiBadge = r.loai_quy === 'TIEN_MAT'
-            ? '<span class="badge bg-danger-subtle text-danger border border-danger px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">CM</span>'
-            : '<span class="badge bg-warning-subtle text-dark border border-warning px-1 py-0.5 font-monospace" style="font-size: 0.7rem;">CG</span>';
+            ? '<span class="badge bg-danger-subtle text-danger border border-danger px-1.5 py-0.5 ms-2 font-monospace" style="font-size: 0.7rem;">CM</span>'
+            : '<span class="badge bg-warning-subtle text-dark border border-warning px-1.5 py-0.5 ms-2 font-monospace" style="font-size: 0.7rem;">CG</span>';
 
         return `
             <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailChi('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
                 <!-- Dòng 1: Ngày + ID phiếu + Quỹ (trái) và Số tiền (phải) -->
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <div class="d-flex align-items-center gap-1.5 flex-wrap">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
                         <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
                             <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
                         </span>
