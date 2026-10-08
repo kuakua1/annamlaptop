@@ -28,7 +28,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     const paramSoTien = parseFloat(urlParams.get('so_tien') || 0);
     const paramSoPhieu = (urlParams.get('so_phieu') || '').trim();
 
-    if (paramNccId || paramNccTen || paramSdt) {
+    if (paramNccId || paramNccTen || paramSdt || paramSoPhieu) {
+        // Tự động chuyển radio sang Chi Trả Nhà Cung Cấp
+        const radioNcc = document.getElementById('opt-chi-ncc');
+        if (radioNcc) radioNcc.checked = true;
+        onLoaiChiRadioChange('NHA_CUNG_CAP');
+
         let matched = null;
         if (paramNccId) {
             matched = suppliersList.find(c => String(c.id).trim() === String(paramNccId).trim());
@@ -473,26 +478,139 @@ function onPhieuNhapSelectChange(notify = true) {
     }
 }
 
+// ── Chuyển Đổi Mục Đích Chi: Cửa Hàng vs Nhà Cung Cấp ───────────────────────
+
+function onLoaiChiRadioChange(type) {
+    const hiddenEl = document.getElementById('f-chi-loai-chi');
+    if (hiddenEl) hiddenEl.value = type;
+
+    const secCuaHang = document.getElementById('section-chi-cua-hang');
+    const secNcc = document.getElementById('section-chi-ncc');
+    const secDebt = document.getElementById('section-phieu-nhap-debt');
+
+    if (type === 'CUA_HANG') {
+        if (secCuaHang) secCuaHang.classList.remove('d-none');
+        if (secNcc) secNcc.classList.add('d-none');
+        if (secDebt) secDebt.classList.add('d-none');
+    } else {
+        if (secCuaHang) secCuaHang.classList.add('d-none');
+        if (secNcc) secNcc.classList.remove('d-none');
+        if (secDebt) secDebt.classList.remove('d-none');
+        checkSupplierDebt();
+    }
+}
+window.onLoaiChiRadioChange = onLoaiChiRadioChange;
+
+function onHangMucSelectChange() {
+    const sel = document.getElementById('f-chi-hang-muc-select');
+    const customInput = document.getElementById('f-chi-hang-muc-custom');
+    const val = sel?.value || '';
+
+    if (val === 'KHAC') {
+        if (customInput) {
+            customInput.classList.remove('d-none');
+            customInput.focus();
+        }
+    } else {
+        if (customInput) customInput.classList.add('d-none');
+
+        const mapLyDo = {
+            'Tiền ăn trưa / Tiếp khách': 'Chi tiền cơm trưa / tiếp khách',
+            'Chạy quảng cáo (Ads)': 'Chi phí chạy quảng cáo Facebook/TikTok Ads',
+            'Mua gói AI & Phần mềm': 'Thanh toán gói đăng ký AI (ChatGPT/Claude/Tool)',
+            'Tiền điện, nước, internet': 'Thanh toán tiền điện/nước/mạng internet cửa hàng',
+            'Tiền thuê mặt bằng': 'Thanh toán tiền thuê mặt bằng cửa hàng',
+            'Bao bì, đóng gói & Ship COD': 'Chi phí bao bì, đóng gói và ship COD',
+            'Sửa chữa, bảo trì, vật tư': 'Chi phí sửa chữa, bảo trì, mua sắm vật tư',
+            'Lương, thưởng, phụ cấp': 'Chi lương / thưởng / phụ cấp nhân viên',
+            'Sinh hoạt, mua sắm vặt': 'Chi phí sinh hoạt / mua sắm đồ dùng hằng ngày'
+        };
+
+        if (mapLyDo[val]) {
+            const lyDoEl = document.getElementById('f-chi-ly-do');
+            if (lyDoEl) lyDoEl.value = mapLyDo[val];
+        }
+    }
+}
+window.onHangMucSelectChange = onHangMucSelectChange;
+
+function onCustomHangMucInput() {
+    const customVal = document.getElementById('f-chi-hang-muc-custom')?.value.trim();
+    if (customVal) {
+        const lyDoEl = document.getElementById('f-chi-ly-do');
+        if (lyDoEl && !lyDoEl.value) {
+            lyDoEl.value = `Chi tiêu cửa hàng: ${customVal}`;
+        }
+    }
+}
+window.onCustomHangMucInput = onCustomHangMucInput;
+
+function selectQuickExpenseTag(hangMuc, lyDo) {
+    const sel = document.getElementById('f-chi-hang-muc-select');
+    const customInput = document.getElementById('f-chi-hang-muc-custom');
+    if (sel) sel.value = hangMuc;
+    if (customInput) customInput.classList.add('d-none');
+
+    const lyDoEl = document.getElementById('f-chi-ly-do');
+    if (lyDoEl) lyDoEl.value = lyDo;
+
+    const tienEl = document.getElementById('f-chi-so-tien');
+    if (tienEl) {
+        tienEl.focus();
+        tienEl.select();
+    }
+}
+window.selectQuickExpenseTag = selectQuickExpenseTag;
+
 // ── Lưu Phiếu Chi ──────────────────────────────────────────────────────────
 
 async function savePhieuChi() {
     const loaiQuy = document.getElementById('f-chi-loai-quy').value;
     const ngay = document.getElementById('f-chi-ngay').value;
-    const doiTuong = document.getElementById('f-chi-doi-tuong').value.trim();
-    const sdt = document.getElementById('f-chi-sdt').value.trim();
-    const diaChi = document.getElementById('f-chi-dia-chi').value.trim();
-    const nccId = document.getElementById('f-ncc-id')?.value.trim() || '';
+    const loaiChi = document.getElementById('f-chi-loai-chi')?.value || 'CUA_HANG';
+    let doiTuong = '';
+    let sdt = '';
+    let diaChi = '';
+    let nccId = '';
+    let phieuLq = '';
+    let hangMuc = '';
+
+    if (loaiChi === 'CUA_HANG') {
+        const selHangMuc = document.getElementById('f-chi-hang-muc-select')?.value || '';
+        if (selHangMuc === 'KHAC') {
+            hangMuc = document.getElementById('f-chi-hang-muc-custom')?.value.trim() || 'Hạng mục khác';
+        } else {
+            hangMuc = selHangMuc;
+        }
+
+        if (!hangMuc) {
+            showToast('Vui lòng chọn hoặc nhập Hạng Mục Chi Cửa Hàng', 'error');
+            document.getElementById('f-chi-hang-muc-select')?.focus();
+            return;
+        }
+
+        doiTuong = document.getElementById('f-chi-nguoi-nhan-cuahang')?.value.trim() || 'Nội bộ Cửa Hàng An Nam';
+        phieuLq = '';
+    } else {
+        doiTuong = document.getElementById('f-chi-doi-tuong').value.trim();
+        sdt = document.getElementById('f-chi-sdt').value.trim();
+        diaChi = document.getElementById('f-chi-dia-chi').value.trim();
+        nccId = document.getElementById('f-ncc-id')?.value.trim() || '';
+        phieuLq = document.getElementById('f-phieu-nhap-select')?.value || '';
+        hangMuc = 'Chi trả nhà cung cấp';
+
+        if (!doiTuong) {
+            showToast('Vui lòng nhập Tên Người / Đơn Vị Nhận Tiền', 'error');
+            document.getElementById('f-chi-doi-tuong').focus();
+            return;
+        }
+    }
+
     const soTien = parseFloat(document.getElementById('f-chi-so-tien').value || 0);
-    const ghiChu = document.getElementById('f-chi-ly-do').value.trim();
-    const phieuLq = document.getElementById('f-phieu-nhap-select')?.value || '';
+    const ghiChu = document.getElementById('f-chi-ly-do').value.trim() || hangMuc;
 
     if (!ngay) {
         showToast('Vui lòng chọn ngày chi tiền', 'error');
-        return;
-    }
-    if (!doiTuong) {
-        showToast('Vui lòng nhập Tên Người / Đơn Vị Nhận Tiền', 'error');
-        document.getElementById('f-chi-doi-tuong').focus();
         return;
     }
     if (isNaN(soTien) || soTien <= 0) {
@@ -518,6 +636,8 @@ async function savePhieuChi() {
         const payload = {
             loai_quy: loaiQuy,
             ngay: ngay,
+            loai_chi: loaiChi,
+            hang_muc_chi: hangMuc,
             doi_tuong: doiTuong,
             dien_thoai: sdt,
             dia_chi: diaChi,
@@ -531,7 +651,8 @@ async function savePhieuChi() {
         const res = await apiRequest('/api/phieu-chi', 'POST', payload);
         if (res.success) {
             const maPhieu = res.data?.ma_phieu || '';
-            showToast(`Lưu phiếu chi ${maPhieu} thành công! Đã khấu trừ ${formatVND(soTien)} vào quỹ ${fundName}.`, 'success');
+            const loaiChiText = loaiChi === 'CUA_HANG' ? `chi cửa hàng (${hangMuc})` : 'chi trả NCC';
+            showToast(`Lưu phiếu ${loaiChiText} [${maPhieu}] thành công! Đã khấu trừ ${formatVND(soTien)} vào ${fundName}.`, 'success');
             resetFormPhieuChi();
             await fetchNextCodeChi();
             await loadRecentChi();
@@ -555,6 +676,16 @@ async function savePhieuChi() {
 function resetFormPhieuChi() {
     lastCheckedDebtKey = '';
     currentSelectedSoPhieu = '';
+    const selHangMuc = document.getElementById('f-chi-hang-muc-select');
+    if (selHangMuc) selHangMuc.value = '';
+    const customHangMuc = document.getElementById('f-chi-hang-muc-custom');
+    if (customHangMuc) {
+        customHangMuc.value = '';
+        customHangMuc.classList.add('d-none');
+    }
+    const nguoiNhanEl = document.getElementById('f-chi-nguoi-nhan-cuahang');
+    if (nguoiNhanEl) nguoiNhanEl.value = 'Nội bộ Cửa Hàng An Nam';
+
     document.getElementById('f-chi-doi-tuong').value = '';
     const idEl = document.getElementById('f-ncc-id');
     if (idEl) idEl.value = '';
@@ -622,29 +753,36 @@ function renderChiPage(page) {
 
     container.innerHTML = pageItems.map(r => {
         const loaiBadge = r.loai_quy === 'TIEN_MAT'
-            ? '<span class="badge bg-danger-subtle text-danger border border-danger px-1.5 py-0.5 ms-2 font-monospace" style="font-size: 0.7rem;">CM</span>'
-            : '<span class="badge bg-warning-subtle text-dark border border-warning px-1.5 py-0.5 ms-2 font-monospace" style="font-size: 0.7rem;">CG</span>';
+            ? '<span class="badge bg-danger-subtle text-danger border border-danger px-1.5 py-0.5 ms-1 font-monospace" style="font-size: 0.7rem;">CM</span>'
+            : '<span class="badge bg-warning-subtle text-dark border border-warning px-1.5 py-0.5 ms-1 font-monospace" style="font-size: 0.7rem;">CG</span>';
+
+        const isCuaHang = r.loai_chi === 'CUA_HANG' || (!r.phieu_lien_quan && r.hang_muc_chi);
+        const hangMucBadge = isCuaHang
+            ? `<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1 text-truncate" style="font-size: 0.72rem; max-width: 140px;" title="${escapeHtml(r.hang_muc_chi || 'Chi Cửa Hàng')}"><i class="bi bi-shop me-1"></i>${escapeHtml(r.hang_muc_chi || 'Cửa hàng')}</span>`
+            : `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-1" style="font-size: 0.72rem;"><i class="bi bi-truck me-1"></i>Trả NCC</span>`;
 
         return `
             <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailChi('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
-                <!-- Dòng 1: Ngày + ID phiếu + Quỹ (trái) và Số tiền (phải) -->
+                <!-- Dòng 1: Ngày + ID phiếu + Quỹ + Hạng mục (trái) và Số tiền (phải) -->
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <div class="d-flex align-items-center gap-1 flex-wrap">
                         <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
                             <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
                         </span>
                         <span class="fw-bold text-danger font-monospace ms-1" style="font-size: 0.85rem;">${escapeHtml(r.ma_phieu || '')}</span>
                         ${loaiBadge}
+                        ${hangMucBadge}
                     </div>
                     <div class="text-end">
                         <span class="fw-bold text-danger font-monospace" style="font-size: 0.95rem;">${formatVND(r.so_tien)}</span>
                     </div>
                 </div>
 
-                <!-- Dòng 2: Người nhận (trái) + Nút thao tác (phải) -->
+                <!-- Dòng 2: Người nhận / Lý do (trái) + Nút thao tác (phải) -->
                 <div class="d-flex justify-content-between align-items-center pt-1 border-top border-light">
-                    <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.doi_tuong || 'Nhà cung cấp')}">
-                        <i class="bi bi-building text-secondary me-1"></i>${escapeHtml(r.doi_tuong || 'Nhà cung cấp')}
+                    <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.doi_tuong || 'Nội bộ Cửa Hàng')}">
+                        <i class="bi ${isCuaHang ? 'bi-shop' : 'bi-building'} text-secondary me-1"></i>${escapeHtml(r.doi_tuong || 'Nội bộ Cửa Hàng')}
+                        ${r.ghi_chu ? `<span class="text-muted fw-normal ms-1 small">(${escapeHtml(r.ghi_chu)})</span>` : ''}
                     </div>
                     <div class="d-flex align-items-center gap-2 text-nowrap">
                         <button class="btn btn-xs btn-outline-danger py-0 px-1.5" style="font-size: 0.725rem; line-height: 1.4;" onclick="event.stopPropagation(); confirmDeletePhieuChi('${r.id}', '${r.ma_phieu}')" title="Xóa phiếu chi">
@@ -673,6 +811,7 @@ async function viewDetailChi(recordId) {
         const modalBody = document.getElementById('detail-phieu-body');
 
         const loaiStr = item.loai_quy === 'TIEN_MAT' ? 'Tiền mặt' : 'Tiền gửi ngân hàng (Chuyển khoản)';
+        const isCuaHang = item.loai_chi === 'CUA_HANG' || (!item.phieu_lien_quan && item.hang_muc_chi);
 
         modalBody.innerHTML = `
             <div class="p-2" id="printable-phieu-chi">
@@ -685,21 +824,32 @@ async function viewDetailChi(recordId) {
                     <strong>${formatDate(item.ngay)}</strong>
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                    <span class="text-muted">Mục Đích Chi:</span>
+                    <strong>${isCuaHang ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="bi bi-shop me-1"></i>Chi Tiêu Cửa Hàng Hằng Ngày</span>' : '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle"><i class="bi bi-truck me-1"></i>Chi Trả Nhà Cung Cấp</span>'}</strong>
+                </div>
+                ${isCuaHang && item.hang_muc_chi ? `
+                <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                    <span class="text-muted">Hạng Mục Chi:</span>
+                    <strong class="text-danger fw-bold"><i class="bi bi-tag-fill me-1"></i>${escapeHtml(item.hang_muc_chi)}</strong>
+                </div>` : ''}
+                <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Nguồn Tiền:</span>
                     <strong>${loaiStr}</strong>
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Người / Đơn Vị Nhận:</span>
-                    <strong>${escapeHtml(item.doi_tuong)}</strong>
+                    <strong>${escapeHtml(item.doi_tuong || 'Nội bộ Cửa Hàng')}</strong>
                 </div>
+                ${item.dien_thoai ? `
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Số Điện Thoại:</span>
-                    <strong>${escapeHtml(item.dien_thoai || 'Không có')}</strong>
-                </div>
+                    <strong>${escapeHtml(item.dien_thoai)}</strong>
+                </div>` : ''}
+                ${!isCuaHang ? `
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Phiếu Nhập Liên Quan:</span>
                     <strong class="text-primary font-monospace">${escapeHtml(item.phieu_lien_quan || 'Chi tự do')}</strong>
-                </div>
+                </div>` : ''}
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Số Tiền Chi:</span>
                     <strong class="text-danger fs-5">${formatVND(item.so_tien)}</strong>

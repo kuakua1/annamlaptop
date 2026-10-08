@@ -222,9 +222,15 @@ function renderSoQuyTable() {
 
     tbody.innerHTML = filteredTransactions.map((item, idx) => {
         const isThu = item.loai_phieu === 'THU';
-        const typeBadge = isThu
-            ? '<span class="badge bg-success">PHIẾU THU</span>'
-            : '<span class="badge bg-danger">PHIẾU CHI</span>';
+        const isCuaHang = !isThu && (item.loai_chi === 'CUA_HANG' || (!item.phieu_lien_quan && item.hang_muc_chi));
+        let typeBadge = '';
+        if (isThu) {
+            typeBadge = '<span class="badge bg-success">PHIẾU THU</span>';
+        } else if (isCuaHang) {
+            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 0.65rem;"><i class="bi bi-shop me-1"></i>Cửa Hàng</span></div>';
+        } else {
+            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size: 0.65rem;"><i class="bi bi-truck me-1"></i>Trả NCC</span></div>';
+        }
 
         const quyBadge = item.loai_quy === 'TIEN_MAT'
             ? '<span class="badge bg-light text-dark border"><i class="bi bi-cash me-1"></i>Tiền mặt</span>'
@@ -237,7 +243,12 @@ function renderSoQuyTable() {
             ? `<div class="text-muted small font-monospace"><i class="bi bi-telephone me-1 text-primary"></i>${escapeHtml(item.dien_thoai)}</div>`
             : '';
 
-        let phieuLqHtml = '<span class="text-muted small">Thu/Chi tự do</span>';
+        let hangMucHtml = '';
+        if (isCuaHang && item.hang_muc_chi) {
+            hangMucHtml = `<div class="mt-0.5"><span class="badge bg-danger-subtle text-danger border border-danger-subtle text-truncate" style="max-width: 190px; font-size: 0.7rem;"><i class="bi bi-tag-fill me-1"></i>${escapeHtml(item.hang_muc_chi)}</span></div>`;
+        }
+
+        let phieuLqHtml = isCuaHang ? '<span class="text-muted small">Chi nội bộ</span>' : '<span class="text-muted small">Thu/Chi tự do</span>';
         if (item.phieu_lien_quan && String(item.phieu_lien_quan).trim()) {
             const plq = String(item.phieu_lien_quan).trim();
             const isXuat = plq.startsWith('XH');
@@ -269,6 +280,7 @@ function renderSoQuyTable() {
                 <td class="text-center">${quyBadge}</td>
                 <td>
                     <div class="fw-bold text-dark text-truncate" style="max-width: 210px;" title="${escapeHtml(item.doi_tuong)}">${escapeHtml(item.doi_tuong)}</div>
+                    ${hangMucHtml}
                     ${phoneHtml}
                 </td>
                 <td>${phieuLqHtml}</td>

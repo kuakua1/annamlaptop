@@ -214,9 +214,18 @@ class DatabaseManager:
                     dien_thoai TEXT,
                     so_tien REAL DEFAULT 0,
                     phieu_lien_quan TEXT,
-                    ghi_chu TEXT
+                    ghi_chu TEXT,
+                    loai_chi TEXT DEFAULT 'CUA_HANG',
+                    hang_muc_chi TEXT DEFAULT ''
                 )
             """)
+
+            cursor.execute("PRAGMA table_info(SoQuy)")
+            sq_cols = [c["name"] for c in cursor.fetchall()]
+            if "loai_chi" not in sq_cols:
+                cursor.execute("ALTER TABLE SoQuy ADD COLUMN loai_chi TEXT DEFAULT 'CUA_HANG'")
+            if "hang_muc_chi" not in sq_cols:
+                cursor.execute("ALTER TABLE SoQuy ADD COLUMN hang_muc_chi TEXT DEFAULT ''")
 
             # 8. Bảng DoiTuong (Danh Mục Đối Tượng: Gộp Khách Hàng & Nhà Cung Cấp)
             cursor.execute("""
@@ -1555,6 +1564,13 @@ class DatabaseManager:
         doi_tuong = str(data.get("doi_tuong") or "").strip()
         dien_thoai = str(data.get("dien_thoai") or "").strip()
         ghi_chu = str(data.get("ghi_chu") or "").strip()
+        loai_chi = str(data.get("loai_chi") or ("NHA_CUNG_CAP" if phieu_lien_quan or data.get("nha_cung_cap_id") else "CUA_HANG")).strip().upper()
+        hang_muc_chi = str(data.get("hang_muc_chi") or "").strip()
+
+        if loai_chi == "CUA_HANG":
+            if not doi_tuong:
+                doi_tuong = "Cửa Hàng An Nam"
+            phieu_lien_quan = ""  # Chi tiêu nội bộ cửa hàng không gắn phiếu nhập kho nào
 
         # Kiểm tra số dư khả dụng của công ty trước khi chi tiền
         balances = self.get_so_quy_balances()
@@ -1572,13 +1588,13 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO SoQuy (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu))
+                    INSERT INTO SoQuy (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu, loai_chi, hang_muc_chi)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu, loai_chi, hang_muc_chi))
 
                 modified_nhap_ids = []
-                # Nếu có phiếu liên quan (phiếu nhập kho), trừ dần công nợ
-                if phieu_lien_quan:
+                # Nếu có phiếu liên quan (phiếu nhập kho) và không phải là chi cửa hàng, trừ dần công nợ
+                if loai_chi != "CUA_HANG" and phieu_lien_quan:
                     if phieu_lien_quan == 'ALL':
                         unpaid_invs = self.get_supplier_unpaid_invoices(doi_tuong, dien_thoai)
                         rem_payment = so_tien
@@ -1647,7 +1663,9 @@ class DatabaseManager:
             "dien_thoai": dien_thoai,
             "so_tien": so_tien,
             "phieu_lien_quan": phieu_lien_quan,
-            "ghi_chu": ghi_chu
+            "ghi_chu": ghi_chu,
+            "loai_chi": loai_chi,
+            "hang_muc_chi": hang_muc_chi
         }
 
     def update_phieu_thu(self, record_id: str, data: dict) -> dict:
@@ -1779,6 +1797,12 @@ class DatabaseManager:
                 new_phieu_lq = str(data.get("phieu_lien_quan") if data.get("phieu_lien_quan") is not None else (rec["phieu_lien_quan"] or "")).strip()
                 new_ghi_chu = str(data.get("ghi_chu") if data.get("ghi_chu") is not None else (rec["ghi_chu"] or "")).strip()
 
+                new_loai_chi = str(data.get("loai_chi") if data.get("loai_chi") is not None else (rec["loai_chi"] if "loai_chi" in rec.keys() else "CUA_HANG")).strip().upper()
+                new_hang_muc_chi = str(data.get("hang_muc_chi") if data.get("hang_muc_chi") is not None else (rec["hang_muc_chi"] if "hang_muc_chi" in rec.keys() else "")).strip()
+
+                if new_loai_chi == "CUA_HANG":
+                    new_phieu_lq = ""
+
                 modified_nhap_ids = []
 
                 # 1. Hoàn trả công nợ phiếu nhập cũ nếu có
@@ -1796,8 +1820,8 @@ class DatabaseManager:
                                 rem_refund -= refund
                                 modified_nhap_ids.append(nr["id"])
 
-                # 2. Khấu trừ công nợ theo phiếu nhập mới và số tiền mới
-                if new_phieu_lq and new_phieu_lq != "ALL":
+                # 2. Khấu trừ công nợ theo phiếu nhập mới và số tiền mới (chỉ khi không phải chi cửa hàng)
+                if new_loai_chi != "CUA_HANG" and new_phieu_lq and new_phieu_lq != "ALL":
                     cursor.execute("SELECT id, cong_no, thanh_tien FROM NhapHang WHERE so_phieu = ?", (new_phieu_lq,))
                     new_nhap_rows = cursor.fetchall()
                     if new_nhap_rows:
@@ -1814,9 +1838,9 @@ class DatabaseManager:
                 # 3. Cập nhật dòng trong bảng SoQuy
                 cursor.execute("""
                     UPDATE SoQuy
-                    SET ngay = ?, loai_quy = ?, doi_tuong = ?, dien_thoai = ?, so_tien = ?, phieu_lien_quan = ?, ghi_chu = ?
+                    SET ngay = ?, loai_quy = ?, doi_tuong = ?, dien_thoai = ?, so_tien = ?, phieu_lien_quan = ?, ghi_chu = ?, loai_chi = ?, hang_muc_chi = ?
                     WHERE id = ?
-                """, (new_ngay, new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, rec_id))
+                """, (new_ngay, new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, new_loai_chi, new_hang_muc_chi, rec_id))
                 conn.commit()
 
         # Enqueue cập nhật lên Google Sheet
@@ -1853,7 +1877,9 @@ class DatabaseManager:
             "dien_thoai": new_dien_thoai,
             "so_tien": new_so_tien,
             "phieu_lien_quan": new_phieu_lq,
-            "ghi_chu": new_ghi_chu
+            "ghi_chu": new_ghi_chu,
+            "loai_chi": new_loai_chi,
+            "hang_muc_chi": new_hang_muc_chi
         }
 
     def update_phieu_so_quy(self, record_id: str, data: dict) -> dict:

@@ -173,8 +173,12 @@ async def get_so_quy_balances_endpoint(user: str = Depends(require_login)):
 
 @router.post("/api/phieu-chi")
 async def create_phieu_chi(data: PhieuChiCreate, user: str = Depends(require_login)):
+    loai_chi = (data.loai_chi or "CUA_HANG").strip().upper()
     if not data.doi_tuong or not str(data.doi_tuong).strip():
-        raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Người / Đơn Vị Nhận Tiền")
+        if loai_chi == "CUA_HANG":
+            data.doi_tuong = "Cửa Hàng An Nam"
+        else:
+            raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Người / Đơn Vị Nhận Tiền")
     if data.so_tien is None or data.so_tien <= 0:
         raise HTTPException(status_code=400, detail="Số tiền chi phải lớn hơn 0")
 
