@@ -227,9 +227,9 @@ function renderSoQuyTable() {
         if (isThu) {
             typeBadge = '<span class="badge bg-success">PHIẾU THU</span>';
         } else if (isCuaHang) {
-            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-danger-subtle text-danger border border-danger-subtle" style="font-size: 0.65rem;"><i class="bi bi-shop me-1"></i>Cửa Hàng</span></div>';
+            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-light text-secondary border" style="font-size: 0.65rem;"><i class="bi bi-shop me-1 text-secondary"></i>Cửa Hàng</span></div>';
         } else {
-            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" style="font-size: 0.65rem;"><i class="bi bi-truck me-1"></i>Trả NCC</span></div>';
+            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-light text-secondary border" style="font-size: 0.65rem;"><i class="bi bi-truck me-1 text-secondary"></i>Trả NCC</span></div>';
         }
 
         const quyBadge = item.loai_quy === 'TIEN_MAT'
@@ -245,7 +245,7 @@ function renderSoQuyTable() {
 
         let hangMucHtml = '';
         if (isCuaHang && item.hang_muc_chi) {
-            hangMucHtml = `<div class="mt-0.5"><span class="badge bg-danger-subtle text-danger border border-danger-subtle text-truncate" style="max-width: 190px; font-size: 0.7rem;"><i class="bi bi-tag-fill me-1"></i>${escapeHtml(item.hang_muc_chi)}</span></div>`;
+            hangMucHtml = `<div class="mt-0.5"><span class="badge bg-light text-dark border text-truncate" style="max-width: 190px; font-size: 0.7rem;"><i class="bi bi-tag text-secondary me-1"></i>${escapeHtml(item.hang_muc_chi)}</span></div>`;
         }
 
         let phieuLqHtml = isCuaHang ? '<span class="text-muted small">Chi nội bộ</span>' : '<span class="text-muted small">Thu/Chi tự do</span>';

@@ -35,66 +35,61 @@
                         <input type="date" class="form-control form-control-sm" id="f-chi-ngay" onchange="onNgayChange()">
                     </div>
 
-                    <!-- Mục Đích Chi Tiền: Cửa Hàng vs Nhà Cung Cấp -->
+                    <!-- Mục Đích Chi Tiền: Cửa Hàng vs Nhà Cung Cấp (Segmented Control tinh giản) -->
                     <div class="col-12">
-                        <label class="form-label-compact mb-1">Mục Đích Chi Tiền <span class="text-danger">*</span></label>
-                        <div class="btn-group w-100 shadow-sm" role="group">
-                            <input type="radio" class="btn-check" name="opt-loai-chi" id="opt-chi-cuahang" value="CUA_HANG" checked onchange="onLoaiChiRadioChange('CUA_HANG')">
-                            <label class="btn btn-outline-danger fw-semibold py-2 d-flex align-items-center justify-content-center gap-2" for="opt-chi-cuahang">
-                                <i class="bi bi-shop-window fs-6"></i>
-                                <span>Chi Tiêu Cửa Hàng Hằng Ngày</span>
-                                <span class="badge bg-danger text-white ms-1 small">Ăn trưa, Ads, Gói AI...</span>
-                            </label>
-
-                            <input type="radio" class="btn-check" name="opt-loai-chi" id="opt-chi-ncc" value="NHA_CUNG_CAP" onchange="onLoaiChiRadioChange('NHA_CUNG_CAP')">
-                            <label class="btn btn-outline-secondary fw-semibold py-2 d-flex align-items-center justify-content-center gap-2" for="opt-chi-ncc">
-                                <i class="bi bi-truck fs-6"></i>
-                                <span>Chi Trả Nhà Cung Cấp / Đối Tác</span>
-                                <span class="badge bg-secondary text-white ms-1 small">Tiền hàng nhập</span>
-                            </label>
+                        <label class="form-label-compact mb-1 text-secondary">Mục Đích Chi Tiền <span class="text-danger">*</span></label>
+                        <div class="d-flex p-1 bg-light rounded-3 border" role="group">
+                            <button type="button" class="btn btn-sm flex-fill py-1.5 fw-semibold rounded-2 transition-all bg-white text-dark shadow-sm border" id="btn-tab-chi-cuahang" onclick="switchLoaiChiMode('CUA_HANG')">
+                                <i class="bi bi-shop me-1 text-secondary"></i> Chi Tiêu Cửa Hàng Hằng Ngày
+                                <small class="text-muted fw-normal ms-1">(Ăn trưa, Ads, phần mềm/AI...)</small>
+                            </button>
+                            <button type="button" class="btn btn-sm flex-fill py-1.5 fw-semibold rounded-2 transition-all text-secondary border-0" id="btn-tab-chi-ncc" onclick="switchLoaiChiMode('NHA_CUNG_CAP')">
+                                <i class="bi bi-truck me-1 text-secondary"></i> Chi Trả Nhà Cung Cấp
+                                <small class="text-muted fw-normal ms-1">(Tiền hàng nhập)</small>
+                            </button>
                         </div>
                         <input type="hidden" id="f-chi-loai-chi" value="CUA_HANG">
                     </div>
 
-                    <!-- Khung Hạng Mục Chi Tiêu Cửa Hàng (Hiển thị khi chọn Cửa Hàng) -->
+                    <!-- Khung Hạng Mục Chi Tiêu Cửa Hàng (Tone màu trung tính, trang nhã) -->
                     <div class="col-12" id="section-chi-cua-hang">
-                        <div class="p-3 rounded-3 border border-danger border-opacity-25 bg-danger bg-opacity-10 mb-1">
+                        <div class="p-3 rounded-3 border border-secondary-subtle bg-light bg-opacity-50 mb-1">
                             <div class="row g-2">
                                 <div class="col-md-6">
-                                    <label class="form-label-compact fw-bold text-danger mb-1">
-                                        <i class="bi bi-tags-fill me-1"></i>Hạng Mục Chi Cửa Hàng <span class="text-danger">*</span>
+                                    <label class="form-label-compact fw-semibold text-dark mb-1">
+                                        <i class="bi bi-tag text-secondary me-1"></i>Hạng Mục Chi Cửa Hàng <span class="text-danger">*</span>
                                     </label>
-                                    <select class="form-select form-select-sm fw-semibold" id="f-chi-hang-muc-select" onchange="onHangMucSelectChange()">
+                                    <select class="form-select form-select-sm" id="f-chi-hang-muc-select" onchange="onHangMucSelectChange()">
                                         <option value="">-- Chọn hạng mục chi tiêu --</option>
-                                        <option value="Tiền ăn trưa / Tiếp khách">🍱 Tiền ăn trưa / Tiếp khách / Liên hoan</option>
-                                        <option value="Chạy quảng cáo (Ads)">📢 Tiền chạy quảng cáo (Facebook, TikTok, Google Ads)</option>
-                                        <option value="Mua gói AI & Phần mềm">🤖 Tiền mua gói đăng ký AI & Tools (ChatGPT, Claude, Canva...)</option>
-                                        <option value="Tiền điện, nước, internet">💡 Tiền điện, nước, internet cửa hàng</option>
-                                        <option value="Tiền thuê mặt bằng">🏠 Tiền thuê mặt bằng / Cửa hàng</option>
-                                        <option value="Bao bì, đóng gói & Ship COD">📦 Tiền bao bì, băng keo, hộp đóng gói & Ship COD</option>
-                                        <option value="Sửa chữa, bảo trì, vật tư">🛠️ Tiền sửa chữa, bảo trì, mua sắm vật tư cửa hàng</option>
-                                        <option value="Lương, thưởng, phụ cấp">💰 Tiền lương, thưởng, phụ cấp nhân viên</option>
-                                        <option value="Sinh hoạt, mua sắm vặt">☕ Chi phí sinh hoạt / Mua sắm vặt hằng ngày</option>
-                                        <option value="KHAC">📝 Hạng mục khác (Tự nhập tên)...</option>
+                                        <option value="Tiền ăn trưa / Tiếp khách">Tiền ăn trưa, liên hoan, tiếp khách</option>
+                                        <option value="Chạy quảng cáo (Ads)">Chi phí chạy quảng cáo (Facebook, TikTok, Google)</option>
+                                        <option value="Mua gói AI & Phần mềm">Phần mềm, gói đăng ký AI (ChatGPT, Claude, Tools...)</option>
+                                        <option value="Tiền điện, nước, internet">Tiền điện, nước, internet cửa hàng</option>
+                                        <option value="Tiền thuê mặt bằng">Tiền thuê mặt bằng / cửa hàng</option>
+                                        <option value="Bao bì, đóng gói & Ship COD">Bao bì, băng keo, đóng gói & ship COD</option>
+                                        <option value="Sửa chữa, bảo trì, vật tư">Sửa chữa, bảo trì, mua sắm vật tư cửa hàng</option>
+                                        <option value="Lương, thưởng, phụ cấp">Lương, thưởng, phụ cấp nhân viên</option>
+                                        <option value="Sinh hoạt, mua sắm vặt">Chi phí sinh hoạt / mua sắm vặt hằng ngày</option>
+                                        <option value="KHAC">Hạng mục khác (Tự nhập tên)...</option>
                                     </select>
                                     <input type="text" class="form-control form-control-sm mt-1 d-none" id="f-chi-hang-muc-custom" placeholder="Nhập tên hạng mục chi tiêu tùy chỉnh..." oninput="onCustomHangMucInput()">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label-compact text-secondary mb-1">
-                                        <i class="bi bi-person-badge me-1"></i>Người Nhận Tiền / Đơn Vị Cung Cấp
+                                        <i class="bi bi-person text-secondary me-1"></i>Người Nhận Tiền / Đơn Vị Cung Cấp
                                     </label>
                                     <input type="text" class="form-control form-control-sm" id="f-chi-nguoi-nhan-cuahang" placeholder="Ví dụ: Nội bộ Cửa Hàng An Nam, OpenAI, Meta Ads..." value="Nội bộ Cửa Hàng An Nam">
                                 </div>
                                 <div class="col-12 pt-1">
                                     <div class="d-flex align-items-center gap-1 flex-wrap">
-                                        <small class="text-muted fw-semibold me-1">Chọn nhanh:</small>
-                                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Tiền ăn trưa / Tiếp khách', 'Chi tiền cơm trưa / liên hoan')">🍱 Ăn trưa</button>
-                                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Chạy quảng cáo (Ads)', 'Chi phí chạy quảng cáo Facebook/TikTok Ads')">📢 Chạy Ads</button>
-                                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Mua gói AI & Phần mềm', 'Thanh toán gói đăng ký AI (ChatGPT/Claude/Tool)')">🤖 Gói AI / Tools</button>
-                                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Tiền điện, nước, internet', 'Thanh toán tiền điện/nước/mạng internet')">💡 Điện nước mạng</button>
-                                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Bao bì, đóng gói & Ship COD', 'Chi phí đóng gói hàng và ship COD')">📦 Ship & Hộp</button>
-                                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Tiền thuê mặt bằng', 'Thanh toán tiền thuê mặt bằng cửa hàng')">🏠 Mặt bằng</button>
-                                        <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Sinh hoạt, mua sắm vặt', 'Chi phí mua sắm vặt hằng ngày')">☕ Mua sắm vặt</button>
+                                        <small class="text-muted me-1">Gợi ý nhanh:</small>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Tiền ăn trưa / Tiếp khách', 'Chi tiền cơm trưa / tiếp khách')">Ăn trưa</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Chạy quảng cáo (Ads)', 'Chi phí chạy quảng cáo Facebook/TikTok Ads')">Chạy Ads</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Mua gói AI & Phần mềm', 'Thanh toán gói đăng ký AI & Tools')">Gói AI / Tools</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Tiền điện, nước, internet', 'Thanh toán tiền điện/nước/mạng internet')">Điện nước</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Bao bì, đóng gói & Ship COD', 'Chi phí đóng gói hàng và ship COD')">Ship & Hộp</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Tiền thuê mặt bằng', 'Thanh toán tiền thuê mặt bằng')">Mặt bằng</button>
+                                        <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2 rounded-pill" onclick="selectQuickExpenseTag('Sinh hoạt, mua sắm vặt', 'Chi phí mua sắm vặt hằng ngày')">Mua sắm vặt</button>
                                     </div>
                                 </div>
                             </div>

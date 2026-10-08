@@ -29,10 +29,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     const paramSoPhieu = (urlParams.get('so_phieu') || '').trim();
 
     if (paramNccId || paramNccTen || paramSdt || paramSoPhieu) {
-        // Tự động chuyển radio sang Chi Trả Nhà Cung Cấp
-        const radioNcc = document.getElementById('opt-chi-ncc');
-        if (radioNcc) radioNcc.checked = true;
-        onLoaiChiRadioChange('NHA_CUNG_CAP');
+        // Tự động chuyển tab sang Chi Trả Nhà Cung Cấp
+        switchLoaiChiMode('NHA_CUNG_CAP');
 
         let matched = null;
         if (paramNccId) {
@@ -480,26 +478,41 @@ function onPhieuNhapSelectChange(notify = true) {
 
 // ── Chuyển Đổi Mục Đích Chi: Cửa Hàng vs Nhà Cung Cấp ───────────────────────
 
-function onLoaiChiRadioChange(type) {
+function switchLoaiChiMode(type) {
     const hiddenEl = document.getElementById('f-chi-loai-chi');
     if (hiddenEl) hiddenEl.value = type;
 
+    const btnCuaHang = document.getElementById('btn-tab-chi-cuahang');
+    const btnNcc = document.getElementById('btn-tab-chi-ncc');
     const secCuaHang = document.getElementById('section-chi-cua-hang');
     const secNcc = document.getElementById('section-chi-ncc');
     const secDebt = document.getElementById('section-phieu-nhap-debt');
 
     if (type === 'CUA_HANG') {
+        if (btnCuaHang) {
+            btnCuaHang.className = 'btn btn-sm flex-fill py-1.5 fw-semibold rounded-2 transition-all bg-white text-dark shadow-sm border';
+        }
+        if (btnNcc) {
+            btnNcc.className = 'btn btn-sm flex-fill py-1.5 fw-semibold rounded-2 transition-all text-secondary border-0';
+        }
         if (secCuaHang) secCuaHang.classList.remove('d-none');
         if (secNcc) secNcc.classList.add('d-none');
         if (secDebt) secDebt.classList.add('d-none');
     } else {
+        if (btnNcc) {
+            btnNcc.className = 'btn btn-sm flex-fill py-1.5 fw-semibold rounded-2 transition-all bg-white text-dark shadow-sm border';
+        }
+        if (btnCuaHang) {
+            btnCuaHang.className = 'btn btn-sm flex-fill py-1.5 fw-semibold rounded-2 transition-all text-secondary border-0';
+        }
         if (secCuaHang) secCuaHang.classList.add('d-none');
         if (secNcc) secNcc.classList.remove('d-none');
         if (secDebt) secDebt.classList.remove('d-none');
         checkSupplierDebt();
     }
 }
-window.onLoaiChiRadioChange = onLoaiChiRadioChange;
+window.switchLoaiChiMode = switchLoaiChiMode;
+window.onLoaiChiRadioChange = switchLoaiChiMode;
 
 function onHangMucSelectChange() {
     const sel = document.getElementById('f-chi-hang-muc-select');
@@ -758,15 +771,15 @@ function renderChiPage(page) {
 
         const isCuaHang = r.loai_chi === 'CUA_HANG' || (!r.phieu_lien_quan && r.hang_muc_chi);
         const hangMucBadge = isCuaHang
-            ? `<span class="badge bg-danger-subtle text-danger border border-danger-subtle ms-1 text-truncate" style="font-size: 0.72rem; max-width: 140px;" title="${escapeHtml(r.hang_muc_chi || 'Chi Cửa Hàng')}"><i class="bi bi-shop me-1"></i>${escapeHtml(r.hang_muc_chi || 'Cửa hàng')}</span>`
-            : `<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle ms-1" style="font-size: 0.72rem;"><i class="bi bi-truck me-1"></i>Trả NCC</span>`;
+            ? `<span class="badge bg-light text-dark border ms-1 text-truncate" style="font-size: 0.72rem; max-width: 150px;" title="${escapeHtml(r.hang_muc_chi || 'Chi Cửa Hàng')}"><i class="bi bi-shop me-1 text-secondary"></i>${escapeHtml(r.hang_muc_chi || 'Cửa hàng')}</span>`
+            : `<span class="badge bg-light text-secondary border ms-1" style="font-size: 0.72rem;"><i class="bi bi-truck me-1 text-secondary"></i>Trả NCC</span>`;
 
         return `
             <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailChi('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
                 <!-- Dòng 1: Ngày + ID phiếu + Quỹ + Hạng mục (trái) và Số tiền (phải) -->
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <div class="d-flex align-items-center gap-1 flex-wrap">
-                        <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
+                        <span class="badge bg-light text-secondary border px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
                             <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
                         </span>
                         <span class="fw-bold text-danger font-monospace ms-1" style="font-size: 0.85rem;">${escapeHtml(r.ma_phieu || '')}</span>
@@ -825,12 +838,12 @@ async function viewDetailChi(recordId) {
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Mục Đích Chi:</span>
-                    <strong>${isCuaHang ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="bi bi-shop me-1"></i>Chi Tiêu Cửa Hàng Hằng Ngày</span>' : '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle"><i class="bi bi-truck me-1"></i>Chi Trả Nhà Cung Cấp</span>'}</strong>
+                    <strong>${isCuaHang ? '<span class="badge bg-light text-dark border"><i class="bi bi-shop me-1 text-secondary"></i>Chi Tiêu Cửa Hàng</span>' : '<span class="badge bg-light text-secondary border"><i class="bi bi-truck me-1 text-secondary"></i>Chi Trả Nhà Cung Cấp</span>'}</strong>
                 </div>
                 ${isCuaHang && item.hang_muc_chi ? `
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Hạng Mục Chi:</span>
-                    <strong class="text-danger fw-bold"><i class="bi bi-tag-fill me-1"></i>${escapeHtml(item.hang_muc_chi)}</strong>
+                    <strong class="text-dark"><i class="bi bi-tag text-secondary me-1"></i>${escapeHtml(item.hang_muc_chi)}</strong>
                 </div>` : ''}
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Nguồn Tiền:</span>
