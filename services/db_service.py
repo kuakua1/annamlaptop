@@ -215,7 +215,7 @@ class DatabaseManager:
                     so_tien REAL DEFAULT 0,
                     phieu_lien_quan TEXT,
                     ghi_chu TEXT,
-                    loai_chi TEXT DEFAULT 'CUA_HANG',
+                    loai_chi TEXT DEFAULT 'NHA_CUNG_CAP',
                     hang_muc_chi TEXT DEFAULT ''
                 )
             """)
@@ -223,7 +223,7 @@ class DatabaseManager:
             cursor.execute("PRAGMA table_info(SoQuy)")
             sq_cols = [c["name"] for c in cursor.fetchall()]
             if "loai_chi" not in sq_cols:
-                cursor.execute("ALTER TABLE SoQuy ADD COLUMN loai_chi TEXT DEFAULT 'CUA_HANG'")
+                cursor.execute("ALTER TABLE SoQuy ADD COLUMN loai_chi TEXT DEFAULT 'NHA_CUNG_CAP'")
             if "hang_muc_chi" not in sq_cols:
                 cursor.execute("ALTER TABLE SoQuy ADD COLUMN hang_muc_chi TEXT DEFAULT ''")
 
@@ -1564,13 +1564,23 @@ class DatabaseManager:
         doi_tuong = str(data.get("doi_tuong") or "").strip()
         dien_thoai = str(data.get("dien_thoai") or "").strip()
         ghi_chu = str(data.get("ghi_chu") or "").strip()
-        loai_chi = str(data.get("loai_chi") or ("NHA_CUNG_CAP" if phieu_lien_quan or data.get("nha_cung_cap_id") else "CUA_HANG")).strip().upper()
+        raw_loai_chi = str(data.get("loai_chi") or "").strip().upper()
         hang_muc_chi = str(data.get("hang_muc_chi") or "").strip()
+
+        if phieu_lien_quan.startswith("NH") or phieu_lien_quan == "ALL" or data.get("nha_cung_cap_id") or data.get("doi_tuong_id"):
+            loai_chi = "NHA_CUNG_CAP"
+        elif raw_loai_chi in ("CUA_HANG", "NHA_CUNG_CAP"):
+            loai_chi = raw_loai_chi
+        elif hang_muc_chi and hang_muc_chi != "Chi trả nhà cung cấp":
+            loai_chi = "CUA_HANG"
+        else:
+            loai_chi = "NHA_CUNG_CAP"
 
         if loai_chi == "CUA_HANG":
             if not doi_tuong:
-                doi_tuong = "Cửa Hàng An Nam"
-            phieu_lien_quan = ""  # Chi tiêu nội bộ cửa hàng không gắn phiếu nhập kho nào
+                doi_tuong = "Nội bộ Cửa Hàng An Nam"
+            if not (phieu_lien_quan.startswith("NH") or phieu_lien_quan == "ALL"):
+                phieu_lien_quan = ""  # Chi tiêu nội bộ cửa hàng không gắn phiếu nhập kho nào
 
         # Kiểm tra số dư khả dụng của công ty trước khi chi tiền
         balances = self.get_so_quy_balances()
@@ -1797,10 +1807,19 @@ class DatabaseManager:
                 new_phieu_lq = str(data.get("phieu_lien_quan") if data.get("phieu_lien_quan") is not None else (rec["phieu_lien_quan"] or "")).strip()
                 new_ghi_chu = str(data.get("ghi_chu") if data.get("ghi_chu") is not None else (rec["ghi_chu"] or "")).strip()
 
-                new_loai_chi = str(data.get("loai_chi") if data.get("loai_chi") is not None else (rec["loai_chi"] if "loai_chi" in rec.keys() else "CUA_HANG")).strip().upper()
+                raw_new_loai_chi = str(data.get("loai_chi") if data.get("loai_chi") is not None else (rec["loai_chi"] if "loai_chi" in rec.keys() else "")).strip().upper()
                 new_hang_muc_chi = str(data.get("hang_muc_chi") if data.get("hang_muc_chi") is not None else (rec["hang_muc_chi"] if "hang_muc_chi" in rec.keys() else "")).strip()
 
-                if new_loai_chi == "CUA_HANG":
+                if new_phieu_lq.startswith("NH") or new_phieu_lq == "ALL":
+                    new_loai_chi = "NHA_CUNG_CAP"
+                elif raw_new_loai_chi in ("CUA_HANG", "NHA_CUNG_CAP"):
+                    new_loai_chi = raw_new_loai_chi
+                elif new_hang_muc_chi and new_hang_muc_chi != "Chi trả nhà cung cấp":
+                    new_loai_chi = "CUA_HANG"
+                else:
+                    new_loai_chi = "NHA_CUNG_CAP"
+
+                if new_loai_chi == "CUA_HANG" and not (new_phieu_lq.startswith("NH") or new_phieu_lq == "ALL"):
                     new_phieu_lq = ""
 
                 modified_nhap_ids = []

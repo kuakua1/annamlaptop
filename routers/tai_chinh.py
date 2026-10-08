@@ -173,10 +173,23 @@ async def get_so_quy_balances_endpoint(user: str = Depends(require_login)):
 
 @router.post("/api/phieu-chi")
 async def create_phieu_chi(data: PhieuChiCreate, user: str = Depends(require_login)):
-    loai_chi = (data.loai_chi or "CUA_HANG").strip().upper()
+    # Nhận diện thông minh loai_chi
+    phieu_lq = str(data.phieu_lien_quan or "").strip()
+    loai_chi = str(data.loai_chi or "").strip().upper()
+
+    if phieu_lq.startswith("NH") or phieu_lq == "ALL" or data.nha_cung_cap_id or data.doi_tuong_id:
+        loai_chi = "NHA_CUNG_CAP"
+    elif not loai_chi:
+        if data.hang_muc_chi and data.hang_muc_chi != "Chi trả nhà cung cấp":
+            loai_chi = "CUA_HANG"
+        else:
+            loai_chi = "NHA_CUNG_CAP"
+
+    data.loai_chi = loai_chi
+
     if not data.doi_tuong or not str(data.doi_tuong).strip():
         if loai_chi == "CUA_HANG":
-            data.doi_tuong = "Cửa Hàng An Nam"
+            data.doi_tuong = "Nội bộ Cửa Hàng An Nam"
         else:
             raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Người / Đơn Vị Nhận Tiền")
     if data.so_tien is None or data.so_tien <= 0:

@@ -580,7 +580,7 @@ window.selectQuickExpenseTag = selectQuickExpenseTag;
 async function savePhieuChi() {
     const loaiQuy = document.getElementById('f-chi-loai-quy').value;
     const ngay = document.getElementById('f-chi-ngay').value;
-    const loaiChi = document.getElementById('f-chi-loai-chi')?.value || 'CUA_HANG';
+    const loaiChi = document.getElementById('f-chi-loai-chi')?.value || 'NHA_CUNG_CAP';
     let doiTuong = '';
     let sdt = '';
     let diaChi = '';
@@ -743,17 +743,42 @@ async function loadRecentChi() {
     }
 }
 
+function isChiCuaHang(r) {
+    if (!r) return false;
+    const phieuLq = String(r.phieu_lien_quan || '').trim().toUpperCase();
+    if (phieuLq.startsWith('NH') || phieuLq === 'ALL' || phieuLq.includes('NH')) {
+        return false;
+    }
+    if (r.nha_cung_cap_id || r.doi_tuong_id) {
+        return false;
+    }
+    if (r.loai_chi === 'NHA_CUNG_CAP') {
+        return false;
+    }
+    if (r.loai_chi === 'CUA_HANG') {
+        return true;
+    }
+    if (r.hang_muc_chi && r.hang_muc_chi !== 'Chi trả nhà cung cấp') {
+        return true;
+    }
+    const doiTuong = String(r.doi_tuong || '').toLowerCase();
+    if (doiTuong.includes('cửa hàng') || doiTuong.includes('nội bộ')) {
+        return true;
+    }
+    return false;
+}
+
 function renderChiPage(page) {
-    chiCurrentPage = page;
+    if (page !== undefined) chiCurrentPage = page;
     const container = document.getElementById('receipts-list');
     const paginationContainer = document.getElementById('receipts-pagination');
     const summaryContainer = document.getElementById('receipts-page-summary');
     if (!container) return;
 
     if (!allChiList.length) {
-        container.innerHTML = '<p class="text-muted small text-center py-4">Chưa có phiếu chi nào</p>';
+        container.innerHTML = '<div class="text-center py-4 text-muted small"><i class="bi bi-inbox fs-3 d-block mb-1"></i>Chưa có phiếu chi nào</div>';
         if (paginationContainer) paginationContainer.innerHTML = '';
-        if (summaryContainer) summaryContainer.textContent = '';
+        if (summaryContainer) summaryContainer.textContent = '0 phiếu';
         return;
     }
 
@@ -769,7 +794,7 @@ function renderChiPage(page) {
             ? '<span class="badge bg-danger-subtle text-danger border border-danger px-1.5 py-0.5 ms-1 font-monospace" style="font-size: 0.7rem;">CM</span>'
             : '<span class="badge bg-warning-subtle text-dark border border-warning px-1.5 py-0.5 ms-1 font-monospace" style="font-size: 0.7rem;">CG</span>';
 
-        const isCuaHang = r.loai_chi === 'CUA_HANG' || (!r.phieu_lien_quan && r.hang_muc_chi);
+        const isCuaHang = isChiCuaHang(r);
         const hangMucBadge = isCuaHang
             ? `<span class="badge bg-light text-dark border ms-1 text-truncate" style="font-size: 0.72rem; max-width: 150px;" title="${escapeHtml(r.hang_muc_chi || 'Chi Cửa Hàng')}"><i class="bi bi-shop me-1 text-secondary"></i>${escapeHtml(r.hang_muc_chi || 'Cửa hàng')}</span>`
             : `<span class="badge bg-light text-secondary border ms-1" style="font-size: 0.72rem;"><i class="bi bi-truck me-1 text-secondary"></i>Trả NCC</span>`;
@@ -793,8 +818,8 @@ function renderChiPage(page) {
 
                 <!-- Dòng 2: Người nhận / Lý do (trái) + Nút thao tác (phải) -->
                 <div class="d-flex justify-content-between align-items-center pt-1 border-top border-light">
-                    <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.doi_tuong || 'Nội bộ Cửa Hàng')}">
-                        <i class="bi ${isCuaHang ? 'bi-shop' : 'bi-building'} text-secondary me-1"></i>${escapeHtml(r.doi_tuong || 'Nội bộ Cửa Hàng')}
+                    <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.doi_tuong || (isCuaHang ? 'Nội bộ Cửa Hàng' : 'Nhà cung cấp'))}">
+                        <i class="bi ${isCuaHang ? 'bi-shop' : 'bi-truck'} text-secondary me-1"></i>${escapeHtml(r.doi_tuong || (isCuaHang ? 'Nội bộ Cửa Hàng' : 'Nhà cung cấp'))}
                         ${r.ghi_chu ? `<span class="text-muted fw-normal ms-1 small">(${escapeHtml(r.ghi_chu)})</span>` : ''}
                     </div>
                     <div class="d-flex align-items-center gap-2 text-nowrap">
@@ -824,7 +849,7 @@ async function viewDetailChi(recordId) {
         const modalBody = document.getElementById('detail-phieu-body');
 
         const loaiStr = item.loai_quy === 'TIEN_MAT' ? 'Tiền mặt' : 'Tiền gửi ngân hàng (Chuyển khoản)';
-        const isCuaHang = item.loai_chi === 'CUA_HANG' || (!item.phieu_lien_quan && item.hang_muc_chi);
+        const isCuaHang = isChiCuaHang(item);
 
         modalBody.innerHTML = `
             <div class="p-2" id="printable-phieu-chi">
@@ -851,7 +876,7 @@ async function viewDetailChi(recordId) {
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Người / Đơn Vị Nhận:</span>
-                    <strong>${escapeHtml(item.doi_tuong || 'Nội bộ Cửa Hàng')}</strong>
+                    <strong>${escapeHtml(item.doi_tuong || (isCuaHang ? 'Nội bộ Cửa Hàng' : 'Nhà cung cấp'))}</strong>
                 </div>
                 ${item.dien_thoai ? `
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">

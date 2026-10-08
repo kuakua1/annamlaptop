@@ -282,7 +282,7 @@ class PhieuThuUpdate(BaseModel):
 class PhieuChiCreate(BaseModel):
     loai_quy: str = "TIEN_MAT"
     ngay: str
-    doi_tuong: Optional[str] = "Cửa Hàng An Nam"
+    doi_tuong: Optional[str] = ""
     dien_thoai: Optional[str] = ""
     dia_chi: Optional[str] = ""
     doi_tuong_id: Optional[str] = ""
@@ -290,7 +290,7 @@ class PhieuChiCreate(BaseModel):
     so_tien: float
     phieu_lien_quan: Optional[str] = ""
     ghi_chu: Optional[str] = ""
-    loai_chi: Optional[str] = "CUA_HANG"  # "CUA_HANG" (Chi tiêu nội bộ cửa hàng) | "NHA_CUNG_CAP" (Chi trả tiền hàng NCC)
+    loai_chi: Optional[str] = None  # "NHA_CUNG_CAP" (Chi trả tiền hàng NCC) | "CUA_HANG" (Chi tiêu nội bộ cửa hàng)
     hang_muc_chi: Optional[str] = ""     # Hạng mục: Ăn trưa, Quảng cáo Ads, Gói AI / Phần mềm, v.v.
 
 

@@ -2666,13 +2666,15 @@ async function submitQuickPhieuChi(event, so_phieu) {
         const payload = {
             loai_quy: loai_quy,
             ngay: ngay,
+            loai_chi: 'NHA_CUNG_CAP',
+            hang_muc_chi: 'Chi trả nhà cung cấp',
             doi_tuong: ten_ncc,
             dien_thoai: dien_thoai,
             dia_chi: dia_chi,
             nha_cung_cap_id: ncc_id,
             so_tien: so_tien,
             phieu_lien_quan: so_phieu,
-            ghi_chu: ghi_chu
+            ghi_chu: ghi_chu || `Thanh toán tiền nhập hàng theo phiếu ${so_phieu}`
         };
 
         const res = await apiRequest('/api/phieu-chi', 'POST', payload);

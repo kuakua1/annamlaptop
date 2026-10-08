@@ -222,7 +222,9 @@ function renderSoQuyTable() {
 
     tbody.innerHTML = filteredTransactions.map((item, idx) => {
         const isThu = item.loai_phieu === 'THU';
-        const isCuaHang = !isThu && (item.loai_chi === 'CUA_HANG' || (!item.phieu_lien_quan && item.hang_muc_chi));
+        const phieuLqStr = String(item.phieu_lien_quan || '').trim().toUpperCase();
+        const isChiTraNcc = !isThu && (phieuLqStr.startsWith('NH') || phieuLqStr === 'ALL' || item.nha_cung_cap_id || item.loai_chi === 'NHA_CUNG_CAP');
+        const isCuaHang = !isThu && !isChiTraNcc && (item.loai_chi === 'CUA_HANG' || item.hang_muc_chi || String(item.doi_tuong || '').toLowerCase().includes('cửa hàng'));
         let typeBadge = '';
         if (isThu) {
             typeBadge = '<span class="badge bg-success">PHIẾU THU</span>';
