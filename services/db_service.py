@@ -1640,7 +1640,7 @@ class DatabaseManager:
 
                 conn.commit()
 
-        sheet_row = [record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu]
+        sheet_row = [record_id, ma_phieu, ngay, "CHI", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu, loai_chi, hang_muc_chi]
         self._enqueue_task("APPEND_ROW", SHEET_SO_QUY, {"row": sheet_row})
 
         # Cập nhật các dòng phiếu nhập tương ứng trên Google Sheets
@@ -1863,7 +1863,7 @@ class DatabaseManager:
                 conn.commit()
 
         # Enqueue cập nhật lên Google Sheet
-        sheet_row = [rec_id, ma_phieu, new_ngay, "CHI", new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu]
+        sheet_row = [rec_id, ma_phieu, new_ngay, "CHI", new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, new_loai_chi, new_hang_muc_chi]
         self._enqueue_task("UPDATE_ROW", SHEET_SO_QUY, {"id": rec_id, "row": sheet_row})
 
         # Cập nhật các dòng phiếu nhập bị ảnh hưởng trên Google Sheets
@@ -2877,11 +2877,34 @@ class DatabaseManager:
                             so_tien = _safe_float(r.get("so_tien") if r.get("so_tien") is not None else (r.get("Số Tiền (đ)") or r.get("Số Tiền")))
                             phieu_lien_quan = str(r.get("phieu_lien_quan") or r.get("Phiếu Liên Quan") or "").strip()
                             ghi_chu = str(r.get("ghi_chu") or r.get("Ghi Chú") or "").strip()
+                            raw_loai_chi = str(r.get("loai_chi") or r.get("Loại Chi") or "").strip().upper()
+                            hang_muc_chi = str(r.get("hang_muc_chi") or r.get("Hạng Mục Chi") or "").strip()
+
+                            # Nếu phieu_lien_quan đang rỗng nhưng ghi chú có chứa mã phiếu nhập kho
+                            if not phieu_lien_quan and ("nh" in ghi_chu.lower() or "nhập hàng" in ghi_chu.lower()):
+                                import re
+                                match_nh = re.search(r'(NH\d{3,4}/\d{2})', ghi_chu, re.IGNORECASE)
+                                if match_nh:
+                                    phieu_lien_quan = match_nh.group(1).upper()
+
+                            if loai_phieu == "CHI":
+                                if phieu_lien_quan.startswith("NH") or phieu_lien_quan == "ALL" or "nhập hàng" in ghi_chu.lower() or "nhà cung cấp" in ghi_chu.lower() or "trả tiền" in ghi_chu.lower():
+                                    loai_chi = "NHA_CUNG_CAP"
+                                elif raw_loai_chi in ("CUA_HANG", "NHA_CUNG_CAP"):
+                                    loai_chi = raw_loai_chi
+                                elif hang_muc_chi and hang_muc_chi != "Chi trả nhà cung cấp":
+                                    loai_chi = "CUA_HANG"
+                                elif "cửa hàng" in doi_tuong.lower() or "nội bộ" in doi_tuong.lower():
+                                    loai_chi = "CUA_HANG"
+                                else:
+                                    loai_chi = "NHA_CUNG_CAP"
+                            else:
+                                loai_chi = "THU"
 
                             cursor.execute("""
                                 INSERT OR REPLACE INTO SoQuy
-                                (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu, loai_chi, hang_muc_chi)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
                                 rec_id,
                                 ma_phieu,
@@ -2892,7 +2915,9 @@ class DatabaseManager:
                                 dien_thoai,
                                 so_tien,
                                 phieu_lien_quan,
-                                ghi_chu
+                                ghi_chu,
+                                loai_chi,
+                                hang_muc_chi
                             ))
                         counts["SoQuy"] = len(records)
                     except Exception as e:

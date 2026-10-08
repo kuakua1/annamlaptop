@@ -746,25 +746,40 @@ async function loadRecentChi() {
 function isChiCuaHang(r) {
     if (!r) return false;
     const phieuLq = String(r.phieu_lien_quan || '').trim().toUpperCase();
-    if (phieuLq.startsWith('NH') || phieuLq === 'ALL' || phieuLq.includes('NH')) {
+    const ghiChu = String(r.ghi_chu || '').toLowerCase();
+    const doiTuong = String(r.doi_tuong || '').toLowerCase();
+    const hangMuc = String(r.hang_muc_chi || '').toLowerCase();
+    const loaiChi = String(r.loai_chi || '').trim().toUpperCase();
+
+    // 1. Chắc chắn là phiếu trả tiền hàng nhập kho / đối tác / khách hàng:
+    if (phieuLq.startsWith('NH') || phieuLq.startsWith('XH') || phieuLq === 'ALL' || phieuLq.includes('NH')) {
+        return false;
+    }
+    // Ghi chú có chứa mã phiếu nhập kho hoặc từ khóa liên quan hàng hóa / nhà cung cấp
+    if (/nh\d{3,4}\/\d{2}/i.test(ghiChu) || ghiChu.includes('nhập hàng') || ghiChu.includes('nhà cung cấp') || ghiChu.includes('trả tiền hàng') || ghiChu.includes('tiền hàng') || ghiChu.includes('công nợ')) {
         return false;
     }
     if (r.nha_cung_cap_id || r.doi_tuong_id) {
         return false;
     }
-    if (r.loai_chi === 'NHA_CUNG_CAP') {
+    if (loaiChi === 'NHA_CUNG_CAP') {
         return false;
     }
-    if (r.loai_chi === 'CUA_HANG') {
+    if (hangMuc.includes('nhà cung cấp') || hangMuc.includes('tiền hàng')) {
+        return false;
+    }
+
+    // 2. Chắc chắn là chi tiêu cửa hàng:
+    if (loaiChi === 'CUA_HANG') {
         return true;
     }
-    if (r.hang_muc_chi && r.hang_muc_chi !== 'Chi trả nhà cung cấp') {
+    if (hangMuc && !hangMuc.includes('nhà cung cấp')) {
         return true;
     }
-    const doiTuong = String(r.doi_tuong || '').toLowerCase();
     if (doiTuong.includes('cửa hàng') || doiTuong.includes('nội bộ')) {
         return true;
     }
+
     return false;
 }
 
@@ -797,7 +812,7 @@ function renderChiPage(page) {
         const isCuaHang = isChiCuaHang(r);
         const hangMucBadge = isCuaHang
             ? `<span class="badge bg-light text-dark border ms-1 text-truncate" style="font-size: 0.72rem; max-width: 150px;" title="${escapeHtml(r.hang_muc_chi || 'Chi Cửa Hàng')}"><i class="bi bi-shop me-1 text-secondary"></i>${escapeHtml(r.hang_muc_chi || 'Cửa hàng')}</span>`
-            : `<span class="badge bg-light text-secondary border ms-1" style="font-size: 0.72rem;"><i class="bi bi-truck me-1 text-secondary"></i>Trả NCC</span>`;
+            : `<span class="badge bg-light text-secondary border ms-1" style="font-size: 0.72rem;">Trả NCC</span>`;
 
         return `
             <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailChi('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
@@ -819,7 +834,7 @@ function renderChiPage(page) {
                 <!-- Dòng 2: Người nhận / Lý do (trái) + Nút thao tác (phải) -->
                 <div class="d-flex justify-content-between align-items-center pt-1 border-top border-light">
                     <div class="fw-semibold text-dark text-truncate pe-2" style="font-size: 0.85rem;" title="${escapeHtml(r.doi_tuong || (isCuaHang ? 'Nội bộ Cửa Hàng' : 'Nhà cung cấp'))}">
-                        <i class="bi ${isCuaHang ? 'bi-shop' : 'bi-truck'} text-secondary me-1"></i>${escapeHtml(r.doi_tuong || (isCuaHang ? 'Nội bộ Cửa Hàng' : 'Nhà cung cấp'))}
+                        ${isCuaHang ? '<i class="bi bi-shop text-secondary me-1"></i>' : ''}${escapeHtml(r.doi_tuong || (isCuaHang ? 'Nội bộ Cửa Hàng' : 'Nhà cung cấp'))}
                         ${r.ghi_chu ? `<span class="text-muted fw-normal ms-1 small">(${escapeHtml(r.ghi_chu)})</span>` : ''}
                     </div>
                     <div class="d-flex align-items-center gap-2 text-nowrap">
@@ -863,7 +878,7 @@ async function viewDetailChi(recordId) {
                 </div>
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
                     <span class="text-muted">Mục Đích Chi:</span>
-                    <strong>${isCuaHang ? '<span class="badge bg-light text-dark border"><i class="bi bi-shop me-1 text-secondary"></i>Chi Tiêu Cửa Hàng</span>' : '<span class="badge bg-light text-secondary border"><i class="bi bi-truck me-1 text-secondary"></i>Chi Trả Nhà Cung Cấp</span>'}</strong>
+                    <strong>${isCuaHang ? '<span class="badge bg-light text-dark border"><i class="bi bi-shop me-1 text-secondary"></i>Chi Tiêu Cửa Hàng</span>' : '<span class="badge bg-light text-secondary border">Chi Trả Nhà Cung Cấp</span>'}</strong>
                 </div>
                 ${isCuaHang && item.hang_muc_chi ? `
                 <div class="d-flex justify-content-between border-bottom pb-2 mb-2">

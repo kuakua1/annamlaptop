@@ -223,7 +223,11 @@ function renderSoQuyTable() {
     tbody.innerHTML = filteredTransactions.map((item, idx) => {
         const isThu = item.loai_phieu === 'THU';
         const phieuLqStr = String(item.phieu_lien_quan || '').trim().toUpperCase();
-        const isChiTraNcc = !isThu && (phieuLqStr.startsWith('NH') || phieuLqStr === 'ALL' || item.nha_cung_cap_id || item.loai_chi === 'NHA_CUNG_CAP');
+        const ghiChuStr = String(item.ghi_chu || '').toLowerCase();
+        const isChiTraNcc = !isThu && (
+            phieuLqStr.startsWith('NH') || phieuLqStr === 'ALL' || item.nha_cung_cap_id || item.loai_chi === 'NHA_CUNG_CAP' ||
+            /nh\d{3,4}\/\d{2}/i.test(ghiChuStr) || ghiChuStr.includes('nhập hàng') || ghiChuStr.includes('nhà cung cấp')
+        );
         const isCuaHang = !isThu && !isChiTraNcc && (item.loai_chi === 'CUA_HANG' || item.hang_muc_chi || String(item.doi_tuong || '').toLowerCase().includes('cửa hàng'));
         let typeBadge = '';
         if (isThu) {
@@ -231,7 +235,7 @@ function renderSoQuyTable() {
         } else if (isCuaHang) {
             typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-light text-secondary border" style="font-size: 0.65rem;"><i class="bi bi-shop me-1 text-secondary"></i>Cửa Hàng</span></div>';
         } else {
-            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-light text-secondary border" style="font-size: 0.65rem;"><i class="bi bi-truck me-1 text-secondary"></i>Trả NCC</span></div>';
+            typeBadge = '<span class="badge bg-danger">PHIẾU CHI</span><div class="mt-0.5"><span class="badge bg-light text-secondary border" style="font-size: 0.65rem;">Trả NCC</span></div>';
         }
 
         const quyBadge = item.loai_quy === 'TIEN_MAT'
