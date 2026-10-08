@@ -10,6 +10,22 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    full_name: Optional[str] = ""
+    role: Optional[str] = "kho"
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str
+
+
 # ─── HangHoa (Products) ───────────────────────────────────────────────────────
 
 class HangHoaCreate(BaseModel):

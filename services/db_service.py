@@ -3,6 +3,7 @@ import sqlite3
 import threading
 import queue
 import time
+import bcrypt
 from datetime import date
 from pathlib import Path
 from services.sheets_service import (
@@ -286,6 +287,52 @@ class DatabaseManager:
                                 name_map[kten.lower()] = kid
             except Exception as mig_e:
                 print(f"[INIT DB] Lỗi khởi tạo/gộp DoiTuong: {mig_e}")
+
+            # 9. Bảng TaiKhoan (Quản lý các tài khoản đăng nhập)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS TaiKhoan (
+                    id TEXT PRIMARY KEY,
+                    username TEXT UNIQUE,
+                    password_hash TEXT,
+                    full_name TEXT,
+                    role TEXT DEFAULT 'kho',
+                    created_at TEXT
+                )
+            """)
+
+            # Khởi tạo hoặc cập nhật tài khoản Admin kiểm soát & Tester: admin / kiendeptraivl
+            now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+            admin_pwd = "kiendeptraivl"
+            admin_hash = bcrypt.hashpw(admin_pwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+            cursor.execute("SELECT * FROM TaiKhoan WHERE LOWER(username) = 'admin'")
+            adm_row = cursor.fetchone()
+            if not adm_row:
+                cursor.execute("""
+                    INSERT INTO TaiKhoan (id, username, password_hash, full_name, role, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ("user_admin", "admin", admin_hash, "Admin / Tester (Kiên)", "admin", now_str))
+            else:
+                cursor.execute("""
+                    UPDATE TaiKhoan
+                    SET password_hash = ?, full_name = ?, role = 'admin'
+                    WHERE LOWER(username) = 'admin'
+                """, (admin_hash, "Admin / Tester (Kiên)"))
+
+            # Cập nhật đồng bộ vào bảng Config cho admin
+            cursor.execute("INSERT OR REPLACE INTO Config (key, value) VALUES ('admin_username', 'admin')")
+            cursor.execute("INSERT OR REPLACE INTO Config (key, value) VALUES ('admin_password_hash', ?)", (admin_hash,))
+
+            # Khởi tạo tài khoản Kho Hàng An Nam nếu chưa có (Mặc định: khoannam / khoannam2026)
+            cursor.execute("SELECT * FROM TaiKhoan WHERE LOWER(username) = 'khoannam'")
+            kho_row = cursor.fetchone()
+            if not kho_row:
+                kho_pwd = "khoannam2026"
+                kho_hash = bcrypt.hashpw(kho_pwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+                cursor.execute("""
+                    INSERT INTO TaiKhoan (id, username, password_hash, full_name, role, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ("user_khoannam", "khoannam", kho_hash, "Kho Hàng An Nam", "kho", now_str))
 
             conn.commit()
 
@@ -2490,6 +2537,99 @@ class DatabaseManager:
                 cursor.execute("INSERT OR REPLACE INTO Config (key, value) VALUES (?, ?)", (key, str(value)))
                 conn.commit()
         self._enqueue_task("SET_CONFIG", SHEET_CONFIG, {"key": key, "value": value})
+
+    # ── 8. Quản Lý Tài Khoản (TaiKhoan CRUD) ──────────────────────────────────
+
+    def get_user_by_username(self, username: str) -> dict | None:
+        """Lấy thông tin tài khoản theo username (không phân biệt hoa/thường)."""
+        uname = str(username or "").strip().lower()
+        if not uname:
+            return None
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM TaiKhoan WHERE LOWER(username) = ?", (uname,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+
+            # Fallback nếu là admin kiểm tra từ bảng Config
+            if uname == "admin":
+                stored_u = self.get_config("admin_username") or "admin"
+                stored_h = self.get_config("admin_password_hash")
+                if stored_h:
+                    return {
+                        "id": "user_admin",
+                        "username": stored_u,
+                        "password_hash": stored_h,
+                        "full_name": "Admin / Tester (Kiên)",
+                        "role": "admin",
+                        "created_at": ""
+                    }
+            return None
+
+    def get_all_users(self) -> list[dict]:
+        """Lấy danh sách tất cả tài khoản người dùng (ẩn password hash)."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, username, full_name, role, created_at FROM TaiKhoan ORDER BY role ASC, username ASC")
+            return [dict(r) for r in cursor.fetchall()]
+
+    def create_user(self, username: str, password_hash: str, full_name: str = "", role: str = "kho") -> dict:
+        """Tạo tài khoản người dùng mới."""
+        uname = str(username or "").strip()
+        if not uname:
+            raise ValueError("Tên đăng nhập không được để trống")
+        now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+        user_id = f"user_{int(time.time() * 1000)}"
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM TaiKhoan WHERE LOWER(username) = ?", (uname.lower(),))
+                if cursor.fetchone():
+                    raise ValueError(f"Tên đăng nhập '{username}' đã tồn tại!")
+                cursor.execute("""
+                    INSERT INTO TaiKhoan (id, username, password_hash, full_name, role, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (user_id, uname, password_hash, (full_name or uname).strip(), role, now_str))
+                conn.commit()
+        return {
+            "id": user_id,
+            "username": uname,
+            "full_name": (full_name or uname).strip(),
+            "role": role,
+            "created_at": now_str
+        }
+
+    def update_user_password(self, username: str, new_password_hash: str) -> bool:
+        """Cập nhật mật khẩu cho một tài khoản."""
+        uname = str(username or "").strip().lower()
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE TaiKhoan SET password_hash = ? WHERE LOWER(username) = ?
+                """, (new_password_hash, uname))
+                updated = cursor.rowcount > 0
+
+                # Nếu là admin, cập nhật thêm vào bảng Config và enqueue lên Google Sheets
+                if uname == "admin":
+                    cursor.execute("INSERT OR REPLACE INTO Config (key, value) VALUES ('admin_password_hash', ?)", (new_password_hash,))
+                    self._enqueue_task("SET_CONFIG", SHEET_CONFIG, {"key": "admin_password_hash", "value": new_password_hash})
+
+                conn.commit()
+                return updated
+
+    def delete_user(self, username: str) -> bool:
+        """Xóa tài khoản người dùng (ngoại trừ tài khoản admin)."""
+        uname = str(username or "").strip().lower()
+        if uname == "admin":
+            raise ValueError("Không được phép xóa tài khoản Admin kiểm soát hệ thống!")
+        with self._lock:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM TaiKhoan WHERE LOWER(username) = ?", (uname,))
+                conn.commit()
+                return cursor.rowcount > 0
 
     # ── 7. Bulk Sync 2 Chiều ──────────────────────────────────────────────────
 

@@ -8,7 +8,12 @@ import bcrypt
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from config import SECRET_KEY, SESSION_COOKIE_NAME, SESSION_MAX_AGE
-from models.schemas import LoginRequest
+from models.schemas import (
+    LoginRequest,
+    ChangePasswordRequest,
+    CreateUserRequest,
+    AdminResetPasswordRequest,
+)
 from services.sheets_service import sheets_service
 from services.db_service import db_manager
 
@@ -50,8 +55,8 @@ def _record_login_success(ip: str):
         del _login_failures[ip]
 
 
-def create_session_token(username: str) -> str:
-    return serializer.dumps({"username": username})
+def create_session_token(username: str, role: str = "kho") -> str:
+    return serializer.dumps({"username": username, "role": role})
 
 
 def decode_session_token(token: str) -> dict | None:
@@ -69,6 +74,17 @@ def get_current_user(request: Request) -> str | None:
     if not data:
         return None
     return data.get("username")
+
+
+def get_current_user_role(request: Request) -> str:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return "kho"
+    data = decode_session_token(token)
+    if not data:
+        return "kho"
+    uname = str(data.get("username", "")).strip().lower()
+    return data.get("role") or ("admin" if uname == "admin" else "kho")
 
 
 def require_login(request: Request) -> str:
@@ -100,34 +116,34 @@ async def login(data: LoginRequest, request: Request, response: Response):
     _check_login_rate_limit(client_ip)
 
     try:
-        stored_username = db_manager.get_config("admin_username") or sheets_service.get_config("admin_username")
-        stored_hash = db_manager.get_config("admin_password_hash") or sheets_service.get_config("admin_password_hash")
+        uname = data.username.strip()
+        pwd = data.password
 
-        if not stored_username or not stored_hash:
-            raise HTTPException(status_code=500, detail="Cấu hình tài khoản chưa được thiết lập")
+        user_rec = db_manager.get_user_by_username(uname)
+        if not user_rec:
+            _record_login_failure(client_ip)
+            raise HTTPException(status_code=401, detail="Tên đăng nhập hoặc mật khẩu không đúng")
 
-        # So sánh username chuẩn thời gian tránh timing attack
-        username_match = hmac.compare_digest(data.username.strip(), str(stored_username).strip())
+        stored_hash = str(user_rec.get("password_hash") or "").strip()
+        password_bytes = pwd.encode("utf-8")
+        hash_bytes = stored_hash.encode("utf-8")
 
-        password_bytes = data.password.encode("utf-8")
-        hash_bytes = str(stored_hash).strip().encode("utf-8")
-
-        # Kiểm tra mật khẩu bằng bcrypt (bcrypt tự so sánh constant-time)
         password_match = False
         try:
             password_match = bcrypt.checkpw(password_bytes, hash_bytes)
         except Exception:
             password_match = False
 
-        if not username_match or not password_match:
+        if not password_match:
             _record_login_failure(client_ip)
             raise HTTPException(status_code=401, detail="Tên đăng nhập hoặc mật khẩu không đúng")
 
         # Đăng nhập thành công -> Xóa bộ đếm lỗi
         _record_login_success(client_ip)
 
+        role = user_rec.get("role", "admin" if uname.lower() == "admin" else "kho")
         is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
-        token = create_session_token(data.username.strip())
+        token = create_session_token(user_rec["username"], role)
         response.set_cookie(
             key=SESSION_COOKIE_NAME,
             value=token,
@@ -136,7 +152,13 @@ async def login(data: LoginRequest, request: Request, response: Response):
             samesite="lax",
             secure=is_secure,
         )
-        return {"success": True, "message": "Đăng nhập thành công", "username": data.username.strip()}
+        return {
+            "success": True,
+            "message": "Đăng nhập thành công",
+            "username": user_rec["username"],
+            "full_name": user_rec.get("full_name", user_rec["username"]),
+            "role": role
+        }
 
     except HTTPException:
         raise
@@ -148,6 +170,129 @@ async def login(data: LoginRequest, request: Request, response: Response):
 async def logout(response: Response):
     response.delete_cookie(SESSION_COOKIE_NAME, httponly=True, samesite="lax")
     return {"success": True, "message": "Đăng xuất thành công"}
+
+
+# ── API Quản Lý Tài Khoản & Mật Khẩu ──────────────────────────────────────
+
+@router.get("/api/auth/me")
+async def get_current_user_profile(user: str = Depends(require_login), request: Request = None):
+    """Lấy thông tin tài khoản đang đăng nhập."""
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    return {
+        "success": True,
+        "username": user_rec.get("username", user),
+        "full_name": user_rec.get("full_name", user),
+        "role": role,
+        "is_admin": (role == "admin" or user.lower() == "admin")
+    }
+
+
+@router.post("/api/auth/change-password")
+async def change_password(data: ChangePasswordRequest, user: str = Depends(require_login)):
+    """Đổi mật khẩu cho tài khoản hiện tại."""
+    user_rec = db_manager.get_user_by_username(user)
+    if not user_rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
+
+    stored_hash = str(user_rec.get("password_hash") or "").strip()
+    try:
+        if not bcrypt.checkpw(data.current_password.encode("utf-8"), stored_hash.encode("utf-8")):
+            raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác")
+
+    new_pwd = data.new_password.strip()
+    if len(new_pwd) < 4:
+        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 4 ký tự")
+
+    new_hash = bcrypt.hashpw(new_pwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    db_manager.update_user_password(user, new_hash)
+    return {"success": True, "message": "Đổi mật khẩu thành công!"}
+
+
+@router.get("/api/auth/users")
+async def list_users(user: str = Depends(require_login)):
+    """Lấy danh sách tài khoản (chỉ dành cho Admin kiểm soát & Tester)."""
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    if role != "admin" and user.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ tài khoản Admin mới có quyền xem danh sách người dùng")
+    users = db_manager.get_all_users()
+    return {"success": True, "data": users}
+
+
+@router.post("/api/auth/users")
+async def create_new_user(data: CreateUserRequest, user: str = Depends(require_login)):
+    """Tạo tài khoản mới để kết nối kho hoặc nhân viên (chỉ dành cho Admin)."""
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    if role != "admin" and user.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ tài khoản Admin mới có quyền tạo tài khoản")
+
+    uname = data.username.strip()
+    if len(uname) < 3:
+        raise HTTPException(status_code=400, detail="Tên đăng nhập phải có ít nhất 3 ký tự")
+    if len(data.password.strip()) < 4:
+        raise HTTPException(status_code=400, detail="Mật khẩu phải có ít nhất 4 ký tự")
+
+    pwd_hash = bcrypt.hashpw(data.password.strip().encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    try:
+        new_u = db_manager.create_user(
+            username=uname,
+            password_hash=pwd_hash,
+            full_name=data.full_name or uname,
+            role=data.role or "kho"
+        )
+        return {"success": True, "message": f"Tạo tài khoản '{uname}' thành công!", "data": new_u}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/auth/users/{target_username}/reset-password")
+async def admin_reset_password(target_username: str, data: AdminResetPasswordRequest, user: str = Depends(require_login)):
+    """Admin đặt lại mật khẩu cho tài khoản khác mà không cần mật khẩu cũ."""
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    if role != "admin" and user.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ tài khoản Admin mới có quyền đặt lại mật khẩu")
+
+    target = db_manager.get_user_by_username(target_username)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng")
+
+    new_pwd = data.new_password.strip()
+    if len(new_pwd) < 4:
+        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có ít nhất 4 ký tự")
+
+    new_hash = bcrypt.hashpw(new_pwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    db_manager.update_user_password(target["username"], new_hash)
+    return {"success": True, "message": f"Đặt lại mật khẩu cho tài khoản '{target['username']}' thành công!"}
+
+
+@router.delete("/api/auth/users/{target_username}")
+async def delete_user(target_username: str, user: str = Depends(require_login)):
+    """Admin xóa tài khoản người dùng."""
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    if role != "admin" and user.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ tài khoản Admin mới có quyền xóa tài khoản")
+
+    if target_username.strip().lower() == "admin":
+        raise HTTPException(status_code=400, detail="Không được phép xóa tài khoản Admin kiểm soát hệ thống")
+
+    try:
+        deleted = db_manager.delete_user(target_username)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản để xóa")
+        return {"success": True, "message": f"Đã xóa tài khoản '{target_username}' thành công"}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/dashboard", response_class=HTMLResponse)

@@ -3393,3 +3393,304 @@ function getPresetDateRange(type) {
 window.getPresetDateRange = getPresetDateRange;
 
 
+
+
+// ── Account & Password Management Modal Logic ──────────────────────────────
+let currentUserInfo = null;
+let accountModalInstance = null;
+let resetPwdModalInstance = null;
+
+async function openAccountModal() {
+    try {
+        const modalEl = document.getElementById('account-modal');
+        if (!modalEl) return;
+        if (!accountModalInstance) {
+            accountModalInstance = new bootstrap.Modal(modalEl);
+        }
+
+        // Lấy thông tin tài khoản hiện tại
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            currentUserInfo = await res.json();
+            const usernameEl = document.getElementById('acc-display-username');
+            const roleEl = document.getElementById('acc-display-role');
+            const navAdminTab = document.getElementById('nav-item-manage-users');
+
+            if (usernameEl) usernameEl.textContent = currentUserInfo.full_name ? `${currentUserInfo.full_name} (${currentUserInfo.username})` : currentUserInfo.username;
+            if (roleEl) {
+                if (currentUserInfo.role === 'admin') {
+                    roleEl.innerHTML = '<span class="badge bg-danger">Quản Trị Viên / Tester</span>';
+                } else if (currentUserInfo.role === 'kho') {
+                    roleEl.innerHTML = '<span class="badge bg-primary">Kho Hàng An Nam</span>';
+                } else {
+                    roleEl.innerHTML = `<span class="badge bg-secondary">${currentUserInfo.role || 'Nhân viên'}</span>`;
+                }
+            }
+
+            // Hiển thị hoặc ẩn tab Quản trị tài khoản
+            if (navAdminTab) {
+                if (currentUserInfo.is_admin) {
+                    navAdminTab.style.display = 'block';
+                    loadUsersList();
+                } else {
+                    navAdminTab.style.display = 'none';
+                    // Active lại tab Đổi mật khẩu
+                    const pwdTabBtn = document.getElementById('tab-change-pwd-btn');
+                    if (pwdTabBtn) {
+                        const tabTrigger = new bootstrap.Tab(pwdTabBtn);
+                        tabTrigger.show();
+                    }
+                }
+            }
+        }
+
+        // Reset form đổi mật khẩu
+        const formChangePwd = document.getElementById('form-change-password');
+        if (formChangePwd) formChangePwd.reset();
+
+        accountModalInstance.show();
+    } catch (err) {
+        console.error('Lỗi khi mở modal tài khoản:', err);
+        showToast('Không thể mở thông tin tài khoản', 'error');
+    }
+}
+window.openAccountModal = openAccountModal;
+
+function togglePasswordVisibility(inputId) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const btn = input.nextElementSibling;
+    const icon = btn ? btn.querySelector('i') : null;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) {
+            icon.classList.remove('bi-eye');
+            icon.classList.add('bi-eye-slash');
+        }
+    } else {
+        input.type = 'password';
+        if (icon) {
+            icon.classList.remove('bi-eye-slash');
+            icon.classList.add('bi-eye');
+        }
+    }
+}
+window.togglePasswordVisibility = togglePasswordVisibility;
+
+async function submitChangePassword(e) {
+    if (e) e.preventDefault();
+    const curPwd = document.getElementById('cp-current-password')?.value || '';
+    const newPwd = document.getElementById('cp-new-password')?.value || '';
+    const confirmPwd = document.getElementById('cp-confirm-password')?.value || '';
+    const submitBtn = document.getElementById('btn-submit-change-pwd');
+
+    if (newPwd.length < 4) {
+        showToast('Mật khẩu mới phải có ít nhất 4 ký tự', 'error');
+        return;
+    }
+
+    if (newPwd !== confirmPwd) {
+        showToast('Mật khẩu xác nhận không trùng khớp!', 'error');
+        return;
+    }
+
+    await withButtonLoading(submitBtn, async () => {
+        try {
+            const res = await fetch('/api/auth/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    current_password: curPwd,
+                    new_password: newPwd
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showToast('Đổi mật khẩu thành công! Hãy ghi nhớ mật khẩu mới.', 'success');
+                const form = document.getElementById('form-change-password');
+                if (form) form.reset();
+                if (accountModalInstance) accountModalInstance.hide();
+            } else {
+                showToast(data.detail || 'Đổi mật khẩu thất bại, vui lòng kiểm tra lại mật khẩu cũ!', 'error');
+            }
+        } catch (err) {
+            console.error('Lỗi đổi mật khẩu:', err);
+            showToast('Lỗi kết nối máy chủ khi đổi mật khẩu', 'error');
+        }
+    }, 'Đang cập nhật...');
+}
+window.submitChangePassword = submitChangePassword;
+
+async function loadUsersList() {
+    const tbody = document.getElementById('users-table-body');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('/api/auth/users');
+        if (!res.ok) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-danger">Không có quyền xem danh sách người dùng</td></tr>`;
+            return;
+        }
+
+        const data = await res.json();
+        const users = data.users || [];
+
+        if (users.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-muted">Chưa có người dùng nào</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = users.map(u => {
+            const roleBadge = u.role === 'admin'
+                ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Quản trị viên / Tester</span>'
+                : '<span class="badge bg-primary-subtle text-primary border border-primary-subtle">Kho Hàng An Nam</span>';
+            const isProtected = u.username === 'admin';
+            const createdDate = u.created_at ? formatDate(u.created_at) : '---';
+
+            return `
+                <tr>
+                    <td class="fw-bold text-dark">
+                        <i class="bi bi-person-circle me-1 text-secondary"></i>${u.username}
+                        ${isProtected ? '<span class="badge bg-warning-subtle text-warning-emphasis ms-1" style="font-size: 0.65rem;">Gốc</span>' : ''}
+                    </td>
+                    <td>${u.full_name || '---'}</td>
+                    <td>${roleBadge}</td>
+                    <td class="text-muted">${createdDate}</td>
+                    <td class="text-end">
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-warning btn-sm" onclick="openResetPasswordModal('${u.username}')" title="Đặt lại mật khẩu">
+                                <i class="bi bi-key-fill"></i> Đổi MK
+                            </button>
+                            ${!isProtected ? `
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteUser('${u.username}')" title="Xóa tài khoản">
+                                <i class="bi bi-trash3"></i>
+                            </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (err) {
+        console.error('Lỗi tải danh sách users:', err);
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-3 text-danger">Lỗi khi tải danh sách tài khoản</td></tr>`;
+    }
+}
+window.loadUsersList = loadUsersList;
+
+async function submitCreateUser(e) {
+    if (e) e.preventDefault();
+    const username = document.getElementById('nu-username')?.value.trim();
+    const password = document.getElementById('nu-password')?.value;
+    const full_name = document.getElementById('nu-fullname')?.value.trim();
+    const role = document.getElementById('nu-role')?.value || 'kho';
+
+    if (!username || !password) {
+        showToast('Vui lòng điền tên đăng nhập và mật khẩu', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                password,
+                full_name,
+                role
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`Tạo tài khoản "${username}" thành công!`, 'success');
+            const form = document.getElementById('form-create-user');
+            if (form) form.reset();
+            // Đóng collapse
+            const collapseEl = document.getElementById('collapse-create-user');
+            if (collapseEl && window.bootstrap) {
+                const bsCollapse = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl);
+                bsCollapse.hide();
+            }
+            loadUsersList();
+        } else {
+            showToast(data.detail || 'Không thể tạo tài khoản, có thể tên đăng nhập đã tồn tại', 'error');
+        }
+    } catch (err) {
+        console.error('Lỗi tạo tài khoản:', err);
+        showToast('Lỗi khi gửi yêu cầu tạo tài khoản', 'error');
+    }
+}
+window.submitCreateUser = submitCreateUser;
+
+function openResetPasswordModal(username) {
+    const targetEl = document.getElementById('reset-pwd-target-user');
+    const inputEl = document.getElementById('reset-new-pwd-input');
+    if (targetEl) targetEl.textContent = username;
+    if (inputEl) inputEl.value = '';
+
+    const modalEl = document.getElementById('reset-pwd-modal');
+    if (!resetPwdModalInstance && modalEl) {
+        resetPwdModalInstance = new bootstrap.Modal(modalEl);
+    }
+    if (resetPwdModalInstance) resetPwdModalInstance.show();
+}
+window.openResetPasswordModal = openResetPasswordModal;
+
+async function submitResetPassword(e) {
+    if (e) e.preventDefault();
+    const targetUser = document.getElementById('reset-pwd-target-user')?.textContent.trim();
+    const newPwd = document.getElementById('reset-new-pwd-input')?.value;
+
+    if (!targetUser || !newPwd) {
+        showToast('Vui lòng nhập mật khẩu mới', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/auth/users/${encodeURIComponent(targetUser)}/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_password: newPwd })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`Đã đặt lại mật khẩu cho tài khoản "${targetUser}" thành công!`, 'success');
+            if (resetPwdModalInstance) resetPwdModalInstance.hide();
+        } else {
+            showToast(data.detail || 'Đặt lại mật khẩu thất bại', 'error');
+        }
+    } catch (err) {
+        console.error('Lỗi đặt lại mật khẩu:', err);
+        showToast('Lỗi kết nối khi đặt lại mật khẩu', 'error');
+    }
+}
+window.submitResetPassword = submitResetPassword;
+
+async function deleteUser(username) {
+    if (!confirm(`Bạn có chắc chắn muốn xóa tài khoản "${username}"? Hành động này không thể hoàn tác.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/auth/users/${encodeURIComponent(username)}`, {
+            method: 'DELETE'
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`Đã xóa tài khoản "${username}" thành công!`, 'success');
+            loadUsersList();
+        } else {
+            showToast(data.detail || 'Không thể xóa tài khoản', 'error');
+        }
+    } catch (err) {
+        console.error('Lỗi xóa user:', err);
+        showToast('Lỗi khi xóa tài khoản', 'error');
+    }
+}
+window.deleteUser = deleteUser;
