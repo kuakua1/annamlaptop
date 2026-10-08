@@ -820,7 +820,7 @@ function addBatchRow(so_luong = 1, gia_nhap = 0) {
             <input type="number" class="form-control form-control-sm font-monospace batch-sl" value="${so_luong}" min="0" oninput="calcBatchTotals()">
         </td>
         <td>
-            <input type="number" class="form-control form-control-sm font-monospace batch-gia" value="${gia_nhap}" min="0" step="any" oninput="calcBatchTotals()">
+            <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm font-monospace batch-gia" value="${gia_nhap}" oninput="calcBatchTotals()">
         </td>
         <td class="text-end font-monospace fw-semibold batch-subtotal">0 đ</td>
         <td class="text-center">
@@ -854,7 +854,7 @@ function calcBatchTotals(updateMainInputs = true) {
 
     rows.forEach(row => {
         const sl = parseInt(row.querySelector('.batch-sl')?.value) || 0;
-        const gia = parseFloat(row.querySelector('.batch-gia')?.value) || 0;
+        const gia = (window.parseCurrencyValue || parseCurrencyValue)(row.querySelector('.batch-gia')?.value);
         const sub = Math.round(sl * gia);
         row.querySelector('.batch-subtotal').textContent = formatVND(sub);
         totalQty += sl;
@@ -870,7 +870,7 @@ function calcBatchTotals(updateMainInputs = true) {
         const mainQty = document.getElementById('edit-prod-ton-kho');
         if (mainQty) mainQty.value = totalQty;
         if (rows.length > 0) {
-            const firstGia = parseFloat(rows[0].querySelector('.batch-gia')?.value) || 0;
+            const firstGia = (window.parseCurrencyValue || parseCurrencyValue)(rows[0].querySelector('.batch-gia')?.value);
             const mainGia = document.getElementById('edit-prod-gia-nhap');
             if (mainGia && rows.length === 1) mainGia.value = firstGia;
         }
@@ -895,14 +895,14 @@ async function saveStockEdit() {
     const batches = [];
     rows.forEach(row => {
         const sl = parseInt(row.querySelector('.batch-sl')?.value) || 0;
-        const gia = parseFloat(row.querySelector('.batch-gia')?.value) || 0;
+        const gia = (window.parseCurrencyValue || parseCurrencyValue)(row.querySelector('.batch-gia')?.value);
         if (sl > 0) {
             batches.push({ so_luong: sl, gia_nhap: gia });
         }
     });
 
     let ton_kho = parseInt(document.getElementById('edit-prod-ton-kho').value) || 0;
-    let gia_nhap = parseFloat(document.getElementById('edit-prod-gia-nhap').value) || 0;
+    let gia_nhap = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('edit-prod-gia-nhap').value);
 
     if (batches.length > 0) {
         ton_kho = batches.reduce((sum, b) => sum + b.so_luong, 0);

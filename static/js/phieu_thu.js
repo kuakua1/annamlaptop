@@ -379,7 +379,7 @@ async function savePhieuThu() {
     const sdt = document.getElementById('f-kh-sdt')?.value.trim();
     const diaChi = document.getElementById('f-kh-dia-chi')?.value.trim();
     const khId = document.getElementById('f-kh-id')?.value.trim();
-    const soTien = parseFloat(document.getElementById('f-thu-so-tien')?.value || 0);
+    const soTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('f-thu-so-tien')?.value || 0);
     const phieuLienQuan = document.getElementById('f-phieu-xuat-select')?.value.trim();
     const ghiChu = document.getElementById('f-thu-ly-do')?.value.trim();
 
@@ -661,7 +661,7 @@ async function viewDetailReceipt(recordId) {
                             <label class="form-label small fw-semibold text-muted mb-1">
                                 <i class="bi bi-cash-coin me-1"></i>Số Tiền Thu (VNĐ) <span class="text-danger">*</span>
                             </label>
-                            <input type="number" min="1" step="1000" id="edit-pt-so-tien" class="form-control form-control-sm fs-6 fw-bold font-monospace text-success" value="${item.so_tien || 0}" oninput="onEditPtSoTienInput(this)">
+                            <input type="text" inputmode="numeric" autocomplete="off" id="edit-pt-so-tien" class="form-control form-control-sm fs-6 fw-bold font-monospace text-success" value="${item.so_tien || 0}" oninput="onEditPtSoTienInput(this)">
                         </div>
 
                         <div class="col-12">
@@ -694,7 +694,7 @@ async function viewDetailReceipt(recordId) {
 }
 
 function onEditPtSoTienInput(input) {
-    const val = parseFloat(input.value || 0) || 0;
+    const val = (window.parseCurrencyValue || parseCurrencyValue)(input.value || 0);
     const previewEl = document.getElementById('edit-pt-so-tien-preview');
     if (previewEl) previewEl.innerText = formatVND(val);
     checkPhieuThuDetailDirty();
@@ -709,7 +709,7 @@ function checkPhieuThuDetailDirty() {
     const curDoiTuong = document.getElementById('edit-pt-doi-tuong')?.value.trim() || '';
     const curSdt = document.getElementById('edit-pt-dien-thoai')?.value.trim() || '';
     const curPhieuLq = document.getElementById('edit-pt-phieu-lq')?.value.trim() || '';
-    const curSoTien = parseFloat(document.getElementById('edit-pt-so-tien')?.value || 0) || 0;
+    const curSoTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('edit-pt-so-tien')?.value || 0);
     const curGhiChu = document.getElementById('edit-pt-ghi-chu')?.value.trim() || '';
 
     const isDirty = (
@@ -718,7 +718,7 @@ function checkPhieuThuDetailDirty() {
         curDoiTuong !== (init.doi_tuong || '').trim() ||
         curSdt !== (init.dien_thoai || '').trim() ||
         curPhieuLq !== (init.phieu_lien_quan || '').trim() ||
-        curSoTien !== (parseFloat(init.so_tien || 0) || 0) ||
+        curSoTien !== ((window.parseCurrencyValue || parseCurrencyValue)(init.so_tien || 0)) ||
         curGhiChu !== (init.ghi_chu || '').trim()
     );
 
@@ -758,7 +758,7 @@ async function savePhieuThuDetail(shouldCloseAfterSave = false) {
     const curDoiTuong = document.getElementById('edit-pt-doi-tuong')?.value.trim() || '';
     const curSdt = document.getElementById('edit-pt-dien-thoai')?.value.trim() || '';
     const curPhieuLq = document.getElementById('edit-pt-phieu-lq')?.value.trim() || '';
-    const curSoTien = parseFloat(document.getElementById('edit-pt-so-tien')?.value || 0) || 0;
+    const curSoTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('edit-pt-so-tien')?.value || 0);
     const curGhiChu = document.getElementById('edit-pt-ghi-chu')?.value.trim() || '';
 
     if (!curDoiTuong) {
@@ -877,7 +877,7 @@ function printCurrentPtSlip() {
     const curDoiTuong = document.getElementById('edit-pt-doi-tuong')?.value || item.doi_tuong;
     const curSdt = document.getElementById('edit-pt-dien-thoai')?.value || item.dien_thoai;
     const curPhieuLq = document.getElementById('edit-pt-phieu-lq')?.value || item.phieu_lien_quan;
-    const curSoTien = parseFloat(document.getElementById('edit-pt-so-tien')?.value || item.so_tien) || 0;
+    const curSoTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('edit-pt-so-tien')?.value || item.so_tien);
     const curGhiChu = document.getElementById('edit-pt-ghi-chu')?.value || item.ghi_chu;
 
     const loaiStr = curLoaiQuy === 'TIEN_MAT' ? 'Tiền mặt' : 'Tiền gửi ngân hàng (Chuyển khoản)';

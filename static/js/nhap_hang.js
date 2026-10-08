@@ -381,8 +381,8 @@ async function quickCreateProduct() {
         ten_hang,
         danh_muc: document.getElementById('qp-danh-muc').value,
         don_vi_tinh: document.getElementById('qp-dvt').value || 'Cái',
-        gia_nhap: parseFloat(document.getElementById('qp-gia-nhap').value) || 0,
-        gia_ban: parseFloat(document.getElementById('qp-gia-ban').value) || 0,
+        gia_nhap: (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('qp-gia-nhap').value),
+        gia_ban: (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('qp-gia-ban').value),
         ton_kho: 0,
         ghi_chu: '',
     };
@@ -516,8 +516,8 @@ function _appendRow(id, ma_hang, so_luong, gia_nhap) {
             </div>
             <small id="prod-info-${id}" class="text-muted d-block text-truncate mt-1">${infoText}</small>
         </td>
-        <td style="width: 15%;"><input type="number" class="form-control form-control-sm" id="sl-${id}" min="1" value="${so_luong}" onkeydown="onQuantityInputKeydown(${id}, event)" onchange="calcRow(${id})"></td>
-        <td style="width: 20%;"><input type="number" class="form-control form-control-sm" id="gia-${id}" min="0" value="${gia_nhap}" onchange="calcRow(${id})"></td>
+        <td style="width: 15%;"><input type="number" class="form-control form-control-sm" id="sl-${id}" min="1" value="${so_luong}" onkeydown="onQuantityInputKeydown(${id}, event)" onchange="calcRow(${id})" oninput="calcRow(${id})"></td>
+        <td style="width: 20%;"><input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm" id="gia-${id}" value="${gia_nhap}" oninput="calcRow(${id})" onchange="calcRow(${id})"></td>
         <td style="width: 20%;"><input type="text" class="form-control form-control-sm" id="tt-${id}" readonly value="0 đ"></td>
         <td style="width: 5%;"><button class="btn btn-sm btn-outline-danger" onclick="removeRow(${id})"><i class="bi bi-x"></i></button></td>
     `;
@@ -527,7 +527,7 @@ function _appendRow(id, ma_hang, so_luong, gia_nhap) {
 
 function calcRow(idx) {
     const sl = parseFloat(document.getElementById(`sl-${idx}`)?.value) || 0;
-    const gia = parseFloat(document.getElementById(`gia-${idx}`)?.value) || 0;
+    const gia = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById(`gia-${idx}`)?.value || 0);
     const tt = sl * gia;
     const ttEl = document.getElementById(`tt-${idx}`);
     if (ttEl) ttEl.value = formatVND(tt);
@@ -540,7 +540,7 @@ function calcTotal() {
     rows.forEach(row => {
         const id = row.id.replace('row-', '');
         const sl = parseFloat(document.getElementById(`sl-${id}`)?.value) || 0;
-        const gia = parseFloat(document.getElementById(`gia-${id}`)?.value) || 0;
+        const gia = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById(`gia-${id}`)?.value || 0);
         total += sl * gia;
     });
     document.getElementById('total-amount').textContent = formatVND(total);
@@ -587,7 +587,7 @@ async function saveReceipt() {
         const prod = products.find(p => p.ma_hang === ma_hang);
         const ten_hang = prod ? prod.ten_hang : (document.getElementById(`prod-input-${id}`)?.value || '');
         const so_luong = parseInt(document.getElementById(`sl-${id}`).value) || 0;
-        const gia_nhap = parseFloat(document.getElementById(`gia-${id}`).value) || 0;
+        const gia_nhap = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById(`gia-${id}`).value);
 
         if (!ma_hang) {
             showToast('Vui lòng chọn hàng hóa từ gợi ý cho tất cả các dòng', 'error');

@@ -29,6 +29,175 @@ function todayISO() {
     return new Date().toISOString().split('T')[0];
 }
 
+// ── Universal Currency Input Cleaner (Tự động bỏ dấu chấm / phẩy khi nhập tiền) ───
+
+function parseCurrencyValue(val) {
+    if (val === null || val === undefined || val === '') return 0;
+    // Bỏ tất cả dấu chấm, phẩy, ký hiệu đ và khoảng trắng
+    const cleanStr = String(val).replace(/\./g, '').replace(/,/g, '').replace(/[^\d.-]/g, '').trim();
+    return parseFloat(cleanStr) || 0;
+}
+window.parseCurrencyValue = parseCurrencyValue;
+window.parseMoney = parseCurrencyValue;
+
+function isMoneyInputElement(el) {
+    if (!el || el.tagName !== 'INPUT') return false;
+    const type = (el.type || '').toLowerCase();
+    if (type === 'button' || type === 'submit' || type === 'checkbox' || type === 'radio' || type === 'file' || type === 'date') return false;
+
+    const id = (el.id || '').toLowerCase();
+    const name = (el.name || '').toLowerCase();
+    const cls = (el.className || '').toLowerCase();
+    const placeholder = (el.placeholder || '').toLowerCase();
+
+    // Bỏ qua các trường số lượng, ngày tháng, sđt, text khác
+    if (id.includes('so_luong') || id.startsWith('sl-') || id.includes('ton_kho') || id.includes('ton-kho') || 
+        id.includes('ngay') || id.includes('date') || id.includes('phone') || id.includes('sdt') || id.includes('user') || id.includes('pass')) {
+        return false;
+    }
+    if (name.includes('so_luong') || name.includes('ton_kho') || name.includes('ngay') || name.includes('sdt')) {
+        return false;
+    }
+
+    if (el.hasAttribute('data-money') || el.hasAttribute('data-currency') || cls.includes('input-money') || cls.includes('input-currency')) {
+        return true;
+    }
+
+    const moneyKeywords = [
+        'so-tien', 'so_tien', 'sotien',
+        'gia', 'don_gia', 'don-gia', 'dongia',
+        'tien_mat', 'tien-mat', 'tienmat',
+        'tien_gui', 'tien-gui', 'tiengui',
+        'gia_nhap', 'gia-nhap', 'gianhap',
+        'gia_ban', 'gia-ban', 'giaban',
+        'thanh_tien', 'thanh-tien', 'thanhtien',
+        'khach_tra', 'khach-tra', 'khachtra',
+        'receipt-row-gia', 'batch-gia', 'cfg-tien'
+    ];
+
+    for (let kw of moneyKeywords) {
+        if (id.includes(kw) || name.includes(kw) || cls.includes(kw)) {
+            return true;
+        }
+    }
+
+    if (placeholder.includes('đơn giá') || placeholder.includes('giá') || placeholder.includes('số tiền') || placeholder.includes('tiền')) {
+        return true;
+    }
+
+    return false;
+}
+window.isMoneyInputElement = isMoneyInputElement;
+
+function stripDotsFromMoneyInput(input) {
+    if (!input || typeof input.value !== 'string') return;
+    const oldVal = input.value;
+    if (oldVal.includes('.') || oldVal.includes(',')) {
+        const start = input.selectionStart || 0;
+        let dotsBefore = 0;
+        for (let i = 0; i < start; i++) {
+            if (oldVal[i] === '.' || oldVal[i] === ',') dotsBefore++;
+        }
+        // Tự động bỏ tất cả dấu chấm . và phẩy ,
+        const newVal = oldVal.replace(/\./g, '').replace(/,/g, '');
+        input.value = newVal;
+        if (input.type === 'text') {
+            const newPos = Math.max(0, start - dotsBefore);
+            try {
+                input.setSelectionRange(newPos, newPos);
+            } catch (err) {}
+        }
+    }
+}
+window.stripDotsFromMoneyInput = stripDotsFromMoneyInput;
+
+// Lắng nghe toàn cục trên Document
+document.addEventListener('input', function (e) {
+    const target = e.target;
+    if (isMoneyInputElement(target)) {
+        stripDotsFromMoneyInput(target);
+    }
+}, true);
+
+document.addEventListener('paste', function (e) {
+    const target = e.target;
+    if (isMoneyInputElement(target)) {
+        const clipboardData = e.clipboardData || window.clipboardData;
+        if (clipboardData) {
+            const pastedText = clipboardData.getData('text');
+            if (pastedText && (pastedText.includes('.') || pastedText.includes(','))) {
+                e.preventDefault();
+                // Bỏ tất cả dấu chấm, phẩy, ký hiệu đ và khoảng trắng thừa, chỉ giữ lại số nguyên
+                const cleanDigits = pastedText.replace(/\./g, '').replace(/,/g, '').replace(/[^\d]/g, '');
+                
+                // Thay thế phần text đang bôi đen hoặc chèn vào vị trí con trỏ
+                const val = target.value || '';
+                const start = target.selectionStart || 0;
+                const end = target.selectionEnd || 0;
+                const nextVal = val.slice(0, start) + cleanDigits + val.slice(end);
+                target.value = nextVal;
+                
+                const newPos = start + cleanDigits.length;
+                try {
+                    target.setSelectionRange(newPos, newPos);
+                } catch (err) {}
+                
+                target.dispatchEvent(new Event('input', { bubbles: true }));
+                target.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
+            }
+        }
+        setTimeout(() => {
+            stripDotsFromMoneyInput(target);
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+        }, 0);
+    }
+}, true);
+
+// Khi người dùng bấm phím '.' hoặc ',' trong ô tiền, chặn hoặc xóa ngay lập tức
+document.addEventListener('keydown', function (e) {
+    const target = e.target;
+    if (isMoneyInputElement(target)) {
+        if (e.key === '.' || e.key === ',') {
+            e.preventDefault(); // Ngăn không cho gõ dấu chấm/phẩy vào ô tiền
+            return false;
+        }
+    }
+}, true);
+
+// Chuyển đổi các ô type="number" là ô tiền sang type="text" inputmode="numeric" để trình duyệt không chặn gõ/paste
+function normalizeMoneyInputTypes(root = document) {
+    try {
+        const inputs = (root || document).querySelectorAll('input');
+        inputs.forEach(inp => {
+            if (isMoneyInputElement(inp)) {
+                if (inp.type === 'number') {
+                    inp.type = 'text';
+                    inp.setAttribute('inputmode', 'numeric');
+                    inp.setAttribute('autocomplete', 'off');
+                }
+            }
+        });
+    } catch (err) {}
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    normalizeMoneyInputTypes(document);
+    // Observer theo dõi các input được render động sau này
+    const observer = new MutationObserver(function (mutations) {
+        mutations.forEach(m => {
+            m.addedNodes.forEach(node => {
+                if (node.nodeType === 1) {
+                    normalizeMoneyInputTypes(node);
+                }
+            });
+        });
+    });
+    if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+});
+
 // ── Sidebar Group Collapse / Expand ──────────────────────────────────────────
 
 function toggleSidebarGroup(labelEl, targetGroupId) {
@@ -1505,7 +1674,7 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                                     <input type="number" min="1" class="form-control form-control-sm text-center fw-bold receipt-row-sl ${isXuat ? 'text-danger' : 'text-primary'}" value="${it.so_luong}" oninput="onReceiptDetailRowInput(this)">
                                 </td>
                                 <td class="text-end">
-                                    <input type="number" min="0" step="1000" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
+                                    <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
                                 </td>
                                 <td class="text-end fw-bold text-dark font-monospace text-nowrap receipt-row-total">${formatVND(thanhTien)}</td>
                                 <td class="text-center">
@@ -1537,7 +1706,7 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                         <input type="number" id="detail-add-sl" min="1" value="1" class="form-control form-control-sm text-center" placeholder="SL">
                     </div>
                     <div style="width: 140px;">
-                        <input type="number" id="detail-add-gia" min="0" step="1000" value="0" class="form-control form-control-sm text-end" placeholder="Đơn giá">
+                        <input type="text" inputmode="numeric" autocomplete="off" id="detail-add-gia" value="0" class="form-control form-control-sm text-end" placeholder="Đơn giá">
                     </div>
                     <button type="button" class="btn btn-primary btn-sm px-3" onclick="submitAddProductToReceiptDetail()">
                         <i class="bi bi-plus-lg me-1"></i>Thêm
@@ -1724,7 +1893,7 @@ function onReceiptDetailRowInput(inputEl) {
     const totalEl = tr.querySelector('.receipt-row-total');
 
     const sl = parseInt(slInput?.value || 0) || 0;
-    const gia = parseFloat(giaInput?.value || 0) || 0;
+    const gia = parseCurrencyValue(giaInput?.value || 0);
     const lineTotal = sl * gia;
 
     if (totalEl) {
@@ -1750,7 +1919,7 @@ function recalcReceiptDetailTotals() {
         if (sttEl) sttEl.textContent = idx + 1;
 
         const sl = parseInt(tr.querySelector('.receipt-row-sl')?.value || 0) || 0;
-        const gia = parseFloat(tr.querySelector('.receipt-row-gia')?.value || 0) || 0;
+        const gia = parseCurrencyValue(tr.querySelector('.receipt-row-gia')?.value || 0);
         totalQty += sl;
         grandTotal += (sl * gia);
     });
@@ -1822,7 +1991,7 @@ function submitAddProductToReceiptDetail() {
     const slInput = document.getElementById('detail-add-sl');
     const giaInput = document.getElementById('detail-add-gia');
     const sl = parseInt(slInput?.value || 0) || 0;
-    const gia = parseFloat(giaInput?.value || 0) || 0;
+    const gia = parseCurrencyValue(giaInput?.value || 0);
 
     if (sl <= 0) {
         showToast('Số lượng phải lớn hơn 0', 'warning');
@@ -1858,7 +2027,7 @@ function submitAddProductToReceiptDetail() {
                 <input type="number" min="1" class="form-control form-control-sm text-center fw-bold receipt-row-sl ${isXuat ? 'text-danger' : 'text-primary'}" value="${sl}" oninput="onReceiptDetailRowInput(this)">
             </td>
             <td class="text-end">
-                <input type="number" min="0" step="1000" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
+                <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
             </td>
             <td class="text-end fw-bold font-monospace text-nowrap receipt-row-total">${formatVND(lineTotal)}</td>
             <td class="text-center">
@@ -1902,7 +2071,7 @@ async function saveCurrentReceiptDetail(shouldCloseAfterSave = false) {
         const ma = tr.dataset.ma;
         const ten = tr.dataset.ten;
         const sl = parseInt(tr.querySelector('.receipt-row-sl')?.value || 0) || 0;
-        const gia = parseFloat(tr.querySelector('.receipt-row-gia')?.value || 0) || 0;
+        const gia = parseCurrencyValue(tr.querySelector('.receipt-row-gia')?.value || 0);
 
         if (sl <= 0) {
             showToast(`Mặt hàng ${ten} có số lượng không hợp lệ!`, 'warning');
@@ -2220,7 +2389,7 @@ async function openQuickPhieuThuModal(so_phieu) {
 
                             <div class="col-12">
                                 <label class="form-label form-label-compact">Số Tiền Thu Thực Tế (VNĐ) <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control form-control-sm fs-5 fw-bold text-success" id="qpt-so-tien" value="${so_tien_no}" min="1" step="any" required>
+                                <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm fs-5 fw-bold text-success" id="qpt-so-tien" value="${so_tien_no}" required>
                                 <small class="text-muted" style="font-size: 0.75rem;">Mặc định điền toàn bộ số tiền còn nợ của phiếu xuất này.</small>
                             </div>
 
@@ -2261,7 +2430,7 @@ async function submitQuickPhieuThu(event, so_phieu) {
         const r = window.currentReceiptDetail || {};
         const loai_quy = document.getElementById('qpt-loai-quy')?.value || 'TIEN_MAT';
         const ngay = document.getElementById('qpt-ngay')?.value || '';
-        const so_tien = parseFloat(document.getElementById('qpt-so-tien')?.value || 0);
+        const so_tien = parseCurrencyValue(document.getElementById('qpt-so-tien')?.value || 0);
         const ghi_chu = document.getElementById('qpt-ghi-chu')?.value?.trim() || '';
 
         const ten_kh = r.khach_hang?.ten_kh || r.khach_hang_id || '';
@@ -2434,7 +2603,7 @@ async function openQuickPhieuChiModal(so_phieu) {
 
                             <div class="col-12">
                                 <label class="form-label form-label-compact">Số Tiền Chi Thực Tế (VNĐ) <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control form-control-sm fs-5 fw-bold text-danger" id="qpc-so-tien" value="${so_tien_no}" min="1" step="any" required>
+                                <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm fs-5 fw-bold text-danger" id="qpc-so-tien" value="${so_tien_no}" required>
                                 <small class="text-muted" style="font-size: 0.75rem;">Mặc định điền toàn bộ số tiền còn nợ của phiếu nhập này.</small>
                             </div>
 
@@ -2475,7 +2644,7 @@ async function submitQuickPhieuChi(event, so_phieu) {
         const r = window.currentReceiptDetail || {};
         const loai_quy = document.getElementById('qpc-loai-quy')?.value || 'TIEN_MAT';
         const ngay = document.getElementById('qpc-ngay')?.value || '';
-        const so_tien = parseFloat(document.getElementById('qpc-so-tien')?.value || 0);
+        const so_tien = parseCurrencyValue(document.getElementById('qpc-so-tien')?.value || 0);
         const ghi_chu = document.getElementById('qpc-ghi-chu')?.value?.trim() || '';
 
         const ten_ncc = r.nha_cung_cap?.ten_ncc || r.nha_cung_cap_id || '';

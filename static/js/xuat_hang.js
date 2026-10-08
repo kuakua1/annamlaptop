@@ -482,8 +482,8 @@ function _appendRow(id, ma_hang, so_luong, gia_ban) {
             </div>
             <small id="prod-info-${id}" class="d-block text-truncate mt-1">${infoText}</small>
         </td>
-        <td style="width: 15%;"><input type="number" class="form-control form-control-sm" id="sl-${id}" min="1" value="${so_luong}" onkeydown="onQuantityInputKeydown(${id}, event)" onchange="calcRow(${id})"></td>
-        <td style="width: 20%;"><input type="number" class="form-control form-control-sm" id="gia-${id}" min="0" value="${gia_ban}" onchange="calcRow(${id})"></td>
+        <td style="width: 15%;"><input type="number" class="form-control form-control-sm" id="sl-${id}" min="1" value="${so_luong}" onkeydown="onQuantityInputKeydown(${id}, event)" onchange="calcRow(${id})" oninput="calcRow(${id})"></td>
+        <td style="width: 20%;"><input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm" id="gia-${id}" value="${gia_ban}" oninput="calcRow(${id})" onchange="calcRow(${id})"></td>
         <td style="width: 20%;"><input type="text" class="form-control form-control-sm" id="tt-${id}" readonly value="0 đ"></td>
         <td style="width: 5%;"><button class="btn btn-sm btn-outline-danger" onclick="removeRow(${id})"><i class="bi bi-x"></i></button></td>
     `;
@@ -493,7 +493,7 @@ function _appendRow(id, ma_hang, so_luong, gia_ban) {
 
 function calcRow(idx) {
     const sl = parseFloat(document.getElementById(`sl-${idx}`)?.value) || 0;
-    const gia = parseFloat(document.getElementById(`gia-${idx}`)?.value) || 0;
+    const gia = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById(`gia-${idx}`)?.value || 0);
     const tt = sl * gia;
     const ttEl = document.getElementById(`tt-${idx}`);
     if (ttEl) ttEl.value = formatVND(tt);
@@ -518,7 +518,7 @@ function calcTotal() {
     rows.forEach(row => {
         const id = row.id.replace('row-', '');
         const sl = parseFloat(document.getElementById(`sl-${id}`)?.value) || 0;
-        const gia = parseFloat(document.getElementById(`gia-${id}`)?.value) || 0;
+        const gia = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById(`gia-${id}`)?.value || 0);
         total += sl * gia;
     });
     document.getElementById('total-amount').textContent = formatVND(total);
@@ -567,7 +567,7 @@ async function saveReceipt() {
         const ton = prod ? prod.ton_kho : 0;
         const so_luong = parseInt(document.getElementById(`sl-${id}`).value) || 0;
         const gia_val = document.getElementById(`gia-${id}`)?.value.trim();
-        const gia_ban = parseFloat(gia_val);
+        const gia_ban = (window.parseCurrencyValue || parseCurrencyValue)(gia_val);
 
         if (!ma_hang) {
             showToast('Vui lòng chọn hàng hóa từ gợi ý cho tất cả các dòng', 'error');

@@ -278,7 +278,7 @@
                     <label class="form-label fw-semibold" id="lbl-tien-mat">
                         <i class="bi bi-cash-stack text-success me-1"></i>Số Tiền Mặt Thực Tế Hiện Tại (VNĐ) <span class="text-danger">*</span>
                     </label>
-                    <input type="number" class="form-control form-control-lg text-success fw-bold font-monospace" id="cfg-tien-mat" placeholder="0" min="0" step="1000" oninput="onInputAmountChange()">
+                    <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-lg text-success fw-bold font-monospace" id="cfg-tien-mat" placeholder="0" oninput="onInputAmountChange()">
                     <div class="d-flex justify-content-between align-items-center mt-1">
                         <small class="text-muted fw-bold" id="txt-tm-preview">0 đ</small>
                         <small class="text-muted" id="txt-tm-hint">Số tiền mặt đang có trong két / quầy</small>
@@ -290,7 +290,7 @@
                     <label class="form-label fw-semibold" id="lbl-tien-gui">
                         <i class="bi bi-bank text-primary me-1"></i>Số Tiền Gửi Ngân Hàng Hiện Tại (VNĐ) <span class="text-danger">*</span>
                     </label>
-                    <input type="number" class="form-control form-control-lg text-primary fw-bold font-monospace" id="cfg-tien-gui" placeholder="0" min="0" step="1000" oninput="onInputAmountChange()">
+                    <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-lg text-primary fw-bold font-monospace" id="cfg-tien-gui" placeholder="0" oninput="onInputAmountChange()">
                     <div class="d-flex justify-content-between align-items-center mt-1">
                         <small class="text-muted fw-bold" id="txt-tg-preview">0 đ</small>
                         <small class="text-muted" id="txt-tg-hint">Số dư khả dụng trong các tài khoản ngân hàng</small>

@@ -162,8 +162,8 @@ async function saveProduct() {
         ten_hang: document.getElementById('f-ten-hang').value.trim(),
         danh_muc: document.getElementById('f-danh-muc').value.trim(),
         don_vi_tinh: document.getElementById('f-dvt').value.trim() || 'Cái',
-        gia_nhap: parseFloat(document.getElementById('f-gia-nhap').value) || 0,
-        gia_ban: parseFloat(document.getElementById('f-gia-ban').value) || 0,
+        gia_nhap: (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('f-gia-nhap').value),
+        gia_ban: (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('f-gia-ban').value),
         ton_kho: parseInt(document.getElementById('f-ton-kho').value) || 0,
         ghi_chu: document.getElementById('f-ghi-chu').value.trim(),
     };

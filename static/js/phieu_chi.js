@@ -128,7 +128,7 @@ function updateBalanceUI() {
 
 function checkSufficientBalance() {
     const loaiQuy = document.getElementById('f-chi-loai-quy')?.value || 'TIEN_MAT';
-    const soTien = parseFloat(document.getElementById('f-chi-so-tien')?.value || 0);
+    const soTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('f-chi-so-tien')?.value || 0);
     const availBal = (loaiQuy === 'TIEN_MAT') ? (companyBalances.tien_mat || 0) : (companyBalances.tien_gui || 0);
     const warnEl = document.getElementById('warn-so-du-khong-du');
     const inputSoTien = document.getElementById('f-chi-so-tien');
@@ -619,7 +619,7 @@ async function savePhieuChi() {
         }
     }
 
-    const soTien = parseFloat(document.getElementById('f-chi-so-tien').value || 0);
+    const soTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('f-chi-so-tien').value || 0);
     const ghiChu = document.getElementById('f-chi-ly-do').value.trim() || hangMuc;
 
     if (!ngay) {

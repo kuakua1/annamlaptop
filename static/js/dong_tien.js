@@ -409,7 +409,7 @@ async function viewThuChiDetail(recordId, loaiPhieu) {
                                 <label class="form-label small fw-semibold text-muted mb-1">
                                     <i class="bi bi-cash-coin me-1"></i>Số Tiền (VNĐ) <span class="text-danger">*</span>
                                 </label>
-                                <input type="number" min="1" step="1000" id="edit-thuchi-so-tien" class="form-control form-control-sm fs-6 fw-bold font-monospace ${amountClass}" value="${item.so_tien || 0}" oninput="onEditSoTienInput(this)">
+                                <input type="text" inputmode="numeric" autocomplete="off" id="edit-thuchi-so-tien" class="form-control form-control-sm fs-6 fw-bold font-monospace ${amountClass}" value="${item.so_tien || 0}" oninput="onEditSoTienInput(this)">
                             </div>
 
                             <div class="col-12">
@@ -461,7 +461,7 @@ async function viewThuChiDetail(recordId, loaiPhieu) {
 }
 
 function onEditSoTienInput(input) {
-    const val = parseFloat(input.value || 0) || 0;
+    const val = (window.parseCurrencyValue || parseCurrencyValue)(input.value || 0);
     const previewEl = document.getElementById('edit-thuchi-so-tien-preview');
     if (previewEl) {
         previewEl.innerText = formatVND(val);
@@ -478,7 +478,7 @@ function checkThuChiDirty() {
     const curDoiTuong = document.getElementById('edit-thuchi-doi-tuong')?.value.trim() || '';
     const curSdt = document.getElementById('edit-thuchi-dien-thoai')?.value.trim() || '';
     const curPhieuLq = document.getElementById('edit-thuchi-phieu-lq')?.value.trim() || '';
-    const curSoTien = parseFloat(document.getElementById('edit-thuchi-so-tien')?.value || 0) || 0;
+    const curSoTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('edit-thuchi-so-tien')?.value || 0);
     const curGhiChu = document.getElementById('edit-thuchi-ghi-chu')?.value.trim() || '';
 
     const isDirty = (
@@ -487,7 +487,7 @@ function checkThuChiDirty() {
         curDoiTuong !== (init.doi_tuong || '').trim() ||
         curSdt !== (init.dien_thoai || '').trim() ||
         curPhieuLq !== (init.phieu_lien_quan || '').trim() ||
-        curSoTien !== (parseFloat(init.so_tien || 0) || 0) ||
+        curSoTien !== ((window.parseCurrencyValue || parseCurrencyValue)(init.so_tien || 0)) ||
         curGhiChu !== (init.ghi_chu || '').trim()
     );
 
@@ -527,7 +527,7 @@ async function saveThuChiDetail(shouldCloseAfterSave = false) {
     const curDoiTuong = document.getElementById('edit-thuchi-doi-tuong')?.value.trim() || '';
     const curSdt = document.getElementById('edit-thuchi-dien-thoai')?.value.trim() || '';
     const curPhieuLq = document.getElementById('edit-thuchi-phieu-lq')?.value.trim() || '';
-    const curSoTien = parseFloat(document.getElementById('edit-thuchi-so-tien')?.value || 0) || 0;
+    const curSoTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('edit-thuchi-so-tien')?.value || 0);
     const curGhiChu = document.getElementById('edit-thuchi-ghi-chu')?.value.trim() || '';
 
     if (!curDoiTuong) {
@@ -665,7 +665,7 @@ function printCurrentThuChiReceipt(docTitle) {
     const curDoiTuong = document.getElementById('edit-thuchi-doi-tuong')?.value || item.doi_tuong;
     const curSdt = document.getElementById('edit-thuchi-dien-thoai')?.value || item.dien_thoai;
     const curPhieuLq = document.getElementById('edit-thuchi-phieu-lq')?.value || item.phieu_lien_quan;
-    const curSoTien = parseFloat(document.getElementById('edit-thuchi-so-tien')?.value || item.so_tien) || 0;
+    const curSoTien = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('edit-thuchi-so-tien')?.value || item.so_tien);
     const curGhiChu = document.getElementById('edit-thuchi-ghi-chu')?.value || item.ghi_chu;
 
     const isThu = item.loai_phieu === 'THU';
@@ -967,8 +967,8 @@ function onModeChange(updateValues = true) {
 }
 
 function onInputAmountChange() {
-    const tm = parseFloat(document.getElementById('cfg-tien-mat')?.value || 0);
-    const tg = parseFloat(document.getElementById('cfg-tien-gui')?.value || 0);
+    const tm = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('cfg-tien-mat')?.value || 0);
+    const tg = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('cfg-tien-gui')?.value || 0);
     const isCurrent = document.getElementById('mode-current')?.checked;
 
     document.getElementById('txt-tm-preview').innerText = formatVND(tm);
@@ -997,8 +997,8 @@ async function saveQuyConfig() {
 
     try {
         const mode = document.querySelector('input[name="quy_mode"]:checked')?.value || 'current';
-        const tm = parseFloat(document.getElementById('cfg-tien-mat')?.value || 0);
-        const tg = parseFloat(document.getElementById('cfg-tien-gui')?.value || 0);
+        const tm = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('cfg-tien-mat')?.value || 0);
+        const tg = (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('cfg-tien-gui')?.value || 0);
 
         if (isNaN(tm) || tm < 0 || isNaN(tg) || tg < 0) {
             showToast('Số tiền không hợp lệ, vui lòng kiểm tra lại!', 'warning');
