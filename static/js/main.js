@@ -381,6 +381,41 @@ async function apiRequest(url, method = 'GET', body = null, timeoutMs = 25000) {
 }
 window.apiRequest = apiRequest;
 
+function removeVietnameseTones(str) {
+    if (!str) return '';
+    str = String(str).toLowerCase();
+    str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+    str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+    str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+    str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+    str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+    str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+    str = str.replace(/đ/g, "d");
+    str = str.replace(/\u0300|\u0301|\u0303|\u0309|\u0323/g, "");
+    str = str.replace(/\u02C6|\u0306|\u031B/g, "");
+    return str.trim();
+}
+window.removeVietnameseTones = removeVietnameseTones;
+
+function matchSearchKeywords(targetText, query) {
+    if (!query) return true;
+    const qRaw = String(query).toLowerCase().trim();
+    if (!qRaw) return true;
+    const qNorm = removeVietnameseTones(qRaw);
+    const rawTokens = qRaw.split(/\s+/).filter(Boolean);
+    const normTokens = qNorm.split(/\s+/).filter(Boolean);
+    if (!rawTokens.length) return true;
+
+    const tRaw = String(targetText || '').toLowerCase();
+    const tNorm = removeVietnameseTones(tRaw);
+
+    return rawTokens.every((rTok, idx) => {
+        const nTok = normTokens[idx] || rTok;
+        return tRaw.includes(rTok) || tNorm.includes(nTok);
+    });
+}
+window.matchSearchKeywords = matchSearchKeywords;
+
 // ── Modal helpers ─────────────────────────────────────────────────────────────
 
 function openModal(id) {
@@ -394,11 +429,18 @@ function openModal(id) {
 function closeModal(id) {
     const el = document.getElementById(id);
     if (!el) return;
-    const modal = bootstrap.Modal.getInstance(el);
-    if (modal) {
-        modal.hide();
+    try {
+        const modal = bootstrap.Modal.getInstance(el) || bootstrap.Modal.getOrCreateInstance(el);
+        if (modal) {
+            modal.hide();
+        }
+    } catch (e) {
+        console.warn('closeModal error:', e);
     }
-    setTimeout(cleanupModalBackdrops, 200);
+    el.classList.remove('show');
+    el.setAttribute('aria-hidden', 'true');
+    el.removeAttribute('aria-modal');
+    setTimeout(cleanupModalBackdrops, 150);
 }
 
 function cleanupModalBackdrops() {

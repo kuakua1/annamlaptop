@@ -108,11 +108,18 @@ class DatabaseManager:
                     danh_muc TEXT,
                     don_vi_tinh TEXT,
                     gia_nhap REAL DEFAULT 0,
+                    gia_ban REAL DEFAULT 0,
                     ton_kho INTEGER DEFAULT 0,
                     chi_tiet_lo TEXT,
                     ghi_chu TEXT
                 )
             """)
+
+            # Kiểm tra và thêm cột gia_ban nếu bảng HangHoa cũ chưa có
+            cursor.execute("PRAGMA table_info(HangHoa)")
+            hh_cols = [c["name"] for c in cursor.fetchall()]
+            if "gia_ban" not in hh_cols:
+                cursor.execute("ALTER TABLE HangHoa ADD COLUMN gia_ban REAL DEFAULT 0")
 
             # 2. Bảng NhapHang
             cursor.execute("""
@@ -465,12 +472,13 @@ class DatabaseManager:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO HangHoa (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, ton_kho, chi_tiet_lo, ghi_chu)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO HangHoa (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     item["id"], item["ma_hang"], item["ten_hang"], item.get("danh_muc", ""),
                     item.get("don_vi_tinh", "Cái"), float(item.get("gia_nhap", 0)),
-                    int(item.get("ton_kho", 0)), item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
+                    float(item.get("gia_ban", 0)), int(item.get("ton_kho", 0)),
+                    item.get("chi_tiet_lo", ""), item.get("ghi_chu", "")
                 ))
                 conn.commit()
 
@@ -500,6 +508,7 @@ class DatabaseManager:
                     "danh_muc": data.get("danh_muc", cur_dict["danh_muc"]),
                     "don_vi_tinh": data.get("don_vi_tinh", cur_dict["don_vi_tinh"]),
                     "gia_nhap": float(data.get("gia_nhap", cur_dict["gia_nhap"])),
+                    "gia_ban": float(data.get("gia_ban", cur_dict.get("gia_ban", 0))),
                     "ton_kho": int(data.get("ton_kho", cur_dict["ton_kho"])),
                     "chi_tiet_lo": data.get("chi_tiet_lo", cur_dict.get("chi_tiet_lo", "")),
                     "ghi_chu": data.get("ghi_chu", cur_dict["ghi_chu"]),
@@ -507,12 +516,12 @@ class DatabaseManager:
 
                 cursor.execute("""
                     UPDATE HangHoa SET ten_hang = ?, danh_muc = ?, don_vi_tinh = ?, gia_nhap = ?,
-                        ton_kho = ?, chi_tiet_lo = ?, ghi_chu = ?
+                        gia_ban = ?, ton_kho = ?, chi_tiet_lo = ?, ghi_chu = ?
                     WHERE id = ?
                 """, (
                     updated["ten_hang"], updated["danh_muc"], updated["don_vi_tinh"],
-                    updated["gia_nhap"], updated["ton_kho"], updated["chi_tiet_lo"],
-                    updated["ghi_chu"], record_id
+                    updated["gia_nhap"], updated["gia_ban"], updated["ton_kho"],
+                    updated["chi_tiet_lo"], updated["ghi_chu"], record_id
                 ))
                 conn.commit()
 
@@ -2696,8 +2705,8 @@ class DatabaseManager:
                         for r in records:
                             cursor.execute("""
                                 INSERT OR REPLACE INTO HangHoa 
-                                (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, ton_kho, chi_tiet_lo, ghi_chu)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                (id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
                                 str(r.get("id") or ""),
                                 str(r.get("ma_hang") or ""),
@@ -2705,6 +2714,7 @@ class DatabaseManager:
                                 str(r.get("danh_muc") or ""),
                                 str(r.get("don_vi_tinh") or "Cái"),
                                 _safe_float(r.get("gia_nhap")),
+                                _safe_float(r.get("gia_ban")),
                                 _safe_int(r.get("ton_kho") or r.get("so_luong")),
                                 str(r.get("chi_tiet_lo") or ""),
                                 str(r.get("ghi_chu") or "")

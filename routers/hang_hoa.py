@@ -130,8 +130,11 @@ async def get_hang_hoa(
                 continue
             if danh_muc and item["danh_muc"] != danh_muc:
                 continue
-            if search and search.lower() not in item["ten_hang"].lower() and search.lower() not in item["ma_hang"].lower():
-                continue
+            if search:
+                tokens = [t.lower() for t in search.strip().split() if t]
+                target_str = f"{item['ma_hang']} {item['ten_hang']} {item['danh_muc']}".lower()
+                if not all(tok in target_str for tok in tokens):
+                    continue
             result.append(item)
 
         total_qty = sum(x["ton_kho"] for x in result)
@@ -165,6 +168,7 @@ async def create_hang_hoa(
             "danh_muc": data.danh_muc or "",
             "don_vi_tinh": data.don_vi_tinh or "Cái",
             "gia_nhap": float(data.gia_nhap),
+            "gia_ban": float(data.gia_ban or 0),
             "ton_kho": int(data.ton_kho),
             "chi_tiet_lo": chi_tiet_lo,
             "ghi_chu": data.ghi_chu or "",
@@ -213,6 +217,7 @@ async def update_hang_hoa(
         if data.danh_muc is not None: update_dict["danh_muc"] = data.danh_muc
         if data.don_vi_tinh is not None: update_dict["don_vi_tinh"] = data.don_vi_tinh
         if data.gia_nhap is not None: update_dict["gia_nhap"] = float(data.gia_nhap)
+        if data.gia_ban is not None: update_dict["gia_ban"] = float(data.gia_ban)
         if data.ton_kho is not None: update_dict["ton_kho"] = int(data.ton_kho)
         if data.ghi_chu is not None: update_dict["ghi_chu"] = data.ghi_chu
 
@@ -225,6 +230,13 @@ async def update_hang_hoa(
                 update_dict["ton_kho"] = sum(int(b.get("so_luong", 0)) for b in data.batches)
             if data.gia_nhap is None and data.batches:
                 update_dict["gia_nhap"] = float(data.batches[0].get("gia_nhap", 0))
+        elif data.ton_kho is not None or data.gia_nhap is not None:
+            tk = update_dict.get("ton_kho", rec.get("ton_kho", 0))
+            gn = update_dict.get("gia_nhap", rec.get("gia_nhap", 0))
+            if tk > 0:
+                update_dict["chi_tiet_lo"] = f"{tk} x {int(gn):,} đ".replace(",", ".")
+            else:
+                update_dict["chi_tiet_lo"] = ""
 
         updated = db_manager.update_hang_hoa(record_id, update_dict)
         return {"success": True, "message": "Cập nhật hàng hóa thành công", "data": updated}

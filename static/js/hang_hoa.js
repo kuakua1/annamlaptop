@@ -45,7 +45,7 @@ async function loadProducts(silent = false) {
 }
 
 function applyFilters() {
-    const search = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+    const search = (document.getElementById('search-input')?.value || '').trim();
     const danhMuc = document.getElementById('filter-danh-muc')?.value || '';
 
     let filtered = allProductsCache;
@@ -53,10 +53,10 @@ function applyFilters() {
         filtered = filtered.filter(p => p.danh_muc === danhMuc);
     }
     if (search) {
+        const matcher = window.matchSearchKeywords || matchSearchKeywords || ((txt, q) => (txt || '').toLowerCase().includes((q || '').toLowerCase()));
         filtered = filtered.filter(p => {
-            const m = (p.ma_hang || '').toLowerCase();
-            const t = (p.ten_hang || '').toLowerCase();
-            return m.includes(search) || t.includes(search);
+            const targetText = `${p.ma_hang || ''} ${p.ten_hang || ''} ${p.danh_muc || ''} ${p.ghi_chu || ''}`;
+            return matcher(targetText, search);
         });
     }
 
@@ -143,32 +143,40 @@ function openAdd(prefill = {}) {
 }
 
 function openEdit(id) {
-    editingId = id;
-    const p = allProducts.find(x => x.id === id);
-    if (!p) return;
+    editingId = String(id);
+    const p = allProductsCache.find(x => String(x.id) === String(id)) || allProducts.find(x => String(x.id) === String(id));
+    if (!p) {
+        showToast('Không tìm thấy thông tin hàng hóa!', 'error');
+        return;
+    }
     document.getElementById('modal-title').textContent = 'Chỉnh Sửa Hàng Hóa';
-    document.getElementById('f-ten-hang').value = p.ten_hang;
+    document.getElementById('f-ten-hang').value = p.ten_hang || '';
     document.getElementById('f-danh-muc').value = p.danh_muc || '';
-    document.getElementById('f-dvt').value = p.don_vi_tinh;
-    document.getElementById('f-gia-nhap').value = p.gia_nhap;
-    document.getElementById('f-gia-ban').value = p.gia_ban;
-    document.getElementById('f-ton-kho').value = p.ton_kho;
-    document.getElementById('f-ghi-chu').value = p.ghi_chu;
+    document.getElementById('f-dvt').value = p.don_vi_tinh || 'Cái';
+    document.getElementById('f-gia-nhap').value = (p.gia_nhap !== undefined && p.gia_nhap !== null) ? p.gia_nhap : 0;
+    document.getElementById('f-gia-ban').value = (p.gia_ban !== undefined && p.gia_ban !== null) ? p.gia_ban : 0;
+    document.getElementById('f-ton-kho').value = (p.ton_kho !== undefined && p.ton_kho !== null) ? p.ton_kho : 0;
+    document.getElementById('f-ghi-chu').value = p.ghi_chu || '';
     openModal('product-modal');
 }
 
 async function saveProduct() {
-    const body = {
-        ten_hang: document.getElementById('f-ten-hang').value.trim(),
-        danh_muc: document.getElementById('f-danh-muc').value.trim(),
-        don_vi_tinh: document.getElementById('f-dvt').value.trim() || 'Cái',
-        gia_nhap: (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('f-gia-nhap').value),
-        gia_ban: (window.parseCurrencyValue || parseCurrencyValue)(document.getElementById('f-gia-ban').value),
-        ton_kho: parseInt(document.getElementById('f-ton-kho').value) || 0,
-        ghi_chu: document.getElementById('f-ghi-chu').value.trim(),
-    };
+    const tenHang = document.getElementById('f-ten-hang')?.value.trim() || '';
+    if (!tenHang) { 
+        showToast('Vui lòng nhập tên hàng', 'error'); 
+        return; 
+    }
 
-    if (!body.ten_hang) { showToast('Vui lòng nhập tên hàng', 'error'); return; }
+    const parseMoney = window.parseCurrencyValue || parseCurrencyValue || (v => parseFloat(String(v).replace(/\./g, '').replace(/,/g, '')) || 0);
+    const body = {
+        ten_hang: tenHang,
+        danh_muc: document.getElementById('f-danh-muc')?.value.trim() || '',
+        don_vi_tinh: document.getElementById('f-dvt')?.value.trim() || 'Cái',
+        gia_nhap: parseMoney(document.getElementById('f-gia-nhap')?.value),
+        gia_ban: parseMoney(document.getElementById('f-gia-ban')?.value),
+        ton_kho: parseInt(document.getElementById('f-ton-kho')?.value) || 0,
+        ghi_chu: document.getElementById('f-ghi-chu')?.value.trim() || '',
+    };
 
     const saveBtn = document.getElementById('btn-save-product') || document.querySelector('#product-modal .btn-primary');
     if (saveBtn) {
@@ -184,15 +192,32 @@ async function saveProduct() {
         showLoading();
         if (editingId) {
             await apiRequest(`/api/hang-hoa/${editingId}`, 'PUT', body);
-            showToast('Cập nhật thành công');
+            showToast('Cập nhật hàng hóa thành công', 'success');
         } else {
             await apiRequest('/api/hang-hoa', 'POST', body);
-            showToast('Thêm hàng hóa thành công');
+            showToast('Thêm hàng hóa thành công', 'success');
         }
+        
         closeModal('product-modal');
-        await loadProducts();
+        editingId = null;
+        
+        // Tải lại dữ liệu ngay lập tức
+        await loadProducts(true);
+
+        // Phát tín hiệu đồng bộ sang các tab khác
+        if (typeof broadcastDataUpdate === 'function') {
+            broadcastDataUpdate('PRODUCTS_UPDATED');
+        } else if (typeof window.broadcastDataUpdate === 'function') {
+            window.broadcastDataUpdate('PRODUCTS_UPDATED');
+        }
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                const bc = new BroadcastChannel('inventory_sync');
+                bc.postMessage({ type: 'PRODUCTS_UPDATED' });
+            }
+        } catch (bcErr) {}
     } catch (e) {
-        showToast(e.message, 'error');
+        showToast(e.message || 'Lỗi khi lưu hàng hóa', 'error');
     } finally {
         hideLoading();
         if (saveBtn) {

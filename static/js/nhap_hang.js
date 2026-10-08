@@ -153,14 +153,10 @@ function filterSuppliers(query) {
         // Trả về tối đa 60 đối tác để người dùng duyệt chọn khi bấm mũi tên
         return suppliers.slice(0, 60);
     }
-    const q = query.toLowerCase().trim();
+    const matcher = window.matchSearchKeywords || matchSearchKeywords || ((txt, q) => (txt || '').toLowerCase().includes((q || '').toLowerCase()));
     return suppliers.filter(s => {
-        const name = (s.ten || s.ten_ncc || s.ten_kh || '').toLowerCase();
-        const code = (s.id || '').toLowerCase();
-        const phone = (s.dien_thoai || '').toLowerCase();
-        const mst = (s.ma_so_thue || '').toLowerCase();
-        const addr = (s.dia_chi || '').toLowerCase();
-        return name.includes(q) || code.includes(q) || phone.includes(q) || mst.includes(q) || addr.includes(q);
+        const text = `${s.ten || s.ten_ncc || s.ten_kh || ''} ${s.id || ''} ${s.dien_thoai || ''} ${s.ma_so_thue || ''} ${s.dia_chi || ''}`;
+        return matcher(text, query);
     }).slice(0, 50);
 }
 
@@ -244,6 +240,16 @@ function renderProductSuggestions(id, matches) {
     box.classList.remove('d-none');
 }
 
+function filterProducts(query) {
+    if (!products || !products.length) return [];
+    if (!query) return products.slice(0, 50);
+    const matcher = window.matchSearchKeywords || matchSearchKeywords || ((txt, q) => (txt || '').toLowerCase().includes((q || '').toLowerCase()));
+    return products.filter(p => {
+        const text = `${p.ma_hang || ''} ${p.ten_hang || ''} ${p.danh_muc || ''} ${p.ghi_chu || ''}`;
+        return matcher(text, query);
+    }).slice(0, 50);
+}
+
 const _prodDebounceTimers = {};
 function onProductSearchInput(id, input) {
     // Khi gõ phím, tạm thời xóa mã đã chọn để tránh sai lệch
@@ -253,7 +259,7 @@ function onProductSearchInput(id, input) {
 
     clearTimeout(_prodDebounceTimers[id]);
     _prodDebounceTimers[id] = setTimeout(() => {
-        const query = (input?.value || '').trim().toLowerCase();
+        const query = (input?.value || '').trim();
         const box = document.getElementById(`prod-sug-${id}`);
         if (!box) return;
 
@@ -262,23 +268,16 @@ function onProductSearchInput(id, input) {
             return;
         }
 
-        // Tìm kiếm theo Mã Hàng hoặc Tên Hàng
-        const matches = products.filter(p =>
-            (p.ma_hang || '').toLowerCase().includes(query) ||
-            (p.ten_hang || '').toLowerCase().includes(query)
-        ).slice(0, 20);
-
+        // Tìm kiếm theo cơ chế include đa từ khóa
+        const matches = filterProducts(query);
         renderProductSuggestions(id, matches);
     }, 180);
 }
 
 function onProductInputFocus(id, input) {
-    const query = (input?.value || '').trim().toLowerCase();
+    const query = (input?.value || '').trim();
     if (query && products.length) {
-        const matches = products.filter(p =>
-            (p.ma_hang || '').toLowerCase().includes(query) ||
-            (p.ten_hang || '').toLowerCase().includes(query)
-        ).slice(0, 20);
+        const matches = filterProducts(query);
         renderProductSuggestions(id, matches);
     }
 }
@@ -298,14 +297,8 @@ function toggleProductDropdown(id, e) {
         document.querySelectorAll('div[id^="prod-sug-"]').forEach(el => el.classList.add('d-none'));
         
         const input = document.getElementById(`prod-input-${id}`);
-        const query = (input?.value || '').trim().toLowerCase();
-        let matches = [];
-        if (query) {
-            matches = products.filter(p =>
-                (p.ma_hang || '').toLowerCase().includes(query) ||
-                (p.ten_hang || '').toLowerCase().includes(query)
-            ).slice(0, 50);
-        }
+        const query = (input?.value || '').trim();
+        let matches = filterProducts(query);
         if (!matches.length) {
             matches = products.slice(0, 50);
         }
