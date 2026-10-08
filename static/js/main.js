@@ -92,77 +92,79 @@ window.isMoneyInputElement = isMoneyInputElement;
 function stripDotsFromMoneyInput(input) {
     if (!input || typeof input.value !== 'string') return;
     const oldVal = input.value;
-    if (oldVal.includes('.') || oldVal.includes(',')) {
-        const start = input.selectionStart || 0;
-        let dotsBefore = 0;
-        for (let i = 0; i < start; i++) {
-            if (oldVal[i] === '.' || oldVal[i] === ',') dotsBefore++;
-        }
-        // Tự động bỏ tất cả dấu chấm . và phẩy ,
-        const newVal = oldVal.replace(/\./g, '').replace(/,/g, '');
-        input.value = newVal;
-        if (input.type === 'text') {
-            const newPos = Math.max(0, start - dotsBefore);
-            try {
-                input.setSelectionRange(newPos, newPos);
-            } catch (err) {}
+    if (oldVal.includes('.') || oldVal.includes(',') || /[^\d-]/.test(oldVal)) {
+        // Tự động bỏ tất cả dấu chấm, phẩy, ký hiệu đ và khoảng trắng
+        const newVal = oldVal.replace(/\./g, '').replace(/,/g, '').replace(/[^\d-]/g, '').trim();
+        if (newVal !== oldVal) {
+            input.value = newVal;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
         }
     }
 }
 window.stripDotsFromMoneyInput = stripDotsFromMoneyInput;
 
-// Lắng nghe toàn cục trên Document
-document.addEventListener('input', function (e) {
+// Cho phép người dùng gõ thoải mái dấu '.' và ',' (ví dụ: 50.000.000).
+// Hệ thống sẽ tự động lọc bỏ dấu chấm/phẩy SAU ĐÓ: khi rời khỏi ô (blur), khi thay đổi (change), hoặc khi ấn Enter / submit.
+
+// 1. Khi người dùng rời khỏi ô (blur): tự động lọc sạch dấu chấm, phẩy thành số nguyên thuần
+document.addEventListener('blur', function (e) {
     const target = e.target;
     if (isMoneyInputElement(target)) {
         stripDotsFromMoneyInput(target);
     }
 }, true);
 
+// 2. Khi người dùng bấm Enter trong ô tiền
+document.addEventListener('keydown', function (e) {
+    const target = e.target;
+    if (isMoneyInputElement(target) && e.key === 'Enter') {
+        stripDotsFromMoneyInput(target);
+    }
+}, true);
+
+// 3. Khi sự kiện change kích hoạt
+document.addEventListener('change', function (e) {
+    const target = e.target;
+    if (isMoneyInputElement(target)) {
+        stripDotsFromMoneyInput(target);
+    }
+}, true);
+
+// 4. Khi paste chuỗi có kèm chữ (ví dụ 50.000.000 đ), lọc bỏ chữ nhưng vẫn giữ dấu chấm để người dùng thấy 50.000.000
 document.addEventListener('paste', function (e) {
     const target = e.target;
     if (isMoneyInputElement(target)) {
         const clipboardData = e.clipboardData || window.clipboardData;
         if (clipboardData) {
             const pastedText = clipboardData.getData('text');
-            if (pastedText && (pastedText.includes('.') || pastedText.includes(','))) {
+            if (pastedText && /[^\d.,\s-]/.test(pastedText)) {
                 e.preventDefault();
-                // Bỏ tất cả dấu chấm, phẩy, ký hiệu đ và khoảng trắng thừa, chỉ giữ lại số nguyên
-                const cleanDigits = pastedText.replace(/\./g, '').replace(/,/g, '').replace(/[^\d]/g, '');
-                
-                // Thay thế phần text đang bôi đen hoặc chèn vào vị trí con trỏ
+                const clean = pastedText.replace(/[^\d.,-]/g, '').trim();
                 const val = target.value || '';
                 const start = target.selectionStart || 0;
                 const end = target.selectionEnd || 0;
-                const nextVal = val.slice(0, start) + cleanDigits + val.slice(end);
-                target.value = nextVal;
-                
-                const newPos = start + cleanDigits.length;
-                try {
-                    target.setSelectionRange(newPos, newPos);
-                } catch (err) {}
-                
+                target.value = val.slice(0, start) + clean + val.slice(end);
+                const newPos = start + clean.length;
+                try { target.setSelectionRange(newPos, newPos); } catch (err) {}
                 target.dispatchEvent(new Event('input', { bubbles: true }));
-                target.dispatchEvent(new Event('change', { bubbles: true }));
-                return;
             }
         }
-        setTimeout(() => {
-            stripDotsFromMoneyInput(target);
-            target.dispatchEvent(new Event('input', { bubbles: true }));
-        }, 0);
     }
 }, true);
 
-// Khi người dùng bấm phím '.' hoặc ',' trong ô tiền, chặn hoặc xóa ngay lập tức
-document.addEventListener('keydown', function (e) {
-    const target = e.target;
-    if (isMoneyInputElement(target)) {
-        if (e.key === '.' || e.key === ',') {
-            e.preventDefault(); // Ngăn không cho gõ dấu chấm/phẩy vào ô tiền
-            return false;
+// 5. Khi submit bất kỳ form nào: lọc sạch tất cả ô tiền trước khi gửi
+document.addEventListener('submit', function (e) {
+    try {
+        const form = e.target;
+        if (form && form.querySelectorAll) {
+            form.querySelectorAll('input').forEach(inp => {
+                if (isMoneyInputElement(inp)) {
+                    stripDotsFromMoneyInput(inp);
+                }
+            });
         }
-    }
+    } catch (err) {}
 }, true);
 
 // Chuyển đổi các ô type="number" là ô tiền sang type="text" inputmode="numeric" để trình duyệt không chặn gõ/paste
