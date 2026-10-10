@@ -870,7 +870,18 @@ function calcBatchTotals(updateMainInputs = true) {
 
     if (updateMainInputs) {
         const mainQty = document.getElementById('edit-prod-ton-kho');
-        if (mainQty) mainQty.value = totalQty;
+        if (mainQty) {
+            mainQty.value = totalQty;
+            if (rows.length > 1) {
+                mainQty.readOnly = true;
+                mainQty.title = "Đang có nhiều lô giá: Tổng tồn kho được tự động tính từ bảng chi tiết lô bên dưới";
+                mainQty.classList.add('bg-light');
+            } else {
+                mainQty.readOnly = false;
+                mainQty.title = "";
+                mainQty.classList.remove('bg-light');
+            }
+        }
         if (rows.length > 0) {
             const firstGia = (window.parseCurrencyValue || parseCurrencyValue)(rows[0].querySelector('.batch-gia')?.value);
             const mainGia = document.getElementById('edit-prod-gia-nhap');
