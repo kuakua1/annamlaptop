@@ -1514,13 +1514,18 @@ class DatabaseManager:
         dien_thoai = str(data.get("dien_thoai") or "").strip()
         ghi_chu = str(data.get("ghi_chu") or "").strip()
 
+        loai_chi = "THU"
+        hang_muc_chi = "Thu tiền bán hàng" if (phieu_lien_quan.startswith("XH") or "XH" in phieu_lien_quan) else ("Thu tiền khách hàng" if doi_tuong else "Thu khác")
+        if data.get("hang_muc_chi"):
+            hang_muc_chi = str(data.get("hang_muc_chi")).strip()
+
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO SoQuy (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu))
+                    INSERT INTO SoQuy (id, ma_phieu, ngay, loai_phieu, loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu, loai_chi, hang_muc_chi)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu, loai_chi, hang_muc_chi))
 
                 modified_xuat_ids = []
                 # Nếu thu tiền cho 1 phiếu xuất cụ thể hoặc tất cả công nợ (ALL)
@@ -1560,7 +1565,7 @@ class DatabaseManager:
                 conn.commit()
 
         # Enqueue lên Google Sheet
-        sheet_row = [record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu]
+        sheet_row = [record_id, ma_phieu, ngay, "THU", loai_quy, doi_tuong, dien_thoai, so_tien, phieu_lien_quan, ghi_chu, loai_chi, hang_muc_chi]
         self._enqueue_task("APPEND_ROW", SHEET_SO_QUY, {"row": sheet_row})
 
         # Cập nhật các dòng phiếu xuất tương ứng trên Google Sheets
@@ -1618,6 +1623,11 @@ class DatabaseManager:
             loai_chi = "CUA_HANG"
         else:
             loai_chi = "NHA_CUNG_CAP"
+
+        if loai_chi == "NHA_CUNG_CAP" and not hang_muc_chi:
+            hang_muc_chi = "Chi trả nhà cung cấp"
+        elif loai_chi == "CUA_HANG" and not hang_muc_chi:
+            hang_muc_chi = "Chi tiêu cửa hàng"
 
         if loai_chi == "CUA_HANG":
             if not doi_tuong:
@@ -1779,16 +1789,21 @@ class DatabaseManager:
                             if xr["id"] not in modified_xuat_ids:
                                 modified_xuat_ids.append(xr["id"])
 
+                new_loai_chi = "THU"
+                new_hang_muc_chi = "Thu tiền bán hàng" if (new_phieu_lq.startswith("XH") or "XH" in new_phieu_lq) else ("Thu tiền khách hàng" if new_doi_tuong else "Thu khác")
+                if data.get("hang_muc_chi"):
+                    new_hang_muc_chi = str(data.get("hang_muc_chi")).strip()
+
                 # 3. Cập nhật dòng trong bảng SoQuy
                 cursor.execute("""
                     UPDATE SoQuy
-                    SET ngay = ?, loai_quy = ?, doi_tuong = ?, dien_thoai = ?, so_tien = ?, phieu_lien_quan = ?, ghi_chu = ?
+                    SET ngay = ?, loai_quy = ?, doi_tuong = ?, dien_thoai = ?, so_tien = ?, phieu_lien_quan = ?, ghi_chu = ?, loai_chi = ?, hang_muc_chi = ?
                     WHERE id = ?
-                """, (new_ngay, new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, rec_id))
+                """, (new_ngay, new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, new_loai_chi, new_hang_muc_chi, rec_id))
                 conn.commit()
 
         # Enqueue cập nhật lên Google Sheet
-        sheet_row = [rec_id, ma_phieu, new_ngay, "THU", new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu]
+        sheet_row = [rec_id, ma_phieu, new_ngay, "THU", new_loai_quy, new_doi_tuong, new_dien_thoai, new_so_tien, new_phieu_lq, new_ghi_chu, new_loai_chi, new_hang_muc_chi]
         self._enqueue_task("UPDATE_ROW", SHEET_SO_QUY, {"id": rec_id, "row": sheet_row})
 
         # Cập nhật các dòng phiếu xuất bị ảnh hưởng trên Google Sheets
@@ -1861,6 +1876,11 @@ class DatabaseManager:
                     new_loai_chi = "CUA_HANG"
                 else:
                     new_loai_chi = "NHA_CUNG_CAP"
+
+                if new_loai_chi == "NHA_CUNG_CAP" and not new_hang_muc_chi:
+                    new_hang_muc_chi = "Chi trả nhà cung cấp"
+                elif new_loai_chi == "CUA_HANG" and not new_hang_muc_chi:
+                    new_hang_muc_chi = "Chi tiêu cửa hàng"
 
                 if new_loai_chi == "CUA_HANG" and not (new_phieu_lq.startswith("NH") or new_phieu_lq == "ALL"):
                     new_phieu_lq = ""
@@ -2934,16 +2954,31 @@ class DatabaseManager:
                             if loai_phieu == "CHI":
                                 if phieu_lien_quan.startswith("NH") or phieu_lien_quan == "ALL" or "nhập hàng" in ghi_chu.lower() or "nhà cung cấp" in ghi_chu.lower() or "trả tiền" in ghi_chu.lower():
                                     loai_chi = "NHA_CUNG_CAP"
+                                    if not hang_muc_chi:
+                                        hang_muc_chi = "Chi trả nhà cung cấp"
                                 elif raw_loai_chi in ("CUA_HANG", "NHA_CUNG_CAP"):
                                     loai_chi = raw_loai_chi
+                                    if loai_chi == "NHA_CUNG_CAP" and not hang_muc_chi:
+                                        hang_muc_chi = "Chi trả nhà cung cấp"
+                                    elif loai_chi == "CUA_HANG" and not hang_muc_chi:
+                                        hang_muc_chi = "Chi tiêu cửa hàng"
                                 elif hang_muc_chi and hang_muc_chi != "Chi trả nhà cung cấp":
                                     loai_chi = "CUA_HANG"
                                 elif "cửa hàng" in doi_tuong.lower() or "nội bộ" in doi_tuong.lower():
                                     loai_chi = "CUA_HANG"
+                                    if not hang_muc_chi:
+                                        hang_muc_chi = "Chi tiêu cửa hàng"
                                 else:
                                     loai_chi = "NHA_CUNG_CAP"
+                                    if not hang_muc_chi:
+                                        hang_muc_chi = "Chi trả nhà cung cấp"
                             else:
                                 loai_chi = "THU"
+                                if not hang_muc_chi:
+                                    if phieu_lien_quan.startswith("XH") or "XH" in phieu_lien_quan:
+                                        hang_muc_chi = "Thu tiền bán hàng"
+                                    else:
+                                        hang_muc_chi = "Thu tiền khách hàng" if doi_tuong else "Thu khác"
 
                             cursor.execute("""
                                 INSERT OR REPLACE INTO SoQuy
