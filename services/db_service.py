@@ -1051,7 +1051,8 @@ class DatabaseManager:
         return new_total_sl, new_lo_str
 
     def delete_nhap_hang_receipt(self, so_phieu: str) -> bool:
-        """Xóa toàn bộ phiếu nhập kho, hoàn trả tồn kho và đồng bộ Sheet."""
+        """Xóa toàn bộ phiếu nhập kho, hoàn trả tồn kho, xóa các phiếu chi liên quan trong Sổ Quỹ và đồng bộ Sheet."""
+        so_quy_ids_to_delete = []
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -1070,10 +1071,26 @@ class DatabaseManager:
                         self.revert_nhap_hang_batch_local(ma, sl, gia, conn=conn)
 
                 cursor.execute("DELETE FROM NhapHang WHERE so_phieu = ?", (so_phieu,))
+
+                # Tìm và xóa các phiếu chi liên quan trong Sổ Quỹ
+                cursor.execute("SELECT id FROM SoQuy WHERE phieu_lien_quan = ? OR TRIM(phieu_lien_quan) = ?", (so_phieu, so_phieu.strip()))
+                so_quy_rows = cursor.fetchall()
+                for sq in so_quy_rows:
+                    so_quy_ids_to_delete.append(str(sq["id"]))
+
+                if so_quy_ids_to_delete:
+                    placeholders = ",".join(["?"] * len(so_quy_ids_to_delete))
+                    cursor.execute(f"DELETE FROM SoQuy WHERE id IN ({placeholders})", so_quy_ids_to_delete)
+
                 conn.commit()
 
-        # Xóa trên Google Sheet
+        # Xóa trên Google Sheet NhapHang
         self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_NHAP_HANG, {"so_phieu": so_phieu})
+
+        # Xóa các phiếu chi liên quan trên Google Sheet SoQuy
+        for sq_id in so_quy_ids_to_delete:
+            self._enqueue_task("DELETE_ROW", SHEET_SO_QUY, {"id": sq_id})
+
         return True
 
     def update_nhap_hang_receipt(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict], cong_no: float = None) -> list[dict]:
@@ -1283,7 +1300,8 @@ class DatabaseManager:
         return created_rows
 
     def delete_xuat_hang_receipt(self, so_phieu: str) -> bool:
-        """Xóa toàn bộ phiếu xuất kho, hoàn trả hàng về kho và đồng bộ Sheet."""
+        """Xóa toàn bộ phiếu xuất kho, hoàn trả hàng về kho, xóa các phiếu thu liên quan trong Sổ Quỹ và đồng bộ Sheet."""
+        so_quy_ids_to_delete = []
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
@@ -1294,6 +1312,17 @@ class DatabaseManager:
                 items = [dict(r) for r in rows]
 
                 cursor.execute("DELETE FROM XuatHang WHERE so_phieu = ?", (so_phieu,))
+
+                # Tìm và xóa các phiếu thu/chi liên quan trong Sổ Quỹ
+                cursor.execute("SELECT id FROM SoQuy WHERE phieu_lien_quan = ? OR TRIM(phieu_lien_quan) = ?", (so_phieu, so_phieu.strip()))
+                so_quy_rows = cursor.fetchall()
+                for sq in so_quy_rows:
+                    so_quy_ids_to_delete.append(str(sq["id"]))
+
+                if so_quy_ids_to_delete:
+                    placeholders = ",".join(["?"] * len(so_quy_ids_to_delete))
+                    cursor.execute(f"DELETE FROM SoQuy WHERE id IN ({placeholders})", so_quy_ids_to_delete)
+
                 conn.commit()
 
         # Hoàn trả hàng vào kho (như nhập lại)
@@ -1308,8 +1337,13 @@ class DatabaseManager:
                     cost = float(h.get("gia_nhap", 0) or 0) if h else 0
                 self.nhap_hang_batch_local(ma, sl, cost)
 
-        # Xóa trên Google Sheet
+        # Xóa trên Google Sheet XuatHang
         self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_XUAT_HANG, {"so_phieu": so_phieu})
+
+        # Xóa các phiếu thu liên quan trên Google Sheet SoQuy
+        for sq_id in so_quy_ids_to_delete:
+            self._enqueue_task("DELETE_ROW", SHEET_SO_QUY, {"id": sq_id})
+
         return True
 
     def update_xuat_hang_receipt(self, so_phieu: str, ngay_xuat: str, kh_save_ref: str, ghi_chu: str, items: list[dict]) -> list[dict]:

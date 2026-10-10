@@ -80,9 +80,16 @@ def format_batches_str(batches: list[dict]) -> str:
 
 
 def sanitize_cell_value(val):
-    """Sanitize cell value to prevent Google Sheets Formula Injection (CSV injection)."""
-    if isinstance(val, str) and val.startswith(("=", "+", "-", "@")):
-        return "'" + val
+    """Sanitize cell value to prevent Google Sheets Formula Injection (CSV injection) and preserve leading zeros for phone numbers."""
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        v_strip = val.strip()
+        if v_strip.startswith(("=", "+", "-", "@")):
+            return "'" + val
+        # Bảo toàn số 0 ở đầu cho số điện thoại (ví dụ: '0984483036')
+        if v_strip.startswith("0") and len(v_strip) >= 9 and v_strip.isdigit():
+            return "'" + v_strip
     return val
 
 
@@ -384,22 +391,36 @@ class SheetsService:
             raise RuntimeError(f"Lỗi khi đọc sheet {sheet_name}: {str(e)}")
 
     def append_row(self, sheet_name: str, row: list) -> int:
-        """Append a row and return the new row number (1-based)."""
+        """Append a row, auto-copy format from row 2, and return the new row number (1-based)."""
         try:
             ws = self._sheet(sheet_name)
             clean_row = [sanitize_cell_value(c) for c in row]
             result = ws.append_row(clean_row, value_input_option="USER_ENTERED")
             self.invalidate_records_cache(sheet_name)
             # Parse updated range to get row number
+            row_num = None
             updated_range = result.get("updates", {}).get("updatedRange", "")
             if updated_range:
                 # e.g. "HangHoa!A5:I5"
                 range_part = updated_range.split("!")[-1]
-                row_num = int("".join(filter(str.isdigit, range_part.split(":")[0])))
-                return row_num
-            # Fallback: get last row
-            all_values = ws.get_all_values()
-            return len(all_values)
+                digits = "".join(filter(str.isdigit, range_part.split(":")[0]))
+                if digits:
+                    row_num = int(digits)
+            if not row_num:
+                # Fallback: get last row
+                all_values = ws.get_all_values()
+                row_num = len(all_values)
+
+            # Tự động đồng bộ format từ dòng 2 cho dòng vừa append
+            if row_num and row_num > 2:
+                try:
+                    num_cols = len(clean_row)
+                    end_col = self._col_letter(num_cols)
+                    ws.copy_range(f"A2:{end_col}2", f"A{row_num}:{end_col}{row_num}", paste_type=gspread.utils.PasteType.format)
+                except Exception as fmt_err:
+                    print(f"[FORMAT WARNING] Không thể copy format cho {sheet_name} dòng {row_num}: {fmt_err}")
+
+            return row_num
         except Exception as e:
             raise RuntimeError(f"Lỗi khi thêm dòng vào sheet {sheet_name}: {str(e)}")
 

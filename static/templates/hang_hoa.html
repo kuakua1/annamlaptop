@@ -118,6 +118,103 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Chỉnh Sửa Kho Hàng & Giá Lô Hàng -->
+<div class="modal fade" id="modal-edit-stock" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2 text-primary"></i>Chỉnh Sửa Thông Số Hàng Hóa & Tồn Kho</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-prod-id">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Mã Hàng</label>
+                        <input type="text" class="form-control font-monospace bg-light" id="edit-prod-ma" readonly>
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label small fw-semibold">Tên Hàng Hóa <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="edit-prod-ten" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Danh Mục</label>
+                        <select class="form-select" id="edit-prod-danh-muc">
+                            <option value="Laptop">Laptop</option>
+                            <option value="Linh Kiện">Linh Kiện</option>
+                            <option value="Phụ Kiện">Phụ Kiện</option>
+                            <option value="Khác">Khác</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Đơn Vị Tính</label>
+                        <input type="text" class="form-control" id="edit-prod-dvt" placeholder="Cái, Bộ...">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Tổng Tồn Kho</label>
+                        <input type="number" class="form-control fw-bold text-success font-monospace" id="edit-prod-ton-kho" min="0">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Giá Vốn Nhập Hiện Tại (đ)</label>
+                        <input type="text" inputmode="numeric" autocomplete="off" class="form-control fw-bold font-monospace" id="edit-prod-gia-nhap" placeholder="0">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Giá Bán (đ)</label>
+                        <input type="text" inputmode="numeric" autocomplete="off" class="form-control fw-bold font-monospace text-primary" id="edit-prod-gia-ban" placeholder="0">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Ghi Chú</label>
+                        <input type="text" class="form-control" id="edit-prod-ghi-chu" placeholder="Ghi chú cấu hình, thông số...">
+                    </div>
+                </div>
+
+                <hr class="my-3">
+
+                <!-- Quản lý chi tiết các lô hàng / giá các lô khác nhau -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <span class="fw-bold fs-6 text-dark"><i class="bi bi-layers-half text-primary me-1"></i>Chi Tiết Các Lô Giá Hàng Tồn</span>
+                        <small class="text-muted d-block">Tùy chỉnh số lượng và giá vốn cho từng lô hàng khác nhau</small>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" onclick="addBatchRow()">
+                        <i class="bi bi-plus-circle me-1"></i>Thêm Lô Giá
+                    </button>
+                </div>
+
+                <div class="table-responsive border rounded mb-2">
+                    <table class="table table-sm table-bordered align-middle mb-0" id="table-batches">
+                        <thead class="table-light small">
+                            <tr>
+                                <th style="width: 45px;" class="text-center">#</th>
+                                <th style="width: 140px;">Số Lượng (SL)</th>
+                                <th>Đơn Giá Vốn Lô (đ)</th>
+                                <th style="width: 170px;" class="text-end">Thành Tiền Lô</th>
+                                <th style="width: 50px;" class="text-center">Xóa</th>
+                            </tr>
+                        </thead>
+                        <tbody id="edit-batches-tbody">
+                            <!-- Injected dynamically -->
+                        </tbody>
+                        <tfoot class="table-light small fw-bold">
+                            <tr>
+                                <td colspan="2" class="text-end">Tổng SL lô: <span id="batch-total-qty" class="text-success font-monospace">0</span></td>
+                                <td colspan="2" class="text-end">Tổng giá trị: <span id="batch-total-val" class="text-primary font-monospace">0 đ</span></td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="saveStockEdit()">
+                    <i class="bi bi-check-lg me-1"></i>Lưu Thay Đổi
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}

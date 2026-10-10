@@ -1888,6 +1888,9 @@ async function executeDeleteReceiptApi(so_phieu, type, onDone, record_id = null)
         // Báo cho các tab iframe khác cập nhật kho, công nợ và số dư tức thì
         broadcastDataUpdate('DEBT_UPDATED');
         broadcastDataUpdate('BALANCE_UPDATED');
+        broadcastDataUpdate('PRODUCTS_UPDATED');
+        broadcastDataUpdate('RECEIPTS_UPDATED');
+        broadcastDataUpdate('SO_QUY_UPDATED');
 
         if (typeof onDone === 'function') {
             await onDone();

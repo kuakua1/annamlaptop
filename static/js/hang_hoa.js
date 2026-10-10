@@ -3,7 +3,7 @@
  */
 
 // ── Danh mục cố định ──────────────────────────────────────────────────────────
-const DANH_MUC_LIST = ['Laptop', 'Linh Kiện Laptop', 'Linh Kiện PC', 'Phụ Kiện', 'Khác'];
+const DANH_MUC_LIST = ['Laptop', 'Linh Kiện', 'Phụ Kiện', 'Khác'];
 
 
 let allProducts = [];
@@ -142,22 +142,215 @@ function openAdd(prefill = {}) {
     openModal('product-modal');
 }
 
+let currentEditingProduct = null;
+let editStockModalInstance = null;
+
 function openEdit(id) {
-    editingId = String(id);
     const p = allProductsCache.find(x => String(x.id) === String(id)) || allProducts.find(x => String(x.id) === String(id));
     if (!p) {
         showToast('Không tìm thấy thông tin hàng hóa!', 'error');
         return;
     }
-    document.getElementById('modal-title').textContent = 'Chỉnh Sửa Hàng Hóa';
-    document.getElementById('f-ten-hang').value = p.ten_hang || '';
-    document.getElementById('f-danh-muc').value = p.danh_muc || '';
-    document.getElementById('f-dvt').value = p.don_vi_tinh || 'Cái';
-    document.getElementById('f-gia-nhap').value = (p.gia_nhap !== undefined && p.gia_nhap !== null) ? p.gia_nhap : 0;
-    document.getElementById('f-gia-ban').value = (p.gia_ban !== undefined && p.gia_ban !== null) ? p.gia_ban : 0;
-    document.getElementById('f-ton-kho').value = (p.ton_kho !== undefined && p.ton_kho !== null) ? p.ton_kho : 0;
-    document.getElementById('f-ghi-chu').value = p.ghi_chu || '';
-    openModal('product-modal');
+    currentEditingProduct = p;
+
+    document.getElementById('edit-prod-id').value = p.id;
+    document.getElementById('edit-prod-ma').value = p.ma_hang || '';
+    document.getElementById('edit-prod-ten').value = p.ten_hang || '';
+    document.getElementById('edit-prod-danh-muc').value = p.danh_muc || 'Khác';
+    document.getElementById('edit-prod-dvt').value = p.don_vi_tinh || 'Cái';
+    document.getElementById('edit-prod-ton-kho').value = p.ton_kho || 0;
+    document.getElementById('edit-prod-gia-nhap').value = p.gia_nhap || 0;
+    const giaBanInput = document.getElementById('edit-prod-gia-ban');
+    if (giaBanInput) giaBanInput.value = p.gia_ban || 0;
+    document.getElementById('edit-prod-ghi-chu').value = p.ghi_chu || '';
+
+    // Render các lô hàng
+    const tbody = document.getElementById('edit-batches-tbody');
+    tbody.innerHTML = '';
+    const batches = (p.batches && p.batches.length > 0) ? p.batches : [
+        { so_luong: p.ton_kho || 1, gia_nhap: p.gia_nhap || 0 }
+    ];
+
+    batches.forEach(b => {
+        addBatchRow(b.so_luong, b.gia_nhap);
+    });
+    calcBatchTotals();
+
+    // Lắng nghe thay đổi của ô giá nhập / tồn kho đơn để cập nhật lô nếu chỉ có 1 lô
+    const singleQtyInput = document.getElementById('edit-prod-ton-kho');
+    const singleGiaInput = document.getElementById('edit-prod-gia-nhap');
+    singleQtyInput.oninput = () => {
+        const rows = document.querySelectorAll('#edit-batches-tbody tr');
+        if (rows.length === 1) {
+            const slInput = rows[0].querySelector('.batch-sl');
+            if (slInput) slInput.value = singleQtyInput.value;
+            calcBatchTotals(false);
+        }
+    };
+    singleGiaInput.oninput = () => {
+        const rows = document.querySelectorAll('#edit-batches-tbody tr');
+        if (rows.length === 1) {
+            const giaInput = rows[0].querySelector('.batch-gia');
+            if (giaInput) giaInput.value = singleGiaInput.value;
+            calcBatchTotals(false);
+        }
+    };
+
+    const modalEl = document.getElementById('modal-edit-stock');
+    if (!editStockModalInstance) {
+        editStockModalInstance = new bootstrap.Modal(modalEl);
+    }
+    editStockModalInstance.show();
+}
+window.openEditStockModal = openEdit;
+
+function addBatchRow(so_luong = 1, gia_nhap = 0) {
+    const tbody = document.getElementById('edit-batches-tbody');
+    const rowIdx = tbody.querySelectorAll('tr').length + 1;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td class="text-center text-muted batch-stt">${rowIdx}</td>
+        <td>
+            <input type="number" class="form-control form-control-sm font-monospace batch-sl" value="${so_luong}" min="0" oninput="calcBatchTotals()">
+        </td>
+        <td>
+            <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm font-monospace batch-gia" value="${gia_nhap}" oninput="calcBatchTotals()">
+        </td>
+        <td class="text-end font-monospace fw-semibold batch-subtotal">0 đ</td>
+        <td class="text-center">
+            <button type="button" class="btn btn-outline-danger btn-xs py-0 px-2" onclick="deleteBatchRow(this)" title="Xóa lô này">
+                <i class="bi bi-trash"></i>
+            </button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    calcBatchTotals();
+}
+
+function deleteBatchRow(btn) {
+    const tbody = document.getElementById('edit-batches-tbody');
+    if (tbody.querySelectorAll('tr').length <= 1) {
+        showToast('Hàng hóa phải có ít nhất một lô thông số tồn!', 'warning');
+        return;
+    }
+    btn.closest('tr').remove();
+    tbody.querySelectorAll('tr').forEach((row, i) => {
+        row.querySelector('.batch-stt').textContent = i + 1;
+    });
+    calcBatchTotals();
+}
+
+function calcBatchTotals(updateMainInputs = true) {
+    const rows = document.querySelectorAll('#edit-batches-tbody tr');
+    let totalQty = 0;
+    let totalVal = 0;
+
+    rows.forEach(row => {
+        const sl = parseInt(row.querySelector('.batch-sl')?.value) || 0;
+        const parseMoney = window.parseCurrencyValue || parseCurrencyValue || (v => parseFloat(String(v).replace(/\./g, '').replace(/,/g, '')) || 0);
+        const gia = parseMoney(row.querySelector('.batch-gia')?.value);
+        const sub = Math.round(sl * gia);
+        row.querySelector('.batch-subtotal').textContent = formatVND(sub);
+        totalQty += sl;
+        totalVal += sub;
+    });
+
+    const qtySpan = document.getElementById('batch-total-qty');
+    const valSpan = document.getElementById('batch-total-val');
+    if (qtySpan) qtySpan.textContent = formatNumber(totalQty);
+    if (valSpan) valSpan.textContent = formatVND(totalVal);
+
+    if (updateMainInputs) {
+        const mainQty = document.getElementById('edit-prod-ton-kho');
+        if (mainQty) mainQty.value = totalQty;
+        if (rows.length > 0) {
+            const parseMoney = window.parseCurrencyValue || parseCurrencyValue || (v => parseFloat(String(v).replace(/\./g, '').replace(/,/g, '')) || 0);
+            const firstGia = parseMoney(rows[0].querySelector('.batch-gia')?.value);
+            const mainGia = document.getElementById('edit-prod-gia-nhap');
+            if (mainGia && rows.length === 1) mainGia.value = firstGia;
+        }
+    }
+}
+
+async function saveStockEdit() {
+    if (!currentEditingProduct) return;
+    const id = document.getElementById('edit-prod-id').value;
+    const ten_hang = document.getElementById('edit-prod-ten').value.trim();
+    const danh_muc = document.getElementById('edit-prod-danh-muc').value;
+    const don_vi_tinh = document.getElementById('edit-prod-dvt').value.trim() || 'Cái';
+    const ghi_chu = document.getElementById('edit-prod-ghi-chu').value.trim();
+
+    if (!ten_hang) {
+        showToast('Vui lòng nhập tên hàng hóa!', 'warning');
+        return;
+    }
+
+    const parseMoney = window.parseCurrencyValue || parseCurrencyValue || (v => parseFloat(String(v).replace(/\./g, '').replace(/,/g, '')) || 0);
+
+    // Thu thập các lô
+    const rows = document.querySelectorAll('#edit-batches-tbody tr');
+    const batches = [];
+    rows.forEach(row => {
+        const sl = parseInt(row.querySelector('.batch-sl')?.value) || 0;
+        const gia = parseMoney(row.querySelector('.batch-gia')?.value);
+        if (sl > 0) {
+            batches.push({ so_luong: sl, gia_nhap: gia });
+        }
+    });
+
+    let ton_kho = parseInt(document.getElementById('edit-prod-ton-kho').value) || 0;
+    let gia_nhap = parseMoney(document.getElementById('edit-prod-gia-nhap').value);
+    let gia_ban = parseMoney(document.getElementById('edit-prod-gia-ban')?.value);
+
+    if (batches.length > 0) {
+        ton_kho = batches.reduce((sum, b) => sum + b.so_luong, 0);
+        gia_nhap = batches[0].gia_nhap;
+    } else if (ton_kho > 0) {
+        batches.push({ so_luong: ton_kho, gia_nhap: gia_nhap });
+    }
+
+    const payload = {
+        ten_hang,
+        danh_muc,
+        don_vi_tinh,
+        ton_kho,
+        gia_nhap,
+        gia_ban,
+        ghi_chu,
+        batches
+    };
+
+    try {
+        showLoading('Đang lưu thông số hàng hóa...');
+        await apiRequest(`/api/hang-hoa/${id}`, 'PUT', payload);
+
+        hideLoading();
+        showToast('Cập nhật thông số hàng hóa thành công!', 'success');
+        if (editStockModalInstance) {
+            editStockModalInstance.hide();
+        } else {
+            closeModal('modal-edit-stock');
+        }
+
+        // Tải lại dữ liệu ngay lập tức
+        await loadProducts(true);
+
+        // Phát tín hiệu đồng bộ sang các tab khác
+        if (typeof broadcastDataUpdate === 'function') {
+            broadcastDataUpdate('PRODUCTS_UPDATED');
+        } else if (typeof window.broadcastDataUpdate === 'function') {
+            window.broadcastDataUpdate('PRODUCTS_UPDATED');
+        }
+        try {
+            if (typeof BroadcastChannel !== 'undefined') {
+                const bc = new BroadcastChannel('inventory_sync');
+                bc.postMessage({ type: 'PRODUCTS_UPDATED' });
+            }
+        } catch (bcErr) {}
+    } catch (e) {
+        hideLoading();
+        showToast(`Lỗi cập nhật: ${e.message}`, 'error');
+    }
 }
 
 async function saveProduct() {
@@ -190,16 +383,10 @@ async function saveProduct() {
 
     try {
         showLoading();
-        if (editingId) {
-            await apiRequest(`/api/hang-hoa/${editingId}`, 'PUT', body);
-            showToast('Cập nhật hàng hóa thành công', 'success');
-        } else {
-            await apiRequest('/api/hang-hoa', 'POST', body);
-            showToast('Thêm hàng hóa thành công', 'success');
-        }
+        await apiRequest('/api/hang-hoa', 'POST', body);
+        showToast('Thêm hàng hóa thành công', 'success');
         
         closeModal('product-modal');
-        editingId = null;
         
         // Tải lại dữ liệu ngay lập tức
         await loadProducts(true);
