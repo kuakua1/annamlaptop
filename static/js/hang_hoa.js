@@ -7,7 +7,68 @@ const DANH_MUC_LIST = ['Laptop', 'Linh Kiện', 'Phụ Kiện', 'Khác'];
 
 
 let allProducts = [];
+let allProductsCache = [];
+let currentFiltered = [];
 let editingId = null;
+let currentPeriodLabel = 'Tất cả';
+
+const COMPANY_REPORT_INFO = window.COMPANY_INFO || {
+    name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',
+    address: '454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam',
+    brand: 'KHO HÀNG AN NAM',
+    hotline: '0386.539.555',
+    email: 'contact@laptopannam.com'
+};
+
+function formatVNDClean(v) {
+    if (!v || isNaN(v)) return '0';
+    return Math.round(Number(v)).toLocaleString('vi-VN');
+}
+
+function clearSearch() {
+    const el = document.getElementById('search-input');
+    if (el) {
+        el.value = '';
+        applyFilters();
+    }
+}
+
+function setQuickPeriod(type) {
+    document.querySelectorAll('.date-range-presets .btn').forEach(btn => btn.classList.remove('active'));
+
+    const range = typeof getPresetDateRange === 'function' ? getPresetDateRange(type) : { from: '', to: '' };
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+
+    if (fromEl) fromEl.value = range.from || '';
+    if (toEl) toEl.value = range.to || '';
+
+    const map = {
+        'today': 'Hôm nay',
+        'week': 'Tuần này',
+        'month': 'Tháng này',
+        'year': 'Năm nay',
+        'all': 'Tất cả'
+    };
+    currentPeriodLabel = map[type] || 'Tùy chọn';
+
+    const clickedBtn = Array.from(document.querySelectorAll('.date-range-presets .btn'))
+        .find(b => b.textContent.trim().toLowerCase() === (map[type] || '').toLowerCase());
+    if (clickedBtn) {
+        clickedBtn.classList.add('active');
+    }
+
+    loadProducts();
+}
+
+function onDateRangeChanged() {
+    document.querySelectorAll('.date-range-presets .btn').forEach(btn => btn.classList.remove('active'));
+    currentPeriodLabel = 'Tùy chọn';
+}
+
+function applyDateFilter() {
+    loadProducts();
+}
 
 function populateDanhMucDropdowns() {
     // Populate modal dropdown
@@ -29,29 +90,51 @@ function populateDanhMucDropdowns() {
     }
 }
 
-let allProductsCache = [];
-
 async function loadProducts(silent = false) {
     try {
-        if (!silent) showLoading();
-        const res = await apiRequest('/api/hang-hoa');
+        const tbody = document.getElementById('products-tbody');
+        if (!silent && tbody) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu...</td></tr>';
+        }
+        const fromDate = document.getElementById('filter-from-date')?.value || '';
+        const toDate = document.getElementById('filter-to-date')?.value || '';
+
+        let url = '/api/hang-hoa';
+        const params = new URLSearchParams();
+        if (fromDate) params.append('from_date', fromDate);
+        if (toDate) params.append('to_date', toDate);
+        const qStr = params.toString();
+        if (qStr) url += `?${qStr}`;
+
+        const res = await apiRequest(url);
         allProductsCache = res.data || [];
         applyFilters();
     } catch (e) {
         if (!silent) showToast(e.message, 'error');
-    } finally {
-        if (!silent) hideLoading();
     }
 }
 
 function applyFilters() {
     const search = (document.getElementById('search-input')?.value || '').trim();
     const danhMuc = document.getElementById('filter-danh-muc')?.value || '';
+    const stockStatus = document.getElementById('filter-stock-status')?.value || 'all';
 
     let filtered = allProductsCache;
     if (danhMuc) {
         filtered = filtered.filter(p => p.danh_muc === danhMuc);
     }
+
+    if (stockStatus === 'in_stock') {
+        filtered = filtered.filter(p => (parseInt(p.ton_kho) || 0) > 0);
+    } else if (stockStatus === 'low_stock') {
+        filtered = filtered.filter(p => {
+            const ton = parseInt(p.ton_kho) || 0;
+            return ton > 0 && ton <= 2;
+        });
+    } else if (stockStatus === 'out_of_stock') {
+        filtered = filtered.filter(p => (parseInt(p.ton_kho) || 0) <= 0);
+    }
+
     if (search) {
         const matcher = window.matchSearchKeywords || matchSearchKeywords || ((txt, q) => (txt || '').toLowerCase().includes((q || '').toLowerCase()));
         filtered = filtered.filter(p => {
@@ -61,9 +144,29 @@ function applyFilters() {
     }
 
     allProducts = filtered;
+    currentFiltered = filtered;
     renderTable(allProducts);
+
     const countEl = document.getElementById('total-count');
     if (countEl) countEl.textContent = allProducts.length;
+
+    // Cập nhật tổng footer
+    const totalQty = allProducts.reduce((sum, p) => sum + (parseInt(p.ton_kho) || 0), 0);
+    const totalVal = allProducts.reduce((sum, p) => {
+        if (p.thanh_tien_ton !== undefined) return sum + p.thanh_tien_ton;
+        const sl = parseInt(p.ton_kho) || 0;
+        const batches = p.batches || [];
+        if (batches.length > 1) {
+            return sum + batches.reduce((bSum, b) => bSum + (b.so_luong * b.gia_nhap), 0);
+        }
+        const gia = parseFloat(p.gia_nhap) || 0;
+        return sum + Math.round(sl * gia);
+    }, 0);
+
+    const tfQty = document.getElementById('tf-qty');
+    const tfVal = document.getElementById('tf-val');
+    if (tfQty) tfQty.textContent = formatNumber(totalQty);
+    if (tfVal) tfVal.textContent = formatVND(totalVal);
 }
 
 function renderTonKhoCell(p) {
@@ -103,31 +206,58 @@ function renderTonKhoCell(p) {
 function renderTable(products) {
     const tbody = document.getElementById('products-tbody');
     if (!products.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Không có dữ liệu</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4"><i class="bi bi-inbox fs-2 d-block text-secondary mb-2"></i>Không có hàng hóa nào phù hợp với bộ lọc</td></tr>';
         return;
     }
-    tbody.innerHTML = products.map((p, i) => `
-        <tr>
-            <td>${i + 1}</td>
-            <td><span class="badge bg-secondary">${escapeHtml(p.ma_hang)}</span></td>
-            <td><strong>${escapeHtml(p.ten_hang)}</strong></td>
-            <td>${p.danh_muc ? `<span class="badge bg-info bg-opacity-75 text-dark">${escapeHtml(p.danh_muc)}</span>` : '-'}</td>
-            <td>${escapeHtml(p.don_vi_tinh)}</td>
-            <td class="text-end">${formatVND(p.gia_nhap)}</td>
-            <td class="text-end">${formatVND(p.gia_ban)}</td>
-            <td class="text-center">
-                ${renderTonKhoCell(p)}
-            </td>
-            <td>
-                <button class="btn btn-sm btn-outline-primary btn-icon me-1" onclick="openEdit('${p.id}')">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <button class="btn btn-sm btn-outline-danger btn-icon" onclick="deleteProduct('${p.id}')">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = products.map((p, i) => {
+        const sl = parseInt(p.ton_kho) || 0;
+        const giaNhap = parseFloat(p.gia_nhap) || 0;
+        const giaBan = parseFloat(p.gia_ban) || 0;
+        const batches = p.batches || [];
+
+        let giaTriTon = 0;
+        if (p.thanh_tien_ton !== undefined) {
+            giaTriTon = p.thanh_tien_ton;
+        } else if (batches.length > 1) {
+            giaTriTon = batches.reduce((bSum, b) => bSum + (b.so_luong * b.gia_nhap), 0);
+        } else {
+            giaTriTon = Math.round(sl * giaNhap);
+        }
+
+        return `
+            <tr>
+                <td class="text-center text-muted small">${i + 1}</td>
+                <td><span class="badge bg-secondary font-monospace">${escapeHtml(p.ma_hang)}</span></td>
+                <td>
+                    <div class="fw-semibold text-dark">${escapeHtml(p.ten_hang)}</div>
+                    ${p.ghi_chu ? `<small class="text-muted text-truncate d-block" style="max-width: 250px;">${escapeHtml(p.ghi_chu)}</small>` : ''}
+                </td>
+                <td><span class="badge bg-light text-secondary border">${escapeHtml(p.danh_muc || 'Khác')}</span></td>
+                <td class="text-center text-muted small">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
+                <td class="text-end text-muted font-monospace">${formatVND(giaNhap)}</td>
+                <td class="text-end font-monospace text-primary fw-semibold">${formatVND(giaBan)}</td>
+                <td class="text-center">
+                    ${renderTonKhoCell(p)}
+                </td>
+                <td class="text-end fw-bold text-primary font-monospace text-nowrap" style="white-space: nowrap; min-width: 150px;">${formatVND(giaTriTon)}</td>
+                <td class="text-center no-print">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="openEdit('${p.id}')" title="Chỉnh sửa thông số hàng & kho">
+                            <i class="bi bi-pencil-square"></i>
+                        </button>
+                        ${sl > 0 ? `
+                            <a href="/xuat-hang?ma_hang=${encodeURIComponent(p.ma_hang)}" class="btn btn-outline-success" title="Xuất kho">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                        ` : ''}
+                        <button class="btn btn-outline-danger" onclick="deleteProduct('${p.id}')" title="Xóa hàng hóa">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function openAdd(prefill = {}) {
@@ -441,16 +571,9 @@ async function deleteProduct(id) {
     }
 }
 
-const COMPANY_REPORT_INFO = window.COMPANY_INFO || {
-    name: 'CÔNG TY CỔ PHẦN THIẾT BỊ VÀ CÔNG NGHỆ SỐ AN NAM',
-    address: '454 Nguyễn Trãi, Hạc Thành, Thanh Hóa, Việt Nam',
-    brand: 'KHO HÀNG AN NAM',
-    hotline: '0386.539.555',
-    email: 'contact@laptopannam.com'
-};
-
 async function exportProductsExcel() {
-    if (!allProducts || !allProducts.length) {
+    const items = currentFiltered && currentFiltered.length ? currentFiltered : allProducts;
+    if (!items || !items.length) {
         showToast('Không có dữ liệu hàng hóa để xuất Excel!', 'info');
         return;
     }
@@ -520,6 +643,17 @@ async function exportProductsExcel() {
     qd2Cell.font = fontItalic;
     qd2Cell.alignment = { horizontal: 'center' };
 
+    const fromDateVal = document.getElementById('filter-from-date')?.value || '';
+    const toDateVal = document.getElementById('filter-to-date')?.value || '';
+    let periodSubtitle = `Thời điểm: ${dateCloseStr}`;
+    if (fromDateVal && toDateVal) {
+        periodSubtitle = `Kỳ báo cáo: Từ ngày ${formatDate(fromDateVal)} đến ngày ${formatDate(toDateVal)}`;
+    } else if (toDateVal) {
+        periodSubtitle = `Tính đến ngày: ${formatDate(toDateVal)}`;
+    } else if (fromDateVal) {
+        periodSubtitle = `Từ ngày: ${formatDate(fromDateVal)}`;
+    }
+
     // Tiêu đề bảng
     ws.mergeCells('A5:I5');
     const tCell = ws.getCell('A5');
@@ -530,7 +664,7 @@ async function exportProductsExcel() {
     // Thời điểm báo cáo
     ws.mergeCells('A6:I6');
     const pCell = ws.getCell('A6');
-    pCell.value = `Thời điểm: ${dateCloseStr}`;
+    pCell.value = periodSubtitle;
     pCell.font = fontNormal;
     pCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
@@ -569,7 +703,7 @@ async function exportProductsExcel() {
     let totQty = 0;
     let totVal = 0;
 
-    allProducts.forEach((p, idx) => {
+    items.forEach((p, idx) => {
         const row = ws.getRow(currentRow);
         row.height = 20;
 
@@ -722,6 +856,217 @@ async function exportProductsExcel() {
     showToast('Đã xuất file Excel Danh Mục Hàng Hóa thành công!', 'success');
 }
 
+/**
+ * In Báo Cáo Danh Sách Hàng Hóa
+ */
+function executePrintHtml(htmlContent) {
+    try {
+        const printWindow = window.open('', '_blank', 'width=1100,height=800');
+        if (printWindow) {
+            printWindow.document.open();
+            printWindow.document.write(htmlContent);
+            printWindow.document.close();
+            return;
+        }
+    } catch (e) {
+        console.warn('Cửa sổ popup bị chặn, chuyển sang in qua iframe', e);
+    }
+
+    let frame = document.getElementById('report-print-hidden-frame');
+    if (!frame) {
+        frame = document.createElement('iframe');
+        frame.id = 'report-print-hidden-frame';
+        frame.style.position = 'fixed';
+        frame.style.right = '0';
+        frame.style.bottom = '0';
+        frame.style.width = '0';
+        frame.style.height = '0';
+        frame.style.border = '0';
+        frame.style.visibility = 'hidden';
+        document.body.appendChild(frame);
+    }
+    const doc = frame.contentWindow.document;
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+    setTimeout(() => {
+        try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+        } catch (err) {
+            console.error('Lỗi khi kích hoạt in:', err);
+            window.print();
+        }
+    }, 450);
+}
+
+function printProductsReport() {
+    const items = currentFiltered && currentFiltered.length ? currentFiltered : allProducts;
+    if (!items || !items.length) {
+        showToast('Không có dữ liệu hàng hóa để in!', 'warning');
+        return;
+    }
+
+    const now = new Date();
+    const dateCloseStr = `Ngày ${String(now.getDate()).padStart(2, '0')} tháng ${String(now.getMonth() + 1).padStart(2, '0')} năm ${now.getFullYear()}`;
+    const fromDateVal = document.getElementById('filter-from-date')?.value || '';
+    const toDateVal = document.getElementById('filter-to-date')?.value || '';
+    let periodSubtitle = `Thời điểm: ${dateCloseStr}`;
+    if (fromDateVal && toDateVal) {
+        periodSubtitle = `Kỳ báo cáo: Từ ngày ${formatDate(fromDateVal)} đến ngày ${formatDate(toDateVal)}`;
+    } else if (toDateVal) {
+        periodSubtitle = `Tính đến ngày: ${formatDate(toDateVal)}`;
+    } else if (fromDateVal) {
+        periodSubtitle = `Từ ngày: ${formatDate(fromDateVal)}`;
+    }
+
+    let totQty = 0;
+    let totVal = 0;
+
+    const rowsHtml = items.map((p, idx) => {
+        const sl = parseInt(p.ton_kho) || 0;
+        const giaNhap = parseFloat(p.gia_nhap) || 0;
+        const giaBan = parseFloat(p.gia_ban) || 0;
+        const batches = p.batches || [];
+        let giaTriTon = 0;
+        if (p.thanh_tien_ton !== undefined) {
+            giaTriTon = p.thanh_tien_ton;
+        } else if (batches.length > 1) {
+            giaTriTon = batches.reduce((bSum, b) => bSum + (b.so_luong * b.gia_nhap), 0);
+        } else {
+            giaTriTon = Math.round(sl * giaNhap);
+        }
+
+        totQty += sl;
+        totVal += giaTriTon;
+
+        return `
+            <tr>
+                <td style="text-align: center; padding: 4px;">${idx + 1}</td>
+                <td style="text-align: center; font-family: monospace; padding: 4px;">${escapeHtml(p.ma_hang || '')}</td>
+                <td style="text-align: left; padding: 4px 6px;">${escapeHtml(p.ten_hang || '')}</td>
+                <td style="text-align: left; padding: 4px 6px;">${escapeHtml(p.danh_muc || 'Khác')}</td>
+                <td style="text-align: center; padding: 4px;">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
+                <td style="text-align: right; padding: 4px 6px;">${formatVNDClean(giaNhap)}</td>
+                <td style="text-align: right; padding: 4px 6px;">${formatVNDClean(giaBan)}</td>
+                <td style="text-align: right; padding: 4px 6px; font-weight: bold;">${formatNumber(sl)}</td>
+                <td style="text-align: right; padding: 4px 6px; font-weight: bold;">${formatVNDClean(giaTriTon)}</td>
+                <td style="text-align: left; padding: 4px 6px;">${escapeHtml(p.ghi_chu || '')}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const reportHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Báo Cáo Danh Sách Hàng Hóa</title>
+            <style>
+                @page { size: A4 landscape; margin: 10mm 12mm; }
+                body {
+                    font-family: "Times New Roman", Times, serif;
+                    font-size: 9.5pt;
+                    color: #000;
+                    margin: 0;
+                    padding: 8px;
+                }
+                .no-print-bar {
+                    display: flex;
+                    justify-content: flex-end;
+                    margin-bottom: 10px;
+                }
+                .btn-print {
+                    background: #0284c7;
+                    color: #fff;
+                    border: none;
+                    padding: 7px 18px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    font-weight: bold;
+                }
+                @media print {
+                    .no-print-bar { display: none !important; }
+                    body { padding: 0; }
+                }
+                .header-table { width: 100%; margin-bottom: 12px; border-collapse: collapse; }
+                .title-block { text-align: center; margin: 10px 0 14px 0; }
+                .main-title { font-size: 15pt; font-weight: bold; text-transform: uppercase; margin: 0; }
+                .sub-title { font-size: 10pt; font-style: italic; margin-top: 4px; }
+                .data-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 9pt; }
+                .data-table th, .data-table td { border: 1px solid #333; }
+                .data-table th { background-color: #f1f5f9; padding: 6px 4px; text-align: center; font-weight: bold; }
+                .data-table tfoot td { font-weight: bold; background-color: #f8fafc; }
+                .sign-table { width: 100%; margin-top: 25px; border-collapse: collapse; }
+                .sign-table td { text-align: center; vertical-align: top; width: 25%; }
+            </style>
+        </head>
+        <body>
+            <div class="no-print-bar">
+                <button class="btn-print" onclick="window.print()">In Ngay</button>
+            </div>
+            <table class="header-table">
+                <tr>
+                    <td style="vertical-align: top; width: 60%;">
+                        <div style="font-weight: bold; font-size: 10.5pt; text-transform: uppercase;">${escapeHtml(COMPANY_REPORT_INFO.name)}</div>
+                        <div style="font-size: 9pt; margin-top: 2px;">Địa chỉ: ${escapeHtml(COMPANY_REPORT_INFO.address)}</div>
+                        <div style="font-size: 9pt;">Hotline: ${escapeHtml(COMPANY_REPORT_INFO.hotline)} | Website: laptopannam.com</div>
+                    </td>
+                    <td style="vertical-align: top; text-align: right; width: 40%;">
+                        <div style="font-weight: bold; font-size: 9.5pt;">Mẫu số S10-DN</div>
+                        <div style="font-size: 8.5pt; font-style: italic;">(Ban hành theo TT 133/2016/TT-BTC)</div>
+                    </td>
+                </tr>
+            </table>
+            <div class="title-block">
+                <div class="main-title">BÁO CÁO DANH SÁCH HÀNG HÓA VÀ TỒN KHO</div>
+                <div class="sub-title">${periodSubtitle}</div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 32px;">STT</th>
+                        <th style="width: 80px;">Mã hàng</th>
+                        <th>Tên hàng hóa</th>
+                        <th style="width: 90px;">Danh mục</th>
+                        <th style="width: 50px;">ĐVT</th>
+                        <th style="width: 90px;">Giá nhập</th>
+                        <th style="width: 90px;">Giá bán</th>
+                        <th style="width: 60px;">SL Tồn</th>
+                        <th style="width: 105px;">Giá trị tồn</th>
+                        <th style="width: 110px;">Ghi chú</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rowsHtml}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="7" style="text-align: right; padding: 6px; text-transform: uppercase;">Tổng cộng:</td>
+                        <td style="text-align: right; padding: 6px;">${formatNumber(totQty)}</td>
+                        <td style="text-align: right; padding: 6px;">${formatVNDClean(totVal)}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+            <table class="sign-table">
+                <tr>
+                    <td colspan="4" style="text-align: right; padding-bottom: 8px; font-style: italic;">${dateCloseStr}</td>
+                </tr>
+                <tr>
+                    <td><strong>Người lập biểu</strong><br><span style="font-size: 8pt; font-style: italic;">(Ký, họ tên)</span></td>
+                    <td><strong>Thủ kho</strong><br><span style="font-size: 8pt; font-style: italic;">(Ký, họ tên)</span></td>
+                    <td><strong>Kế toán trưởng</strong><br><span style="font-size: 8pt; font-style: italic;">(Ký, họ tên)</span></td>
+                    <td><strong>Giám đốc</strong><br><span style="font-size: 8pt; font-style: italic;">(Ký, họ tên, đóng dấu)</span></td>
+                </tr>
+            </table>
+        </body>
+        </html>
+    `;
+    executePrintHtml(reportHtml);
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
     populateDanhMucDropdowns();
@@ -730,6 +1075,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const searchHandler = typeof debounce === 'function' ? debounce(applyFilters, 200) : applyFilters;
     document.getElementById('search-input')?.addEventListener('input', searchHandler);
     document.getElementById('filter-danh-muc')?.addEventListener('change', applyFilters);
+    document.getElementById('filter-stock-status')?.addEventListener('change', applyFilters);
 
     // Tự động làm mới dữ liệu khi người dùng chuyển tab quay lại hoặc có nhập/xuất kho
     window.addEventListener('message', (e) => {
