@@ -669,9 +669,13 @@ class DatabaseManager:
 
     # ── 4. Danh Mục Đối Tượng CRUD (Hợp Nhất NCC & Khách Hàng) ─────────────────
 
-    def generate_ma_doi_tuong(self) -> str:
+    def generate_ma_doi_tuong(self, conn: sqlite3.Connection = None) -> str:
         """Tạo mã đối tượng kế tiếp định dạng DTxxxx (DT0001..DT9999, vượt 9999 tự mở rộng thành DT10000..)."""
-        with self._get_connection() as conn:
+        should_close = False
+        if conn is None:
+            conn = self._get_connection()
+            should_close = True
+        try:
             cursor = conn.cursor()
             max_num = 0
             for tbl in ["DoiTuong", "KhachHang", "NhaCungCap"]:
@@ -686,17 +690,36 @@ class DatabaseManager:
                                 max_num = max(max_num, int(num_part))
                 except Exception:
                     pass
+
+            # Quét thêm XuatHang & NhapHang để tránh trùng các mã đã từng dùng trong lịch sử
+            try:
+                cursor.execute("SELECT DISTINCT khach_hang_id FROM XuatHang WHERE khach_hang_id LIKE 'DT%'")
+                for r in cursor.fetchall():
+                    mid = str(r[0] or "").strip().upper()
+                    if mid.startswith("DT") and mid[2:].isdigit():
+                        max_num = max(max_num, int(mid[2:]))
+            except Exception:
+                pass
+            try:
+                cursor.execute("SELECT DISTINCT nha_cung_cap_id FROM NhapHang WHERE nha_cung_cap_id LIKE 'DT%'")
+                for r in cursor.fetchall():
+                    mid = str(r[0] or "").strip().upper()
+                    if mid.startswith("DT") and mid[2:].isdigit():
+                        max_num = max(max_num, int(mid[2:]))
+            except Exception:
+                pass
+
             next_num = max_num + 1
             if next_num <= 9999:
                 return f"DT{next_num:04d}"
             else:
                 return f"DT{next_num}"
+        finally:
+            if should_close:
+                conn.close()
 
     def insert_doi_tuong(self, item: dict) -> dict:
         dt_id = str(item.get("id") or "").strip()
-        if not dt_id:
-            dt_id = self.generate_ma_doi_tuong()
-        item["id"] = dt_id
         ten = str(item.get("ten") or "").strip()
         phan_loai = str(item.get("phan_loai") or "CA_HAI").strip().upper()
         ma_so_thue = str(item.get("ma_so_thue") or "").strip()
@@ -708,6 +731,14 @@ class DatabaseManager:
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                if not dt_id:
+                    dt_id = self.generate_ma_doi_tuong(conn=conn)
+                else:
+                    # Chống trùng: nếu ID đã tồn tại thì tự động sinh ID mới tiếp theo
+                    cursor.execute("SELECT 1 FROM DoiTuong WHERE id = ? LIMIT 1", (dt_id,))
+                    if cursor.fetchone():
+                        dt_id = self.generate_ma_doi_tuong(conn=conn)
+                item["id"] = dt_id
                 cursor.execute("""
                     INSERT INTO DoiTuong (id, ten, phan_loai, ma_so_thue, dia_chi, dien_thoai, email, ghi_chu)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
