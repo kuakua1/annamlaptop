@@ -491,6 +491,54 @@ class SheetsService:
         except Exception as e:
             raise RuntimeError(f"Lỗi khi xóa các dòng phiếu {so_phieu} trong sheet {sheet_name}: {str(e)}")
 
+    def delete_so_quy_by_receipt(self, so_phieu: str, extra_ids: list[str] = None) -> int:
+        """Xóa tất cả các dòng trong Sheet SoQuy liên quan đến số phiếu xuất/nhập (cột 9 hoặc cột 2 hoặc cột 1)."""
+        try:
+            ws = self._sheet(SHEET_SO_QUY)
+            all_values = ws.get_all_values()
+            rows_to_delete = []
+            target_sp = str(so_phieu).strip().upper()
+            extra_set = {str(x).strip().upper() for x in (extra_ids or []) if x}
+            for i, row in enumerate(all_values):
+                if i == 0:
+                    continue
+                # col 9 (index 8): Phiếu Liên Quan
+                plq = str(row[8]).strip().upper() if len(row) > 8 else ""
+                # col 2 (index 1): Mã Phiếu
+                mp = str(row[1]).strip().upper() if len(row) > 1 else ""
+                # col 1 (index 0): ID
+                cid = str(row[0]).strip().upper() if len(row) > 0 else ""
+
+                match = False
+                if target_sp and (plq == target_sp or target_sp in [p.strip() for p in plq.replace(";", ",").split(",") if p.strip()]):
+                    match = True
+                elif mp in extra_set or cid in extra_set:
+                    match = True
+
+                if match:
+                    rows_to_delete.append(i + 1)
+
+            if not rows_to_delete:
+                return 0
+
+            ranges = []
+            for r in sorted(rows_to_delete):
+                if ranges and ranges[-1][1] == r - 1:
+                    ranges[-1] = (ranges[-1][0], r)
+                else:
+                    ranges.append((r, r))
+
+            for start_r, end_r in sorted(ranges, reverse=True):
+                if start_r == end_r:
+                    ws.delete_rows(start_r)
+                else:
+                    ws.delete_rows(start_r, end_r)
+
+            self.invalidate_records_cache(SHEET_SO_QUY)
+            return len(rows_to_delete)
+        except Exception as e:
+            raise RuntimeError(f"Lỗi khi xóa phiếu thu/chi liên quan phiếu {so_phieu} trong SoQuy: {str(e)}")
+
     def find_row(self, sheet_name: str, col: int, value: str) -> int:
         """Find row number (1-based) by column index (1-based) and value. Returns -1 if not found."""
         try:

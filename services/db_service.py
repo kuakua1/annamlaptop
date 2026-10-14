@@ -413,12 +413,18 @@ class DatabaseManager:
                         elif t_type == "DELETE_ROW":
                             row_id = payload.get("id")
                             found_idx = sheets_service.find_row(sheet_name, 1, str(row_id))
+                            if found_idx == -1 and sheet_name == SHEET_SO_QUY:
+                                found_idx = sheets_service.find_row(sheet_name, 2, str(row_id))
                             if found_idx != -1:
                                 sheets_service.delete_row(sheet_name, found_idx)
                         elif t_type == "DELETE_RECEIPT_ROWS":
                             so_phieu = payload.get("so_phieu")
                             if so_phieu:
                                 sheets_service.delete_receipt_rows(sheet_name, so_phieu)
+                        elif t_type == "DELETE_SO_QUY_BY_RECEIPT":
+                            so_phieu = payload.get("so_phieu")
+                            extra_ids = payload.get("extra_ids", [])
+                            sheets_service.delete_so_quy_by_receipt(so_phieu, extra_ids=extra_ids)
                         elif t_type == "UPDATE_HANG_HOA_STOCK":
                             # Cập nhật tồn kho hàng hóa trên sheet
                             ma_hang = payload["ma_hang"]
@@ -1147,14 +1153,25 @@ class DatabaseManager:
                 cursor.execute("DELETE FROM NhapHang WHERE so_phieu = ?", (so_phieu,))
 
                 # Tìm và xóa các phiếu chi liên quan trong Sổ Quỹ
-                cursor.execute("SELECT id FROM SoQuy WHERE phieu_lien_quan = ? OR TRIM(phieu_lien_quan) = ?", (so_phieu, so_phieu.strip()))
+                so_phieu_clean = so_phieu.strip().upper()
+                cursor.execute("""
+                    SELECT id, ma_phieu FROM SoQuy
+                    WHERE UPPER(TRIM(phieu_lien_quan)) = ?
+                       OR UPPER(TRIM(phieu_lien_quan)) LIKE ?
+                       OR UPPER(TRIM(phieu_lien_quan)) LIKE ?
+                       OR UPPER(TRIM(phieu_lien_quan)) LIKE ?
+                """, (so_phieu_clean, f"{so_phieu_clean},%", f"%,{so_phieu_clean}", f"%,{so_phieu_clean},%"))
                 so_quy_rows = cursor.fetchall()
                 for sq in so_quy_rows:
-                    so_quy_ids_to_delete.append(str(sq["id"]))
+                    if sq["id"]:
+                        so_quy_ids_to_delete.append(str(sq["id"]))
+                    if sq["ma_phieu"]:
+                        so_quy_ids_to_delete.append(str(sq["ma_phieu"]))
 
                 if so_quy_ids_to_delete:
-                    placeholders = ",".join(["?"] * len(so_quy_ids_to_delete))
-                    cursor.execute(f"DELETE FROM SoQuy WHERE id IN ({placeholders})", so_quy_ids_to_delete)
+                    unique_del_ids = list(set(so_quy_ids_to_delete))
+                    placeholders = ",".join(["?"] * len(unique_del_ids))
+                    cursor.execute(f"DELETE FROM SoQuy WHERE id IN ({placeholders}) OR ma_phieu IN ({placeholders})", unique_del_ids + unique_del_ids)
 
                 conn.commit()
 
@@ -1162,8 +1179,7 @@ class DatabaseManager:
         self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_NHAP_HANG, {"so_phieu": so_phieu})
 
         # Xóa các phiếu chi liên quan trên Google Sheet SoQuy
-        for sq_id in so_quy_ids_to_delete:
-            self._enqueue_task("DELETE_ROW", SHEET_SO_QUY, {"id": sq_id})
+        self._enqueue_task("DELETE_SO_QUY_BY_RECEIPT", SHEET_SO_QUY, {"so_phieu": so_phieu, "extra_ids": so_quy_ids_to_delete})
 
         return True
 
@@ -1403,14 +1419,25 @@ class DatabaseManager:
                 cursor.execute("DELETE FROM XuatHang WHERE so_phieu = ?", (so_phieu,))
 
                 # Tìm và xóa các phiếu thu/chi liên quan trong Sổ Quỹ
-                cursor.execute("SELECT id FROM SoQuy WHERE phieu_lien_quan = ? OR TRIM(phieu_lien_quan) = ?", (so_phieu, so_phieu.strip()))
+                so_phieu_clean = so_phieu.strip().upper()
+                cursor.execute("""
+                    SELECT id, ma_phieu FROM SoQuy
+                    WHERE UPPER(TRIM(phieu_lien_quan)) = ?
+                       OR UPPER(TRIM(phieu_lien_quan)) LIKE ?
+                       OR UPPER(TRIM(phieu_lien_quan)) LIKE ?
+                       OR UPPER(TRIM(phieu_lien_quan)) LIKE ?
+                """, (so_phieu_clean, f"{so_phieu_clean},%", f"%,{so_phieu_clean}", f"%,{so_phieu_clean},%"))
                 so_quy_rows = cursor.fetchall()
                 for sq in so_quy_rows:
-                    so_quy_ids_to_delete.append(str(sq["id"]))
+                    if sq["id"]:
+                        so_quy_ids_to_delete.append(str(sq["id"]))
+                    if sq["ma_phieu"]:
+                        so_quy_ids_to_delete.append(str(sq["ma_phieu"]))
 
                 if so_quy_ids_to_delete:
-                    placeholders = ",".join(["?"] * len(so_quy_ids_to_delete))
-                    cursor.execute(f"DELETE FROM SoQuy WHERE id IN ({placeholders})", so_quy_ids_to_delete)
+                    unique_del_ids = list(set(so_quy_ids_to_delete))
+                    placeholders = ",".join(["?"] * len(unique_del_ids))
+                    cursor.execute(f"DELETE FROM SoQuy WHERE id IN ({placeholders}) OR ma_phieu IN ({placeholders})", unique_del_ids + unique_del_ids)
 
                 conn.commit()
 
@@ -1430,8 +1457,7 @@ class DatabaseManager:
         self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_XUAT_HANG, {"so_phieu": so_phieu})
 
         # Xóa các phiếu thu liên quan trên Google Sheet SoQuy
-        for sq_id in so_quy_ids_to_delete:
-            self._enqueue_task("DELETE_ROW", SHEET_SO_QUY, {"id": sq_id})
+        self._enqueue_task("DELETE_SO_QUY_BY_RECEIPT", SHEET_SO_QUY, {"so_phieu": so_phieu, "extra_ids": so_quy_ids_to_delete})
 
         return True
 
