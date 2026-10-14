@@ -901,13 +901,17 @@ class DatabaseManager:
             "chi_tiet_hang": all_items
         }
 
-    def generate_so_phieu_nhap(self, date_str: str = "") -> str:
+    def generate_so_phieu_nhap(self, date_str: str = "", conn: sqlite3.Connection = None) -> str:
         """Tạo mã số phiếu nhập rút gọn dạng NHxxxx/MM (ví dụ: NH1003/10)."""
         if not date_str:
             date_str = date.today().isoformat()
         parts = date_str.split("-")
         month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
-        with self._get_connection() as conn:
+        should_close = False
+        if conn is None:
+            conn = self._get_connection()
+            should_close = True
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT so_phieu FROM NhapHang WHERE so_phieu LIKE ? OR so_phieu LIKE ?", (f"NH%/{month}", f"NH%{month}%"))
             rows = cursor.fetchall()
@@ -921,6 +925,9 @@ class DatabaseManager:
                         if digits.isdigit():
                             max_seq = max(max_seq, int(digits))
             return f"NH{max_seq + 1:04d}/{month}"
+        finally:
+            if should_close:
+                conn.close()
 
     def nhap_hang_batch_local(self, ma_hang: str, so_luong: int, gia_nhap: float, conn: sqlite3.Connection = None, update_gia_nhap: bool = True) -> tuple[int, str]:
         """Cập nhật tồn kho theo lô trong SQLite. Nếu update_gia_nhap=False (ví dụ hoàn trả xuất kho) sẽ giữ nguyên giá nhập hiện tại."""
@@ -981,6 +988,13 @@ class DatabaseManager:
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                if not so_phieu:
+                    so_phieu = self.generate_so_phieu_nhap(ngay_nhap, conn=conn)
+                else:
+                    cursor.execute("SELECT 1 FROM NhapHang WHERE so_phieu = ? LIMIT 1", (so_phieu,))
+                    if cursor.fetchone():
+                        so_phieu = self.generate_so_phieu_nhap(ngay_nhap, conn=conn)
+
                 for it in items:
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
                     thanh_tien = float(it["so_luong"] * it["gia_nhap"])
@@ -1198,13 +1212,17 @@ class DatabaseManager:
         return created_rows
 
 
-    def generate_so_phieu_xuat(self, date_str: str = "") -> str:
+    def generate_so_phieu_xuat(self, date_str: str = "", conn: sqlite3.Connection = None) -> str:
         """Tạo mã số phiếu xuất rút gọn dạng XHxxxx/MM (ví dụ: XH1020/10)."""
         if not date_str:
             date_str = date.today().isoformat()
         parts = date_str.split("-")
         month = parts[1] if len(parts) >= 2 else f"{date.today().month:02d}"
-        with self._get_connection() as conn:
+        should_close = False
+        if conn is None:
+            conn = self._get_connection()
+            should_close = True
+        try:
             cursor = conn.cursor()
             cursor.execute("SELECT so_phieu FROM XuatHang WHERE so_phieu LIKE ? OR so_phieu LIKE ?", (f"XH%/{month}", f"XH%{month}%"))
             rows = cursor.fetchall()
@@ -1218,6 +1236,9 @@ class DatabaseManager:
                         if digits.isdigit():
                             max_seq = max(max_seq, int(digits))
             return f"XH{max_seq + 1:04d}/{month}"
+        finally:
+            if should_close:
+                conn.close()
 
     def xuat_hang_batch_local(self, ma_hang: str, so_luong: int, conn: sqlite3.Connection = None) -> tuple[int, str, float]:
         """Trừ tồn kho FIFO trong SQLite và tính chính xác giá vốn (COGS)."""
@@ -1284,6 +1305,14 @@ class DatabaseManager:
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
+                if not so_phieu:
+                    so_phieu = self.generate_so_phieu_xuat(ngay_xuat, conn=conn)
+                else:
+                    cursor.execute("SELECT 1 FROM XuatHang WHERE so_phieu = ? LIMIT 1", (so_phieu,))
+                    if cursor.fetchone():
+                        # Đã tồn tại số phiếu này (race condition submit đồng thời) -> tự động cấp số phiếu tiếp theo
+                        so_phieu = self.generate_so_phieu_xuat(ngay_xuat, conn=conn)
+
                 for it in items:
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
                     thanh_tien = it["so_luong"] * it["gia_ban"]
@@ -2229,17 +2258,26 @@ class DatabaseManager:
 
             inv_kh = str(inv["khach_hang_id"] or "").strip()
             inv_phone = _clean_p(inv["dien_thoai"])
+            item_kh_ids = {str(it.get("khach_hang_id") or "").strip() for it in inv.get("items", []) if it.get("khach_hang_id")}
 
             is_match = (
                 inv_kh in target_ids or
                 inv_kh.lower() in target_names or
                 str(inv.get("ten_kh", "")).strip().lower() in target_names or
-                (inv_phone and inv_phone in target_phones)
+                (inv_phone and inv_phone in target_phones) or
+                bool(item_kh_ids & target_ids)
             )
             if not is_match and inv_kh in kh_lookup_by_id:
                 c = kh_lookup_by_id[inv_kh]
                 if c["id"] in target_ids or c["ten_kh"].lower() in target_names:
                     is_match = True
+            if not is_match:
+                for ik in item_kh_ids:
+                    if ik in kh_lookup_by_id:
+                        c = kh_lookup_by_id[ik]
+                        if c["id"] in target_ids or c["ten_kh"].lower() in target_names:
+                            is_match = True
+                            break
 
             if is_match:
                 matched_invoices.append(inv)
@@ -2390,17 +2428,26 @@ class DatabaseManager:
 
             inv_ncc = str(inv["nha_cung_cap_id"] or "").strip()
             inv_phone = _clean_p(inv["dien_thoai"])
+            item_ncc_ids = {str(it.get("nha_cung_cap_id") or "").strip() for it in inv.get("items", []) if it.get("nha_cung_cap_id")}
 
             is_match = (
                 inv_ncc in target_ids or
                 inv_ncc.lower() in target_names or
                 str(inv.get("ten_ncc", "")).strip().lower() in target_names or
-                (inv_phone and inv_phone in target_phones)
+                (inv_phone and inv_phone in target_phones) or
+                bool(item_ncc_ids & target_ids)
             )
             if not is_match and inv_ncc in ncc_lookup_by_id:
                 c = ncc_lookup_by_id[inv_ncc]
                 if c["id"] in target_ids or c["ten_ncc"].lower() in target_names:
                     is_match = True
+            if not is_match:
+                for inc in item_ncc_ids:
+                    if inc in ncc_lookup_by_id:
+                        c = ncc_lookup_by_id[inc]
+                        if c["id"] in target_ids or c["ten_ncc"].lower() in target_names:
+                            is_match = True
+                            break
 
             if is_match:
                 matched_invoices.append(inv)
