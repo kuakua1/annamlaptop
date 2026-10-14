@@ -2,30 +2,20 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+import secrets
 
-if getattr(sys, "frozen", False):
-    BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent)).resolve()
-    EXE_DIR = Path(sys.executable).parent.resolve()
-    if (EXE_DIR / ".env").exists():
-        load_dotenv(dotenv_path=EXE_DIR / ".env")
-    else:
-        load_dotenv(dotenv_path=BASE_DIR / ".env")
-else:
-    BASE_DIR = Path(__file__).resolve().parent
-    load_dotenv(dotenv_path=BASE_DIR / ".env")
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 # Google Sheets
 GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "./credentials.json")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "")
 
-import secrets
-
 # App Settings
 env_secret = os.getenv("SECRET_KEY", "").strip()
 if not env_secret or env_secret == "change-this-secret-key-in-production":
-    # Sinh secret key 256-bit ngẫu nhiên và lưu cố định vào .secret_key nếu chưa cấu hình trong .env
-    secret_file = (EXE_DIR if getattr(sys, "frozen", False) else BASE_DIR) / ".secret_key"
+    secret_file = BASE_DIR / ".secret_key"
     try:
         if secret_file.exists():
             SECRET_KEY = secret_file.read_text(encoding="utf-8").strip()

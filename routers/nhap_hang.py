@@ -6,6 +6,7 @@ import time
 from routers.auth import get_current_user, require_login
 from models.schemas import NhapHangCreate, NhapHangUpdate
 from services.db_service import db_manager
+from services.logger_service import log_activity
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -56,6 +57,8 @@ async def get_nhap_hang(
                 ncc_map[ten.lower()] = ncc_data
             if nid:
                 ncc_map[nid] = ncc_data
+                ncc_map[nid.lower()] = ncc_data
+                ncc_map[nid.upper()] = ncc_data
 
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
@@ -77,6 +80,7 @@ async def get_nhap_hang(
                 tot_by_sp[sp_key] = tot_by_sp.get(sp_key, 0.0) + float(r.get("thanh_tien", 0) or 0)
 
         result = []
+        rem_debt_by_sp = {}
         for i, rec in enumerate(records):
             ngay = str(rec.get("ngay_nhap", ""))
             if month and not ngay.startswith(month):
@@ -107,15 +111,22 @@ async def get_nhap_hang(
             raw_no = rec.get("cong_no")
             cong_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
 
-            # Tự động triệt tiêu công nợ nếu phiếu nhập đã được thanh toán
+            # Tự động triệt tiêu và phân bổ chính xác công nợ nếu phiếu nhập đã được thanh toán
             sp_key = so_phieu.strip().upper()
-            paid_amount = chi_by_sp.get(sp_key, 0.0)
-            tot_invoice = tot_by_sp.get(sp_key, 0.0)
-            if paid_amount >= tot_invoice and tot_invoice > 0:
-                cong_no = 0.0
-            elif paid_amount > 0:
-                rem_receipt_debt = max(0.0, tot_invoice - paid_amount)
-                cong_no = min(cong_no, rem_receipt_debt)
+            if sp_key not in rem_debt_by_sp:
+                paid_amount = chi_by_sp.get(sp_key, 0.0)
+                tot_invoice = tot_by_sp.get(sp_key, 0.0)
+                if paid_amount >= tot_invoice and tot_invoice > 0:
+                    rem_debt_by_sp[sp_key] = 0.0
+                elif paid_amount > 0:
+                    rem_debt_by_sp[sp_key] = max(0.0, tot_invoice - paid_amount)
+                else:
+                    rem_debt_by_sp[sp_key] = None
+
+            if rem_debt_by_sp[sp_key] is not None:
+                allocated = min(cong_no, rem_debt_by_sp[sp_key])
+                rem_debt_by_sp[sp_key] = max(0.0, rem_debt_by_sp[sp_key] - allocated)
+                cong_no = allocated
 
             item = {
                 "id": str(rec.get("id", "")),
@@ -192,7 +203,7 @@ async def create_nhap_hang(
                         break
 
             if not matched:
-                new_ncc_id = str(int(time.time() * 1000))
+                new_ncc_id = db_manager.generate_ma_doi_tuong()
                 db_manager.insert_doi_tuong({
                     "id": new_ncc_id,
                     "ten": ncc_ten,
@@ -237,6 +248,14 @@ async def create_nhap_hang(
             ghi_chu=data.ghi_chu or "",
             items=items_payload,
             cong_no=data.cong_no
+        )
+
+        log_activity(
+            action="TẠO_PHIẾU_NHẬP",
+            message=f"Tạo phiếu nhập {so_phieu} | NCC: {data.nha_cung_cap_ten or ncc_save_ref} | {len(data.items)} mặt hàng | Công nợ: {float(data.cong_no or 0):,.0f} đ",
+            username=user,
+            request=request,
+            level="INFO"
         )
 
         return {
@@ -389,6 +408,14 @@ async def delete_nhap_hang(
         ok = db_manager.delete_nhap_hang_receipt(so_phieu)
         if not ok:
             raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu nhập {so_phieu}")
+        
+        log_activity(
+            action="XÓA_PHIẾU_NHẬP",
+            message=f"Xóa vĩnh viễn phiếu nhập {so_phieu} và hoàn trả tồn kho",
+            username=user,
+            request=request,
+            level="WARNING"
+        )
         return {"success": True, "message": f"Đã xóa thành công phiếu nhập {so_phieu} và hoàn trả tồn kho"}
     except HTTPException:
         raise
@@ -441,15 +468,27 @@ async def update_nhap_hang(
                         break
 
             if not matched and (ncc_ten or ncc_sdt):
-                new_ncc_id = str(int(time.time() * 1000))
-                db_manager.insert_nha_cung_cap({
+                new_ncc_id = db_manager.generate_ma_doi_tuong()
+                db_manager.insert_doi_tuong({
                     "id": new_ncc_id,
-                    "ten_ncc": ncc_ten or "Nhà cung cấp mới",
+                    "ten": ncc_ten or "Nhà cung cấp mới",
+                    "phan_loai": "CA_HAI",
                     "dia_chi": ncc_dia_chi,
                     "dien_thoai": ncc_sdt,
                     "email": "",
                     "ghi_chu": f"Tự động lưu từ cập nhật phiếu {so_phieu}",
                 })
+                try:
+                    db_manager.insert_nha_cung_cap({
+                        "id": new_ncc_id,
+                        "ten_ncc": ncc_ten or "Nhà cung cấp mới",
+                        "dia_chi": ncc_dia_chi,
+                        "dien_thoai": ncc_sdt,
+                        "email": "",
+                        "ghi_chu": f"Tự động lưu từ cập nhật phiếu {so_phieu}",
+                    })
+                except Exception:
+                    pass
                 ncc_id = new_ncc_id
             elif matched:
                 ncc_id = str(matched.get("id", "")).strip()
@@ -471,6 +510,14 @@ async def update_nhap_hang(
             ghi_chu=data.ghi_chu or "",
             items=items_payload,
             cong_no=data.cong_no
+        )
+
+        log_activity(
+            action="SỬA_PHIẾU_NHẬP",
+            message=f"Cập nhật phiếu nhập {so_phieu} | NCC: {ncc_ten or ncc_save_ref} | {len(data.items)} mặt hàng | Công nợ: {float(data.cong_no or 0):,.0f} đ",
+            username=user,
+            request=request,
+            level="INFO"
         )
 
         return {

@@ -3,10 +3,13 @@ import sys
 import tempfile
 import subprocess
 from pathlib import Path
+from datetime import datetime
 from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from routers.auth import require_login
+from services.logger_service import log_activity, get_recent_logs, clear_logs, LOG_FILE
 
 router = APIRouter()
 
@@ -42,17 +45,32 @@ async def get_sheets_status(
 
 @router.post("/api/system/sync-to-sheets")
 async def sync_to_sheets_api(
+    request: Request,
     user: str = Depends(require_login)
 ):
     """Đẩy toàn bộ dữ liệu SQLite hiện tại lên Google Sheets."""
     try:
         counts = db_manager.sync_to_google_sheets()
+        log_activity(
+            action="ĐỒNG_BỘ_LÊN_SHEETS",
+            message=f"Đẩy toàn bộ dữ liệu từ SQLite lên Google Sheets: {counts}",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": "Đã đẩy toàn bộ dữ liệu từ phần mềm lên Google Sheets thành công!",
             "details": counts
         }
     except Exception as e:
+        log_activity(
+            action="LỖI_ĐỒNG_BỘ_SHEETS",
+            message=f"Lỗi khi đẩy dữ liệu lên Google Sheets: {str(e)}",
+            username=user,
+            request=request,
+            level="ERROR"
+        )
         raise HTTPException(status_code=500, detail=f"Lỗi khi đẩy dữ liệu lên Google Sheets: {str(e)}")
 
 
@@ -77,12 +95,26 @@ async def sync_from_sheets(
             "config": "Cấu hình"
         }
         ten_bang = name_map.get(target.lower().replace("_", "").strip(), target or "toàn bộ dữ liệu")
+        log_activity(
+            action="ĐỒNG_BỘ_VỀ_SQLITE",
+            message=f"Đồng bộ bảng [{ten_bang}] từ Google Sheets về SQLite",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": f"Đã đồng bộ thành công [{ten_bang}] từ Google Sheets vào Database SQLite!",
             "details": counts
         }
     except Exception as e:
+        log_activity(
+            action="LỖI_ĐỒNG_BỘ_SHEETS",
+            message=f"Lỗi khi đồng bộ từ Google Sheets: {str(e)}",
+            username=user,
+            request=request,
+            level="ERROR"
+        )
         raise HTTPException(status_code=500, detail=f"Lỗi khi đồng bộ: {str(e)}")
 
 
@@ -138,6 +170,15 @@ async def trigger_deadswitch(
     request: Request,
     user: str = Depends(require_login)
 ):
+    # Bảo mật: Chỉ Admin mới có quyền kích hoạt deadswitch
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    if role != "admin" and user.lower() != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ tài khoản Quản Trị Viên (Admin) mới có quyền thực hiện thao tác này."
+        )
+
     if not data.confirm:
         raise HTTPException(
             status_code=400,
@@ -145,50 +186,82 @@ async def trigger_deadswitch(
         )
 
     try:
-        # Xóa file CSDL SQLite cục bộ nếu có
-        try:
-            if DB_PATH.exists():
-                DB_PATH.unlink(missing_ok=True)
-        except Exception:
-            pass
+        # Xóa file CSDL SQLite cục bộ và khởi tạo lại cấu trúc sạch
+        if DB_PATH.exists():
+            DB_PATH.unlink(missing_ok=True)
+        db_manager._init_db()
 
-        local_app_dir = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Kho Hang An Nam")
-        desktop_dir = os.path.expandvars(r"%USERPROFILE%\Desktop")
-        start_menu_dir = os.path.expandvars(r"%APPDATA%\Microsoft\Windows\Start Menu\Programs")
-        temp_dir = Path(tempfile.gettempdir())
-        bat_file = temp_dir / "clean_khohanganam.bat"
-
-        bat_content = f"""@echo off
-timeout /t 2 /nobreak >nul
-
-:: 1. Dong tien trinh ung dung Kho Hang An Nam
-taskkill /f /im KhoHangAnNam.exe >nul 2>&1
-
-:: 2. Xoa thu muc cai dat va toan bo tep cua Kho Hang An Nam
-rmdir /s /q "{local_app_dir}" >nul 2>&1
-
-:: 3. Xoa cac shortcut tren Desktop va Start Menu
-del /f /q "{desktop_dir}\\Kho Hàng An Nam.lnk" >nul 2>&1
-del /f /q "{desktop_dir}\\KhoHangAnNam.lnk" >nul 2>&1
-del /f /q "{start_menu_dir}\\Kho Hàng An Nam.lnk" >nul 2>&1
-del /f /q "{start_menu_dir}\\KhoHangAnNam.lnk" >nul 2>&1
-
-:: 4. Tu xoa file batch
-del "%~f0" >nul 2>&1
-"""
-        bat_file.write_text(bat_content, encoding="utf-8")
-
-        DETACHED_PROCESS = 0x00000008
-        CREATE_NEW_PROCESS_GROUP = 0x00000200
-        subprocess.Popen(
-            ["cmd.exe", "/c", str(bat_file)],
-            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
-            close_fds=True
+        log_activity(
+            action="DEADSWITCH",
+            message="KÍCH HOẠT DEAD SWITCH XÓA TOÀN BỘ CSDL CỤC BỘ VÀ KHỞI TẠO LẠI",
+            username=user,
+            request=request,
+            level="CRITICAL"
         )
 
         return {
             "success": True,
-            "message": "Đã bắt đầu xóa toàn bộ ứng dụng và dữ liệu Kho Hàng An Nam trên máy tính."
+            "message": "Đã đặt lại dữ liệu cơ sở dữ liệu hệ thống sạch thành công."
         }
     except Exception as e:
+        log_activity("LỖI_DEADSWITCH", f"Lỗi kích hoạt deadswitch: {str(e)}", username=user, request=request, level="ERROR")
         raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
+
+
+# ── API Quản Lý Nhật Ký Hoạt Động (Activity & Audit Logs) ────────────────────
+
+@router.get("/api/system/activity-logs")
+async def get_activity_logs(
+    lines: int = 150,
+    search: str = "",
+    level: str = "",
+    user: str = Depends(require_login)
+):
+    """Lấy danh sách các dòng nhật ký hoạt động mới nhất."""
+    max_lines = min(max(lines, 10), 1000)
+    result = get_recent_logs(lines=max_lines, search=search, level=level)
+    return {
+        "success": True,
+        **result
+    }
+
+
+@router.get("/api/system/activity-logs/download")
+async def download_activity_logs(
+    user: str = Depends(require_login)
+):
+    """Tải toàn bộ file log logs/activity.log về máy tính."""
+    if not LOG_FILE.exists():
+        raise HTTPException(status_code=404, detail="File log chưa tồn tại hoặc chưa có dữ liệu")
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"kho_annam_activity_log_{timestamp}.log"
+    return FileResponse(
+        path=str(LOG_FILE),
+        filename=filename,
+        media_type="text/plain; charset=utf-8"
+    )
+
+
+@router.post("/api/system/activity-logs/clear")
+async def clear_activity_logs_api(
+    request: Request,
+    user: str = Depends(require_login)
+):
+    """Xóa / làm mới file nhật ký (chỉ Quản Trị Viên mới có quyền)."""
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    if role != "admin" and user.lower() != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ Quản trị viên (Admin) mới có quyền dọn dẹp file nhật ký."
+        )
+
+    ok = clear_logs(admin_username=user)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Không thể xóa file log")
+
+    return {
+        "success": True,
+        "message": "Đã làm mới toàn bộ file nhật ký hoạt động thành công"
+    }

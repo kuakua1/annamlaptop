@@ -6,6 +6,7 @@ import time
 from routers.auth import get_current_user, require_login
 from models.schemas import XuatHangCreate, XuatHangUpdate
 from services.db_service import db_manager
+from services.logger_service import log_activity
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -56,6 +57,8 @@ async def get_xuat_hang(
                 kh_map[ten.lower()] = kh_data
             if kid:
                 kh_map[kid] = kh_data
+                kh_map[kid.lower()] = kh_data
+                kh_map[kid.upper()] = kh_data
 
         dvt_map = {str(h.get("ma_hang", "")): str(h.get("don_vi_tinh", "Cái")) for h in hang_records}
 
@@ -77,6 +80,7 @@ async def get_xuat_hang(
                 tot_by_sp[sp_key] = tot_by_sp.get(sp_key, 0.0) + float(r.get("thanh_tien", 0) or 0)
 
         result = []
+        rem_debt_by_sp = {}
         for i, rec in enumerate(records):
             ngay = str(rec.get("ngay_xuat", ""))
             if month and not ngay.startswith(month):
@@ -109,15 +113,22 @@ async def get_xuat_hang(
             raw_no = rec.get("tien_khach_no")
             tien_khach_no = float(raw_no) if (raw_no is not None and str(raw_no).strip() != "") else thanh_tien
 
-            # Tự động triệt tiêu công nợ nếu phiếu xuất đã được lập phiếu thu
+            # Tự động triệt tiêu và phân bổ chính xác công nợ nếu phiếu xuất đã được lập phiếu thu
             sp_key = so_phieu.strip().upper()
-            paid_amount = thu_by_sp.get(sp_key, 0.0)
-            tot_invoice = tot_by_sp.get(sp_key, 0.0)
-            if paid_amount >= tot_invoice and tot_invoice > 0:
-                tien_khach_no = 0.0
-            elif paid_amount > 0:
-                rem_receipt_debt = max(0.0, tot_invoice - paid_amount)
-                tien_khach_no = min(tien_khach_no, rem_receipt_debt)
+            if sp_key not in rem_debt_by_sp:
+                paid_amount = thu_by_sp.get(sp_key, 0.0)
+                tot_invoice = tot_by_sp.get(sp_key, 0.0)
+                if paid_amount >= tot_invoice and tot_invoice > 0:
+                    rem_debt_by_sp[sp_key] = 0.0
+                elif paid_amount > 0:
+                    rem_debt_by_sp[sp_key] = max(0.0, tot_invoice - paid_amount)
+                else:
+                    rem_debt_by_sp[sp_key] = None
+
+            if rem_debt_by_sp[sp_key] is not None:
+                allocated = min(tien_khach_no, rem_debt_by_sp[sp_key])
+                rem_debt_by_sp[sp_key] = max(0.0, rem_debt_by_sp[sp_key] - allocated)
+                tien_khach_no = allocated
 
             item = {
                 "id": str(rec.get("id", "")),
@@ -223,7 +234,7 @@ async def create_xuat_hang(
                         break
 
             if not matched:
-                new_kh_id = str(int(time.time() * 1000))
+                new_kh_id = db_manager.generate_ma_doi_tuong()
                 db_manager.insert_doi_tuong({
                     "id": new_kh_id,
                     "ten": kh_ten,
@@ -271,6 +282,14 @@ async def create_xuat_hang(
             kh_save_ref=kh_save_ref,
             ghi_chu=data.ghi_chu or "",
             items=items_payload
+        )
+
+        log_activity(
+            action="TẠO_PHIẾU_XUẤT",
+            message=f"Tạo phiếu xuất {so_phieu} | Khách: {data.khach_hang_ten or kh_save_ref} | {len(data.items)} mặt hàng",
+            username=user,
+            request=request,
+            level="INFO"
         )
 
         return {
@@ -423,6 +442,14 @@ async def delete_xuat_hang(
         ok = db_manager.delete_xuat_hang_receipt(so_phieu)
         if not ok:
             raise HTTPException(status_code=404, detail=f"Không tìm thấy phiếu xuất {so_phieu}")
+
+        log_activity(
+            action="XÓA_PHIẾU_XUẤT",
+            message=f"Xóa vĩnh viễn phiếu xuất {so_phieu} và hoàn trả hàng về kho",
+            username=user,
+            request=request,
+            level="WARNING"
+        )
         return {"success": True, "message": f"Đã xóa thành công phiếu xuất {so_phieu} và hoàn trả hàng về kho"}
     except HTTPException:
         raise
@@ -482,15 +509,27 @@ async def update_xuat_hang(
                         break
 
             if not matched and (kh_ten or kh_sdt):
-                new_kh_id = str(int(time.time() * 1000))
-                db_manager.insert_khach_hang({
+                new_kh_id = db_manager.generate_ma_doi_tuong()
+                db_manager.insert_doi_tuong({
                     "id": new_kh_id,
-                    "ten_kh": kh_ten or "Khách lẻ",
+                    "ten": kh_ten or "Khách lẻ",
+                    "phan_loai": "CA_HAI",
                     "dia_chi": kh_dia_chi,
                     "dien_thoai": kh_sdt,
                     "email": "",
                     "ghi_chu": f"Tự động lưu từ cập nhật phiếu {so_phieu}",
                 })
+                try:
+                    db_manager.insert_khach_hang({
+                        "id": new_kh_id,
+                        "ten_kh": kh_ten or "Khách lẻ",
+                        "dia_chi": kh_dia_chi,
+                        "dien_thoai": kh_sdt,
+                        "email": "",
+                        "ghi_chu": f"Tự động lưu từ cập nhật phiếu {so_phieu}",
+                    })
+                except Exception:
+                    pass
                 kh_id = new_kh_id
             elif matched:
                 kh_id = str(matched.get("id", "")).strip()
@@ -511,6 +550,14 @@ async def update_xuat_hang(
             kh_save_ref=kh_save_ref,
             ghi_chu=data.ghi_chu or "",
             items=items_payload
+        )
+
+        log_activity(
+            action="SỬA_PHIẾU_XUẤT",
+            message=f"Cập nhật phiếu xuất {so_phieu} | Khách: {kh_ten or kh_save_ref} | {len(data.items)} mặt hàng",
+            username=user,
+            request=request,
+            level="INFO"
         )
 
         return {

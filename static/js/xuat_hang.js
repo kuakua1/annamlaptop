@@ -614,6 +614,7 @@ async function saveReceipt() {
             items,
             ghi_chu,
         });
+        window.newlyCreatedReceiptCode = res.so_phieu;
         showToast(`Tạo phiếu ${res.so_phieu} thành công`);
         clearState();
         resetForm();
@@ -725,13 +726,16 @@ function renderReceiptsPage(page) {
     const startIdx = (receiptsCurrentPage - 1) * RECEIPTS_PAGE_SIZE;
     const pageItems = allReceiptsList.slice(startIdx, startIdx + RECEIPTS_PAGE_SIZE);
 
-    container.innerHTML = pageItems.map(r => `
-        <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewReceipt('${r.so_phieu}')" style="cursor: pointer; transition: all 0.2s ease;">
+    container.innerHTML = pageItems.map(r => {
+        const isNew = (window.newlyCreatedReceiptCode && r.so_phieu === window.newlyCreatedReceiptCode);
+        const animClass = isNew ? ' newly-created-receipt' : '';
+        return `
+        <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white${animClass}" onclick="viewReceipt('${r.so_phieu}')" style="cursor: pointer; transition: all 0.2s ease;">
             <!-- Dòng 1: Ngày + ID phiếu (trái) và Số tiền (phải) -->
             <div class="d-flex justify-content-between align-items-center mb-1">
                 <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
-                        <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
+                    <span class="receipt-date-badge">
+                        <i class="bi bi-calendar3"></i>${formatDate(r.ngay)}
                     </span>
                     <span class="fw-bold text-danger font-monospace" style="font-size: 0.85rem;">${r.so_phieu}</span>
                 </div>
@@ -753,7 +757,12 @@ function renderReceiptsPage(page) {
                 </div>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
+
+    if (window.newlyCreatedReceiptCode) {
+        setTimeout(() => { window.newlyCreatedReceiptCode = null; }, 4000);
+    }
 
     if (summaryContainer) {
         summaryContainer.textContent = `Trang ${receiptsCurrentPage}/${totalPages} (${allReceiptsList.length} phiếu)`;

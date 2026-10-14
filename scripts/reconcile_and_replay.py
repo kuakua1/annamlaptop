@@ -83,7 +83,7 @@ def run():
             'ton_kho_dau_ky': 0,
             'gia_nhap_dau_ky': float(h['gia_nhap'] or 0),
             'batches': [],
-            'ghi_chu': h['ghi_chu'] or '',
+            'ghi_chu': '' if (' x ' in (h.get('ghi_chu') or '') and ('đ' in (h.get('ghi_chu') or '') or 'Đ' in (h.get('ghi_chu') or ''))) else (h.get('ghi_chu') or ''),
             'is_new': False
         }
 
@@ -257,9 +257,9 @@ def run():
             else:
                 c.execute("""
                     UPDATE HangHoa
-                    SET gia_nhap = ?, ton_kho = ?, chi_tiet_lo = ?
+                    SET gia_nhap = ?, ton_kho = ?, chi_tiet_lo = ?, ghi_chu = ?
                     WHERE ma_hang = ?
-                """, (latest_gia_nhap, ton_kho, lo_str, p['ma_hang']))
+                """, (latest_gia_nhap, ton_kho, lo_str, p['ghi_chu'], p['ma_hang']))
 
         # Cập nhật giá vốn và lợi nhuận cho XuatHang
         for r in updated_xuat_rows:
@@ -278,8 +278,8 @@ def run():
         ws_hh = sheets_service._sheet('HangHoa')
         ws_xh = sheets_service._sheet('XuatHang')
 
-        # Chuẩn bị dữ liệu HangHoa
-        c.execute("SELECT id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, gia_ban, ton_kho, chi_tiet_lo, ghi_chu FROM HangHoa ORDER BY ma_hang")
+        # Chuẩn bị dữ liệu HangHoa (9 cột chuẩn Google Sheets: ID, Mã Hàng, Tên, Danh Mục, ĐVT, Giá Nhập, SL, Chi Tiết Lô Giá, Ghi Chú)
+        c.execute("SELECT id, ma_hang, ten_hang, danh_muc, don_vi_tinh, gia_nhap, ton_kho, chi_tiet_lo, ghi_chu FROM HangHoa ORDER BY ma_hang")
         all_hh_clean = [list(r) for r in c.fetchall()]
 
         # Format các cột số
@@ -292,14 +292,17 @@ def run():
                 r[3],
                 r[4],
                 int(round(float(r[5] or 0))),
-                int(round(float(r[6] or 0))),
-                int(r[7] or 0),
-                r[8] or '',
-                r[9] or ''
+                int(r[6] or 0),
+                r[7] or '',
+                r[8] or ''
             ])
 
-        # Ghi đè vào HangHoa (A2:J{len})
-        ws_hh.update(f"A2:J{len(hh_sheet_data)+1}", hh_sheet_data)
+        # Ghi đè vào HangHoa (A2:I{len})
+        ws_hh.update(f"A2:I{len(hh_sheet_data)+1}", hh_sheet_data)
+        try:
+            ws_hh.batch_clear([f"J2:J{len(hh_sheet_data)+10}"])
+        except Exception:
+            pass
 
         # Cập nhật giá vốn & lợi nhuận trên XuatHang Google Sheets
         c.execute("SELECT id, so_phieu, ngay_xuat, ma_hang, ten_hang, so_luong, gia_ban, thanh_tien, khach_hang_id, ghi_chu, gia_von, loi_nhuan, tien_khach_no FROM XuatHang ORDER BY ngay_xuat, id")

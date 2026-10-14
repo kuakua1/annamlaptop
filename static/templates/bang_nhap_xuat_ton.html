@@ -233,6 +233,7 @@
                         <th colspan="2" class="nxt-th-xuat" style="vertical-align: middle;">Xuất trong kỳ</th>
                         <th rowspan="2" style="width: 120px; vertical-align: middle; background-color: #1e293b !important; color: #ffffff !important;">Đơn giá</th>
                         <th colspan="2" class="nxt-th-ton-cuoi" style="vertical-align: middle;">Tồn cuối kỳ</th>
+                        <th rowspan="2" style="width: 105px; vertical-align: middle; background-color: #1e293b !important; color: #ffffff !important;">Thao tác</th>
                     </tr>
                     <tr style="background-color: #1e293b !important;">
                         <th style="width: 75px; background-color: #1e293b !important; color: #7dd3fc !important;">Lượng đầu</th>
@@ -247,7 +248,7 @@
                 </thead>
                 <tbody id="table-body">
                     <tr>
-                        <td colspan="13" class="text-center text-muted py-5">
+                        <td colspan="14" class="text-center text-muted py-5">
                             <div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu tổng hợp nhập xuất tồn...
                         </td>
                     </tr>
@@ -265,14 +266,111 @@
                         <td class="text-center text-muted font-monospace">-</td>
                         <td class="text-end text-primary fs-6 font-monospace" id="tot-luong-ton">0</td>
                         <td class="text-end text-primary fs-5 font-monospace text-nowrap" id="tot-tien-ton">0</td>
+                        <td class="text-center text-muted font-monospace">-</td>
                     </tr>
                 </tfoot>
             </table>
         </div>
     </div>
 </div>
+
+<!-- Modal Chi Tiết Biến Động Nhập - Xuất Mặt Hàng -->
+<div class="modal fade" id="modal-hanghoa-transactions" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-dark text-white py-3">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-clock-history fs-5 text-warning"></i>
+                    <div>
+                        <h5 class="modal-title mb-0 fs-6 fw-bold" id="hh-trans-title">Lịch Sử Biến Động Nhập - Xuất</h5>
+                        <small class="text-light opacity-75" id="hh-trans-subtitle">Chi tiết các phiếu phát sinh trong kỳ</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3 bg-light">
+                <!-- Quick Summary Stats -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-3 col-6">
+                        <div class="p-2 bg-white rounded border shadow-sm text-center">
+                            <div class="text-muted small">Tổng số phát sinh</div>
+                            <div class="fw-bold fs-6 text-dark" id="hh-stat-count">0 phiếu</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="p-2 bg-white rounded border shadow-sm text-center">
+                            <div class="text-success small fw-semibold">Tổng lượng nhập</div>
+                            <div class="fw-bold fs-6 text-success" id="hh-stat-nhap">0</div>
+                            <div class="text-muted" style="font-size: 0.75rem;" id="hh-stat-tien-nhap">0 đ</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="p-2 bg-white rounded border shadow-sm text-center">
+                            <div class="text-danger small fw-semibold">Tổng lượng xuất</div>
+                            <div class="fw-bold fs-6 text-danger" id="hh-stat-xuat">0</div>
+                            <div class="text-muted" style="font-size: 0.75rem;" id="hh-stat-tien-xuat">0 đ</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <div class="p-2 bg-white rounded border shadow-sm text-center">
+                            <div class="text-primary small fw-semibold">Biến động thuần (Nhập - Xuất)</div>
+                            <div class="fw-bold fs-6 text-primary" id="hh-stat-diff">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table of Transactions -->
+                <div class="table-responsive bg-white rounded border">
+                    <table class="table table-hover align-middle mb-0" style="font-size: 0.85rem;">
+                        <thead class="table-dark">
+                            <tr class="text-center align-middle">
+                                <th style="width: 45px;">STT</th>
+                                <th style="width: 100px;">Ngày</th>
+                                <th style="width: 100px;">Loại phiếu</th>
+                                <th style="width: 110px;">Số phiếu</th>
+                                <th style="width: 80px;">Số lượng</th>
+                                <th style="width: 110px;">Đơn giá</th>
+                                <th style="width: 120px;">Thành tiền</th>
+                                <th>Đối tác (NCC / Khách)</th>
+                                <th>Ghi chú</th>
+                                <th style="width: 120px;">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hh-trans-tbody">
+                            <tr>
+                                <td colspan="10" class="text-center text-muted py-4">Đang tải dữ liệu...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer bg-white py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Chi Tiết Phiếu (Nhập / Xuất) -->
+<div class="modal fade" id="detail-modal" tabindex="-1" aria-hidden="true" style="z-index: 1060;">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header py-3 bg-white border-bottom">
+                <h5 class="modal-title fs-6 fw-bold" id="detail-modal-title">Chi Tiết Phiếu Giao Dịch</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3" id="detail-modal-body"></div>
+            <div class="modal-footer bg-light py-2 d-flex justify-content-between">
+                <button type="button" class="btn btn-outline-primary btn-sm" onclick="printReceiptModal('detail-modal-body', 'Chi Tiết Phiếu')">
+                    <i class="bi bi-printer me-1"></i>In Phiếu
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/bang_nhap_xuat_ton.js?v=20261007_v1"></script>
+<script src="/static/js/bang_nhap_xuat_ton.js?v=20261010_v2"></script>
 {% endblock %}

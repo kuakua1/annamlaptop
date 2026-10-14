@@ -237,6 +237,112 @@ document.addEventListener('DOMContentLoaded', function() {
     restoreSidebarGroupStates();
 });
 
+// ── Settigation V2 Sidebar Quick Search ──────────────────────────────────────
+
+function focusSidebarSearch() {
+    if (document.body.classList.contains('sidebar-collapsed')) {
+        if (typeof TabManager !== 'undefined' && TabManager.toggleSidebar) {
+            TabManager.toggleSidebar();
+        }
+    }
+    setTimeout(() => {
+        const searchInput = document.getElementById('sidebar-menu-search');
+        if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+        }
+    }, 50);
+}
+
+function filterSidebarMenu(query) {
+    const q = (query || '').trim().toLowerCase();
+    const links = document.querySelectorAll('.sidebar-nav .sidebar-link');
+    const labels = document.querySelectorAll('.sidebar-nav .sidebar-label');
+    const groups = document.querySelectorAll('.sidebar-nav .sidebar-group-content');
+
+    if (!q) {
+        // Khôi phục hiển thị ban đầu
+        links.forEach(el => el.style.display = '');
+        labels.forEach(el => el.style.display = '');
+        groups.forEach(el => el.style.display = '');
+        restoreSidebarGroupStates();
+        return;
+    }
+
+    // Lọc các liên kết trong menu
+    links.forEach(link => {
+        const text = (link.textContent || '').toLowerCase();
+        if (text.includes(q)) {
+            link.style.display = '';
+        } else {
+            link.style.display = 'none';
+        }
+    });
+
+    // Xử lý các nhóm accordion: nếu có item con khớp thì tự bung mở
+    groups.forEach(group => {
+        const visibleLinks = Array.from(group.querySelectorAll('.sidebar-link')).filter(el => el.style.display !== 'none');
+        const label = group.previousElementSibling;
+        if (visibleLinks.length > 0) {
+            group.style.display = 'block';
+            group.classList.remove('collapsed');
+            if (label && label.classList.contains('collapsible')) {
+                label.style.display = '';
+                label.classList.remove('collapsed');
+            }
+        } else {
+            group.style.display = 'none';
+            if (label && label.classList.contains('collapsible')) {
+                label.style.display = 'none';
+            }
+        }
+    });
+
+    // Xử lý các label tiêu đề phân đoạn
+    labels.forEach(label => {
+        if (!label.classList.contains('collapsible')) {
+            let next = label.nextElementSibling;
+            let hasVisible = false;
+            while (next && !next.classList.contains('sidebar-label')) {
+                if (next.classList.contains('sidebar-link') && next.style.display !== 'none') {
+                    hasVisible = true;
+                    break;
+                }
+                next = next.nextElementSibling;
+            }
+            label.style.display = hasVisible ? '' : 'none';
+        }
+    });
+}
+
+// Phím tắt mở nhanh Settigation Quick Search ('/' hoặc 'Ctrl + K')
+document.addEventListener('keydown', function(e) {
+    const target = e.target;
+    const tag = (target && target.tagName) ? target.tagName.toUpperCase() : '';
+    const isEditing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && target.isContentEditable);
+
+    // Thoát search và xóa filter khi nhấn Escape trong ô tìm kiếm
+    if (e.key === 'Escape') {
+        const searchInput = document.getElementById('sidebar-menu-search');
+        if (searchInput && document.activeElement === searchInput) {
+            searchInput.value = '';
+            filterSidebarMenu('');
+            searchInput.blur();
+            return;
+        }
+    }
+
+    if (isEditing) return;
+
+    if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
+        const searchInput = document.getElementById('sidebar-menu-search');
+        if (searchInput) {
+            e.preventDefault();
+            focusSidebarSearch();
+        }
+    }
+});
+
 // ── Toast Notifications ───────────────────────────────────────────────────────
 
 function showToast(message, type = 'success') {
@@ -397,22 +503,31 @@ function removeVietnameseTones(str) {
 }
 window.removeVietnameseTones = removeVietnameseTones;
 
-function matchSearchKeywords(targetText, query) {
-    if (!query) return true;
+function createSearchMatcher(query) {
+    if (!query) return () => true;
     const qRaw = String(query).toLowerCase().trim();
-    if (!qRaw) return true;
+    if (!qRaw) return () => true;
     const qNorm = removeVietnameseTones(qRaw);
     const rawTokens = qRaw.split(/\s+/).filter(Boolean);
     const normTokens = qNorm.split(/\s+/).filter(Boolean);
-    if (!rawTokens.length) return true;
+    if (!rawTokens.length) return () => true;
 
-    const tRaw = String(targetText || '').toLowerCase();
-    const tNorm = removeVietnameseTones(tRaw);
+    return function (targetText) {
+        if (!targetText) return false;
+        const tRaw = String(targetText).toLowerCase();
+        const tNorm = removeVietnameseTones(tRaw);
+        return rawTokens.every((rTok, idx) => {
+            const nTok = normTokens[idx] || rTok;
+            return tRaw.includes(rTok) || tNorm.includes(nTok);
+        });
+    };
+}
+window.createSearchMatcher = createSearchMatcher;
 
-    return rawTokens.every((rTok, idx) => {
-        const nTok = normTokens[idx] || rTok;
-        return tRaw.includes(rTok) || tNorm.includes(nTok);
-    });
+function matchSearchKeywords(targetText, query) {
+    if (!query) return true;
+    const matcher = createSearchMatcher(query);
+    return matcher(targetText);
 }
 window.matchSearchKeywords = matchSearchKeywords;
 
@@ -443,13 +558,27 @@ function closeModal(id) {
     setTimeout(cleanupModalBackdrops, 150);
 }
 
+function syncModalScrollLock() {
+    const openModals = document.querySelectorAll('.modal.show');
+    if (openModals.length > 0) {
+        document.documentElement.classList.add('modal-open');
+        document.body.classList.add('modal-open');
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.documentElement.classList.remove('modal-open');
+        document.body.classList.remove('modal-open');
+        document.documentElement.style.removeProperty('overflow');
+        document.body.style.removeProperty('overflow');
+        document.body.style.removeProperty('padding-right');
+    }
+}
+
 function cleanupModalBackdrops() {
     const openModals = document.querySelectorAll('.modal.show');
     if (openModals.length === 0) {
         document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
-        document.body.classList.remove('modal-open');
-        document.body.style.removeProperty('padding-right');
-        document.body.style.removeProperty('overflow');
+        syncModalScrollLock();
     } else {
         const backdrops = document.querySelectorAll('.modal-backdrop');
         if (backdrops.length > openModals.length) {
@@ -460,9 +589,165 @@ function cleanupModalBackdrops() {
     }
 }
 
-// Lắng nghe sự kiện modal ẩn để dọn dẹp backdrop tồn đọng
+// 1. Khóa cuộn trang nền khi mở bất kỳ modal nào
+document.addEventListener('show.bs.modal', function () {
+    syncModalScrollLock();
+});
+document.addEventListener('shown.bs.modal', function () {
+    syncModalScrollLock();
+});
+
+// 2. Khôi phục cuộn trang khi đóng modal
 document.addEventListener('hidden.bs.modal', function () {
-    setTimeout(cleanupModalBackdrops, 150);
+    setTimeout(cleanupModalBackdrops, 80);
+});
+
+// 3. Hỗ trợ lăn chuột mượt mà bên trong modal và chỉ chặn khi đã chạm kịch trần/kịch đáy
+function canElementScrollY(el, deltaY) {
+    if (!el || el === document || el === document.documentElement || el === document.body) return false;
+    const style = window.getComputedStyle(el);
+    const overflowY = style.overflowY;
+    const isScrollable = (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') ||
+                         (el.classList && el.classList.contains('modal'));
+    if (!isScrollable) return false;
+    if (el.scrollHeight <= el.clientHeight + 1) return false;
+
+    if (deltaY > 0) {
+        return (el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+    } else if (deltaY < 0) {
+        return (el.scrollTop > 1);
+    }
+    return false;
+}
+
+function canElementScrollX(el, deltaX) {
+    if (!el || el === document || el === document.documentElement || el === document.body) return false;
+    const style = window.getComputedStyle(el);
+    const overflowX = style.overflowX;
+    const isScrollable = (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay');
+    if (!isScrollable) return false;
+    if (el.scrollWidth <= el.clientWidth + 1) return false;
+
+    if (deltaX > 0) {
+        return (el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    } else if (deltaX < 0) {
+        return (el.scrollLeft > 1);
+    }
+    return false;
+}
+
+document.addEventListener('wheel', function (e) {
+    const openModals = document.querySelectorAll('.modal.show');
+    if (openModals.length === 0) return;
+
+    const topModal = openModals[openModals.length - 1];
+
+    const isHorizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+
+    if (isHorizontal) {
+        let curr = e.target;
+        while (curr) {
+            if (canElementScrollX(curr, e.deltaX)) {
+                return; // Cho phép cuộn ngang bảng
+            }
+            if (curr === topModal) break;
+            curr = curr.parentElement;
+        }
+        e.preventDefault();
+        return;
+    }
+
+    // Cuộn dọc: Duyệt từ e.target đi ngược lên topModal
+    let curr = e.target;
+    while (curr) {
+        if (canElementScrollY(curr, e.deltaY)) {
+            return; // Cho phép cuộn dọc mượt mà bên trong modal
+        }
+        if (curr === topModal) break;
+        curr = curr.parentElement;
+    }
+
+    // Nếu con trỏ chuột nằm trên topModal (kể cả vùng viền hoặc backdrop) mà modal cuộn được
+    if (canElementScrollY(topModal, e.deltaY)) {
+        return; // Cho phép cuộn modal
+    }
+
+    // Đã chạm kịch trần / kịch đáy: chặn để không cuộn lan ra ngoài trang nền
+    e.preventDefault();
+}, { passive: false });
+
+// 4. Click ra ngoài vùng hộp thoại (backdrop) thì đóng modal
+document.addEventListener('click', function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains('modal') && e.target.classList.contains('show')) {
+        const modalInstance = bootstrap.Modal.getInstance(e.target);
+        if (modalInstance) {
+            modalInstance.hide();
+        } else {
+            const closeBtn = e.target.querySelector('[data-bs-dismiss="modal"], .btn-close');
+            if (closeBtn) closeBtn.click();
+        }
+    }
+});
+
+// 5. Phím tắt ESC (đóng modal) và ENTER (Lưu / OK / Xác nhận)
+document.addEventListener('keydown', function (e) {
+    const openModals = Array.from(document.querySelectorAll('.modal.show'));
+    if (openModals.length === 0) return;
+
+    const topModal = openModals[openModals.length - 1];
+
+    // PHÍM ESC: Đóng modal đang mở trên cùng
+    if (e.key === 'Escape' || e.keyCode === 27) {
+        e.preventDefault();
+        const modalInstance = bootstrap.Modal.getInstance(topModal);
+        if (modalInstance) {
+            modalInstance.hide();
+        } else {
+            const closeBtn = topModal.querySelector('[data-bs-dismiss="modal"], .btn-close');
+            if (closeBtn) closeBtn.click();
+        }
+        return;
+    }
+
+    // PHÍM ENTER: Kích hoạt nút Lưu / OK / Xác nhận trong modal
+    if (e.key === 'Enter' || e.keyCode === 13) {
+        // Cho phép xuống dòng nếu đang gõ trong textarea
+        if (e.target && e.target.tagName === 'TEXTAREA') {
+            return;
+        }
+
+        // Cho phép kích hoạt nút đang được focus trực tiếp
+        if (e.target && (e.target.tagName === 'BUTTON' || (e.target.tagName === 'A' && e.target.getAttribute('role') === 'button'))) {
+            return;
+        }
+
+        // Tìm nút chính trong modal
+        let primaryBtn = topModal.querySelector('button[type="submit"]:not([disabled])');
+
+        // Tìm trong footer: ưu tiên các nút có chữ Lưu, Xác nhận, Đồng ý, OK
+        if (!primaryBtn) {
+            const footerBtns = Array.from(topModal.querySelectorAll('.modal-footer button:not([disabled]):not([data-bs-dismiss="modal"]):not(.btn-secondary)'));
+            if (footerBtns.length > 0) {
+                primaryBtn = footerBtns.find(b => {
+                    const txt = (b.textContent || '').toLowerCase().trim();
+                    return txt.includes('lưu') || txt.includes('xác nhận') || txt.includes('đồng ý') || txt.includes('ok') || txt.includes('thêm') || txt.includes('hoàn tất');
+                }) || footerBtns[footerBtns.length - 1];
+            }
+        }
+
+        // Tìm các nút btn-primary / btn-success trong modal nếu footer không có
+        if (!primaryBtn) {
+            const actionBtns = Array.from(topModal.querySelectorAll('button.btn-primary:not([disabled]):not([data-bs-dismiss="modal"]), button.btn-success:not([disabled]):not([data-bs-dismiss="modal"])'));
+            if (actionBtns.length > 0) {
+                primaryBtn = actionBtns[actionBtns.length - 1];
+            }
+        }
+
+        if (primaryBtn) {
+            e.preventDefault();
+            primaryBtn.click();
+        }
+    }
 });
 
 // ── Loading Spinner ───────────────────────────────────────────────────────────
@@ -1738,21 +2023,31 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
             <div class="card-body p-2">
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <span class="small fw-bold text-secondary text-nowrap"><i class="bi bi-plus-circle me-1"></i>Thêm hàng:</span>
-                    <select id="detail-add-prod-select" class="form-select form-select-sm" style="flex: 2; min-width: 220px;" onchange="onDetailSelectProduct(this)">
-                        <option value="">-- Chọn mặt hàng muốn thêm --</option>
-                        ${allProducts.map(p => `
-                            <option value="${escapeHtml(p.ma_hang)}" data-ten="${escapeHtml(p.ten_hang)}" data-dvt="${escapeHtml(p.don_vi_tinh || 'Cái')}" data-gianhap="${p.gia_nhap || 0}" data-giaban="${p.gia_ban || 0}" data-ton="${p.ton_kho || 0}">
-                                [${escapeHtml(p.ma_hang)}] ${escapeHtml(p.ten_hang)} (Tồn: ${p.ton_kho || 0})
-                            </option>
-                        `).join('')}
-                    </select>
-                    <div style="width: 90px;">
+                    <div class="position-relative" style="flex: 2; min-width: 250px;">
+                        <div class="input-group input-group-sm">
+                            <input type="text" class="form-control form-control-sm" id="detail-add-prod-input"
+                                placeholder="Gõ mã hoặc tên hàng..."
+                                autocomplete="off"
+                                onfocus="onDetailProductInputFocus(this)"
+                                onkeydown="onDetailProductInputKeydown(event)"
+                                oninput="onDetailProductSearchInput(this)">
+                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearDetailAddProduct()" title="Xóa chọn">
+                                <i class="bi bi-x"></i>
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm btn-toggle-detail-prod-dd" type="button" onclick="toggleDetailProductDropdown(event)" title="Chọn hàng hóa từ danh sách">
+                                <i class="bi bi-chevron-down"></i>
+                            </button>
+                        </div>
+                        <input type="hidden" id="detail-add-prod-ma" value="">
+                        <div id="detail-add-prod-sug" class="autocomplete-dropdown d-none shadow" style="max-height: 380px; width: 100%; z-index: 1070; position: absolute; left: 0; top: 100%;"></div>
+                    </div>
+                    <div style="width: 85px;">
                         <input type="number" id="detail-add-sl" min="1" value="1" class="form-control form-control-sm text-center" placeholder="SL">
                     </div>
                     <div style="width: 140px;">
                         <input type="text" inputmode="numeric" autocomplete="off" id="detail-add-gia" value="0" class="form-control form-control-sm text-end" placeholder="Đơn giá">
                     </div>
-                    <button type="button" class="btn btn-primary btn-sm px-3" onclick="submitAddProductToReceiptDetail()">
+                    <button type="button" class="btn btn-primary btn-sm px-3 text-nowrap" onclick="submitAddProductToReceiptDetail()">
                         <i class="bi bi-plus-lg me-1"></i>Thêm
                     </button>
                 </div>
@@ -2006,34 +2301,173 @@ function removeReceiptDetailRow(btn) {
 }
 
 /**
- * Khi người dùng chọn mặt hàng trong dropdown "Thêm hàng"
+ * ── Autocomplete Thêm hàng trong Modal Chi tiết phiếu ─────────
  */
-function onDetailSelectProduct(selectEl) {
-    const opt = selectEl.options[selectEl.selectedIndex];
-    if (!opt || !opt.value) return;
+function filterDetailProducts(query) {
+    const list = window.allReceiptProductsCache || [];
+    if (!list.length) return [];
+    if (!query) return list.slice(0, 50);
+    const matcher = window.matchSearchKeywords || ((txt, q) => (txt || '').toLowerCase().includes((q || '').toLowerCase()));
+    return list.filter(p => {
+        const text = `${p.ma_hang || ''} ${p.ten_hang || ''} ${p.danh_muc || ''}`;
+        return matcher(text, query);
+    }).slice(0, 50);
+}
+
+function renderDetailProductSuggestions(matches) {
+    const box = document.getElementById('detail-add-prod-sug');
+    if (!box) return;
+    if (!matches || !matches.length) {
+        box.innerHTML = `<div class="p-3 text-muted small text-center"><i class="bi bi-inbox me-1"></i>Không tìm thấy hàng khớp</div>`;
+        box.classList.remove('d-none');
+        return;
+    }
     const isXuat = window.currentReceiptDetail?.type === 'xuat';
-    const gia = isXuat ? (parseFloat(opt.dataset.giaban) || 0) : (parseFloat(opt.dataset.gianhap) || 0);
+    box.innerHTML = matches.map(p => {
+        const gia = isXuat ? (p.gia_ban || 0) : (p.gia_nhap || 0);
+        return `
+            <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectDetailProduct('${escapeHtml(p.ma_hang)}')">
+                <div class="d-flex align-items-start justify-content-between gap-2">
+                    <div class="d-flex align-items-start gap-2 flex-grow-1" style="min-width: 0;">
+                        <span class="badge bg-primary bg-opacity-10 text-primary font-monospace flex-shrink-0 mt-1">${escapeHtml(p.ma_hang)}</span>
+                        <span class="fw-semibold small text-dark" style="white-space: normal; word-break: break-word; line-height: 1.35;">${escapeHtml(p.ten_hang)}</span>
+                    </div>
+                    <span class="${isXuat ? 'text-danger' : 'text-success'} fw-bold small flex-shrink-0 text-nowrap ms-2">${formatVND(gia)}</span>
+                </div>
+                <div class="text-muted small mt-1 d-flex justify-content-between align-items-center" style="font-size: 0.75rem;">
+                    <span>${p.danh_muc ? `<span class="badge bg-light text-dark border me-1">${escapeHtml(p.danh_muc)}</span>` : ''} ĐVT: ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
+                    <span>Tồn hiện tại: <strong class="text-dark">${formatNumber(p.ton_kho)}</strong></span>
+                </div>
+            </div>
+        `;
+    }).join('');
+    box.classList.remove('d-none');
+}
+
+let _detailProdDebounceTimer = null;
+function onDetailProductSearchInput(input) {
+    const maEl = document.getElementById('detail-add-prod-ma');
+    if (maEl) maEl.value = '';
+    clearTimeout(_detailProdDebounceTimer);
+    _detailProdDebounceTimer = setTimeout(() => {
+        const query = (input?.value || '').trim();
+        const matches = filterDetailProducts(query);
+        renderDetailProductSuggestions(matches);
+    }, 150);
+}
+
+function onDetailProductInputFocus(input) {
+    const query = (input?.value || '').trim();
+    const matches = filterDetailProducts(query);
+    renderDetailProductSuggestions(matches);
+}
+
+function onDetailProductInputKeydown(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const query = e.target.value.trim().toLowerCase();
+        if (!query) return;
+        const list = window.allReceiptProductsCache || [];
+        let match = list.find(p => (p.ma_hang || '').toLowerCase() === query);
+        if (!match) {
+            match = list.find(p => (p.ma_hang || '').toLowerCase().includes(query) || (p.ten_hang || '').toLowerCase().includes(query));
+        }
+        if (match) {
+            selectDetailProduct(match.ma_hang);
+        }
+    }
+}
+
+function toggleDetailProductDropdown(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    const box = document.getElementById('detail-add-prod-sug');
+    if (!box) return;
+    if (!box.classList.contains('d-none')) {
+        box.classList.add('d-none');
+    } else {
+        const input = document.getElementById('detail-add-prod-input');
+        const query = (input?.value || '').trim();
+        const matches = filterDetailProducts(query);
+        renderDetailProductSuggestions(matches);
+        if (input) input.focus();
+    }
+}
+
+function selectDetailProduct(ma_hang) {
+    const list = window.allReceiptProductsCache || [];
+    const p = list.find(x => x.ma_hang === ma_hang);
+    if (!p) return;
+
+    const input = document.getElementById('detail-add-prod-input');
+    if (input) {
+        input.value = `${p.ma_hang} - ${p.ten_hang}`;
+        input.title = `${p.ma_hang} - ${p.ten_hang}`;
+    }
+    const maEl = document.getElementById('detail-add-prod-ma');
+    if (maEl) maEl.value = p.ma_hang;
+    document.getElementById('detail-add-prod-sug')?.classList.add('d-none');
+
+    const isXuat = window.currentReceiptDetail?.type === 'xuat';
+    const gia = isXuat ? (parseFloat(p.gia_ban) || 0) : (parseFloat(p.gia_nhap) || 0);
+
+    const giaInput = document.getElementById('detail-add-gia');
+    if (giaInput) giaInput.value = gia;
 
     const slInput = document.getElementById('detail-add-sl');
-    const giaInput = document.getElementById('detail-add-gia');
-    if (slInput) slInput.value = 1;
-    if (giaInput) giaInput.value = gia;
+    if (slInput) {
+        slInput.focus();
+        slInput.select();
+    }
 }
+
+function clearDetailAddProduct() {
+    const input = document.getElementById('detail-add-prod-input');
+    if (input) input.value = '';
+    const maEl = document.getElementById('detail-add-prod-ma');
+    if (maEl) maEl.value = '';
+    document.getElementById('detail-add-prod-sug')?.classList.add('d-none');
+    const giaInput = document.getElementById('detail-add-gia');
+    if (giaInput) giaInput.value = 0;
+}
+
+// Đóng dropdown autocomplete chi tiết khi click ra ngoài
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#detail-add-prod-sug') && !e.target.closest('#detail-add-prod-input') && !e.target.closest('.btn-toggle-detail-prod-dd')) {
+        document.getElementById('detail-add-prod-sug')?.classList.add('d-none');
+    }
+});
 
 /**
  * Thêm mặt hàng được chọn vào bảng chi tiết
  */
 function submitAddProductToReceiptDetail() {
-    const selectEl = document.getElementById('detail-add-prod-select');
-    if (!selectEl || !selectEl.value) {
+    let ma = document.getElementById('detail-add-prod-ma')?.value || '';
+    const inputVal = (document.getElementById('detail-add-prod-input')?.value || '').trim();
+    const list = window.allReceiptProductsCache || [];
+
+    // Nếu chưa chọn từ dropdown mà gõ trực tiếp tên/mã
+    if (!ma && inputVal) {
+        const q = inputVal.toLowerCase();
+        let match = list.find(p => (p.ma_hang || '').toLowerCase() === q);
+        if (!match) {
+            match = list.find(p => (p.ma_hang || '').toLowerCase().includes(q) || (p.ten_hang || '').toLowerCase().includes(q));
+        }
+        if (match) {
+            ma = match.ma_hang;
+        }
+    }
+
+    if (!ma) {
         showToast('Vui lòng chọn một mặt hàng để thêm', 'warning');
         return;
     }
 
-    const opt = selectEl.options[selectEl.selectedIndex];
-    const ma = opt.value;
-    const ten = opt.dataset.ten || ma;
-    const dvt = opt.dataset.dvt || 'Cái';
+    const p = list.find(x => x.ma_hang === ma);
+    const ten = p?.ten_hang || ma;
+    const dvt = p?.don_vi_tinh || 'Cái';
 
     const slInput = document.getElementById('detail-add-sl');
     const giaInput = document.getElementById('detail-add-gia');
@@ -2090,9 +2524,11 @@ function submitAddProductToReceiptDetail() {
     }
 
     // Reset form thêm hàng
-    selectEl.value = '';
+    clearDetailAddProduct();
     if (slInput) slInput.value = 1;
     if (giaInput) giaInput.value = 0;
+    const input = document.getElementById('detail-add-prod-input');
+    if (input) input.focus();
 }
 
 /**
@@ -3912,3 +4348,243 @@ async function deleteUser(username) {
     }
 }
 window.deleteUser = deleteUser;
+
+
+// ── Quản Lý Nhật Ký Hoạt Động & Sửa Lỗi (Activity & Audit Logs) ───────────
+
+let activityLogModalInstance = null;
+let logSearchDebounceTimer = null;
+let currentActivityLogsData = [];
+
+async function openActivityLogModal() {
+    try {
+        const modalEl = document.getElementById('activity-log-modal');
+        if (!modalEl) return;
+
+        if (!activityLogModalInstance) {
+            activityLogModalInstance = new bootstrap.Modal(modalEl);
+        }
+
+        // Kiểm tra quyền Admin để hiển thị nút xóa log
+        try {
+            const meRes = await fetch('/api/auth/me');
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                const clearBtn = document.getElementById('btn-clear-activity-logs');
+                if (clearBtn) {
+                    if (meData.is_admin) {
+                        clearBtn.classList.remove('d-none');
+                        clearBtn.classList.add('d-flex');
+                    } else {
+                        clearBtn.classList.add('d-none');
+                        clearBtn.classList.remove('d-flex');
+                    }
+                }
+            }
+        } catch (e) {}
+
+        activityLogModalInstance.show();
+        await fetchActivityLogs();
+    } catch (err) {
+        console.error('Lỗi khi mở modal nhật ký:', err);
+    }
+}
+window.openActivityLogModal = openActivityLogModal;
+
+function handleLogSearchInput(event) {
+    if (logSearchDebounceTimer) clearTimeout(logSearchDebounceTimer);
+    logSearchDebounceTimer = setTimeout(() => {
+        fetchActivityLogs();
+    }, 350);
+}
+window.handleLogSearchInput = handleLogSearchInput;
+
+async function fetchActivityLogs() {
+    const container = document.getElementById('log-container');
+    const statusSummary = document.getElementById('log-status-summary');
+    const refreshBtn = document.getElementById('btn-refresh-logs');
+    const sizeBadge = document.getElementById('log-file-size-badge');
+
+    if (!container) return;
+
+    if (refreshBtn) {
+        refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang tải...';
+        refreshBtn.disabled = true;
+    }
+
+    const search = (document.getElementById('log-search-input')?.value || '').trim();
+    const level = document.getElementById('log-level-filter')?.value || '';
+    const lines = document.getElementById('log-lines-limit')?.value || '150';
+
+    try {
+        const url = `/api/system/activity-logs?lines=${encodeURIComponent(lines)}&search=${encodeURIComponent(search)}&level=${encodeURIComponent(level)}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+            throw new Error(`Mã lỗi HTTP: ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (!data.success) {
+            throw new Error(data.detail || 'Không thể tải nhật ký');
+        }
+
+        currentActivityLogsData = data.logs || [];
+
+        if (sizeBadge) {
+            sizeBadge.textContent = `${data.file_size} | logs/activity.log`;
+        }
+
+        if (statusSummary) {
+            statusSummary.innerHTML = `Hiển thị <strong>${currentActivityLogsData.length}</strong> bản ghi gần nhất ${search ? `(Tìm kiếm: "${escapeHtml(search)}")` : ''} | Kích thước file: <strong>${data.file_size}</strong>`;
+        }
+
+        renderActivityLogs();
+    } catch (err) {
+        console.error('Lỗi khi tải nhật ký hoạt động:', err);
+        container.innerHTML = `
+            <div class="alert alert-danger py-3 px-4 mb-0 small">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>Không thể tải nhật ký hoạt động: ${escapeHtml(err.message)}
+            </div>
+        `;
+        if (statusSummary) statusSummary.textContent = 'Lỗi tải dữ liệu';
+    } finally {
+        if (refreshBtn) {
+            refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> <span>Làm mới</span>';
+            refreshBtn.disabled = false;
+        }
+    }
+}
+window.fetchActivityLogs = fetchActivityLogs;
+
+function renderActivityLogs() {
+    const container = document.getElementById('log-container');
+    if (!container) return;
+
+    const isCompact = document.getElementById('toggle-compact-log')?.checked;
+
+    if (!currentActivityLogsData || currentActivityLogsData.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-journal-x fs-2 d-block mb-2 text-secondary opacity-50"></i>
+                Chưa có dữ liệu nhật ký phù hợp với bộ lọc hiện tại.
+            </div>
+        `;
+        return;
+    }
+
+    if (isCompact) {
+        // Giao diện dòng gọn (Console view)
+        const consoleLines = currentActivityLogsData.map(item => {
+            const raw = item.raw || `[${item.timestamp}] [${item.level}] [User: ${item.user} | IP: ${item.ip}] [${item.action}] ${item.message}`;
+            let color = '#22c55e'; // green
+            if (item.level === 'WARNING') color = '#eab308'; // yellow
+            if (item.level === 'ERROR' || item.level === 'CRITICAL') color = '#ef4444'; // red
+            return `<div style="color: ${color}; white-space: pre-wrap; word-break: break-all; margin-bottom: 2px;">${escapeHtml(raw)}</div>`;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="p-3 bg-dark rounded-2 text-light" style="font-family: Consolas, 'Courier New', monospace; font-size: 0.82rem; line-height: 1.45; min-height: 200px;">
+                ${consoleLines}
+            </div>
+        `;
+        return;
+    }
+
+    // Giao diện danh sách thẻ chuyên nghiệp (Card list view)
+    let html = '<div class="d-flex flex-column gap-2">';
+    for (const item of currentActivityLogsData) {
+        let levelBadgeClass = 'bg-primary-subtle text-primary border border-primary-subtle';
+        let levelIcon = 'bi-info-circle-fill';
+
+        if (item.level === 'WARNING') {
+            levelBadgeClass = 'bg-warning-subtle text-dark border border-warning-subtle';
+            levelIcon = 'bi-exclamation-triangle-fill';
+        } else if (item.level === 'ERROR' || item.level === 'CRITICAL') {
+            levelBadgeClass = 'bg-danger-subtle text-danger border border-danger-subtle';
+            levelIcon = 'bi-x-circle-fill';
+        }
+
+        const hasTraceback = item.message && item.message.includes('Traceback');
+        let displayMessage = item.message || '';
+        let tracebackHtml = '';
+
+        if (hasTraceback) {
+            const parts = displayMessage.split('\nTraceback:');
+            displayMessage = parts[0];
+            const tbContent = parts[1] || '';
+            tracebackHtml = `
+                <details class="mt-2">
+                    <summary class="text-danger small fw-bold" style="cursor: pointer;">
+                        <i class="bi bi-bug me-1"></i>Chi tiết lỗi máy chủ (Traceback kỹ thuật)
+                    </summary>
+                    <pre class="bg-dark text-white p-2 rounded small mt-1 mb-0" style="font-size: 0.78rem; overflow-x: auto; max-height: 260px;"><code>${escapeHtml(tbContent.trim())}</code></pre>
+                </details>
+            `;
+        }
+
+        html += `
+            <div class="border rounded-2 p-2 px-3 bg-white hover-shadow-sm d-flex flex-column gap-1" style="border-left: 4px solid ${item.level === 'ERROR' ? '#dc3545' : (item.level === 'WARNING' ? '#ffc107' : '#0d6efd')} !important;">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 small">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge ${levelBadgeClass} py-1 px-2 d-flex align-items-center gap-1 font-monospace" style="font-size: 0.75rem;">
+                            <i class="bi ${levelIcon}"></i> ${escapeHtml(item.level)}
+                        </span>
+                        <span class="badge bg-secondary-subtle text-secondary py-1 px-2 font-monospace" style="font-size: 0.75rem;">
+                            <i class="bi bi-clock me-1"></i>${escapeHtml(item.timestamp || '-')}
+                        </span>
+                        <span class="badge bg-info-subtle text-dark py-1 px-2" style="font-size: 0.75rem;">
+                            <i class="bi bi-person me-1"></i>${escapeHtml(item.user || '-')}
+                        </span>
+                        <span class="text-muted small">
+                            <i class="bi bi-hdd-network me-1"></i>IP: ${escapeHtml(item.ip || '-')}
+                        </span>
+                    </div>
+                    <span class="badge bg-light text-dark border py-1 px-2 fw-semibold" style="font-size: 0.75rem;">
+                        ${escapeHtml(item.action || 'HOẠT ĐỘNG')}
+                    </span>
+                </div>
+                <div class="text-dark small mt-1" style="line-height: 1.45; word-break: break-word;">
+                    ${escapeHtml(displayMessage)}
+                    ${tracebackHtml}
+                </div>
+            </div>
+        `;
+    }
+    html += '</div>';
+
+    container.innerHTML = html;
+}
+
+function toggleCompactLogView(checkbox) {
+    renderActivityLogs();
+}
+window.toggleCompactLogView = toggleCompactLogView;
+
+function downloadActivityLogFile() {
+    window.open('/api/system/activity-logs/download', '_blank');
+}
+window.downloadActivityLogFile = downloadActivityLogFile;
+
+async function confirmClearActivityLogs() {
+    if (!confirm('BẠN CÓ CHẮC CHẮN MUỐN XÓA TOÀN BỘ NHẬT KÝ HOẠT ĐỘNG?\\n\\nThao tác này sẽ làm trắng file log activity.log. Dữ liệu lịch sử cũ sẽ không thể khôi phục.')) {
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/system/activity-logs/clear', {
+            method: 'POST'
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Đã làm mới toàn bộ file nhật ký hoạt động thành công!', 'success');
+            await fetchActivityLogs();
+        } else {
+            showToast(data.detail || 'Không thể xóa nhật ký', 'error');
+        }
+    } catch (err) {
+        console.error('Lỗi khi xóa nhật ký:', err);
+        showToast('Lỗi khi gửi yêu cầu xóa nhật ký', 'error');
+    }
+}
+window.confirmClearActivityLogs = confirmClearActivityLogs;
+

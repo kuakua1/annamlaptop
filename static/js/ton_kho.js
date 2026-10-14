@@ -98,7 +98,9 @@ function renderStockTable() {
     const danhMuc = document.getElementById('filter-danh-muc')?.value || '';
     const stockStatus = document.getElementById('filter-stock-status')?.value || 'in_stock';
 
-    const matcher = window.matchSearchKeywords || matchSearchKeywords || ((txt, q) => (txt || '').toLowerCase().includes((q || '').toLowerCase()));
+    const matchFn = (search && window.createSearchMatcher) 
+        ? window.createSearchMatcher(search) 
+        : (txt => !search || (txt || '').toLowerCase().includes(search.toLowerCase()));
 
     let filtered = allProducts.filter(p => {
         const ton = parseInt(p.ton_kho) || 0;
@@ -108,7 +110,7 @@ function renderStockTable() {
         if (danhMuc && p.danh_muc !== danhMuc) return false;
         if (search) {
             const text = `${p.ma_hang || ''} ${p.ten_hang || ''} ${p.danh_muc || ''} ${p.ghi_chu || ''}`;
-            if (!matcher(text, search)) return false;
+            if (!matchFn(text)) return false;
         }
         return true;
     });

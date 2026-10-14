@@ -457,7 +457,7 @@ class SheetsService:
             raise RuntimeError(f"Lỗi khi xóa dòng {row_num} trong sheet {sheet_name}: {str(e)}")
 
     def delete_receipt_rows(self, sheet_name: str, so_phieu: str) -> int:
-        """Xóa tất cả các dòng thuộc một số phiếu (cột 2) từ dưới lên trên."""
+        """Xóa tất cả các dòng thuộc một số phiếu (cột 2) từ dưới lên trên, gom nhóm liên tiếp để giảm request Google API."""
         try:
             ws = self._sheet(sheet_name)
             all_values = ws.get_all_values()
@@ -467,8 +467,25 @@ class SheetsService:
                     continue
                 if len(row) > 1 and str(row[1]).strip() == str(so_phieu).strip():
                     rows_to_delete.append(i + 1)
-            for r_num in sorted(rows_to_delete, reverse=True):
-                ws.delete_rows(r_num)
+
+            if not rows_to_delete:
+                return 0
+
+            # Gom các dòng liên tiếp thành khoảng (start, end)
+            ranges = []
+            for r in sorted(rows_to_delete):
+                if ranges and ranges[-1][1] == r - 1:
+                    ranges[-1] = (ranges[-1][0], r)
+                else:
+                    ranges.append((r, r))
+
+            # Xóa từng khoảng từ dưới lên trên (giảm số lần gọi API từ N xuống số khoảng)
+            for start_r, end_r in sorted(ranges, reverse=True):
+                if start_r == end_r:
+                    ws.delete_rows(start_r)
+                else:
+                    ws.delete_rows(start_r, end_r)
+
             self.invalidate_records_cache(sheet_name)
             return len(rows_to_delete)
         except Exception as e:

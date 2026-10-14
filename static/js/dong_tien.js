@@ -128,14 +128,17 @@ function clearSearch() {
 
 function filterAndRenderSoQuy() {
     const loaiQuy = document.getElementById('filter-loai-quy')?.value || '';
-    const q = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+    const q = (document.getElementById('search-input')?.value || '').trim();
+    const matchFn = (q && window.createSearchMatcher) 
+        ? window.createSearchMatcher(q) 
+        : (txt => !q || (txt || '').toLowerCase().includes(q.toLowerCase()));
 
     filteredTransactions = allTransactions.filter(item => {
         if (currentLoaiPhieuFilter && item.loai_phieu !== currentLoaiPhieuFilter) return false;
         if (loaiQuy && item.loai_quy !== loaiQuy) return false;
         if (q) {
-            const str = `${item.ma_phieu} ${item.doi_tuong} ${item.dien_thoai} ${item.phieu_lien_quan} ${item.ghi_chu} ${item.so_tien}`.toLowerCase();
-            if (!str.includes(q)) return false;
+            const str = `${item.ma_phieu || ''} ${item.doi_tuong || ''} ${item.dien_thoai || ''} ${item.phieu_lien_quan || ''} ${item.ghi_chu || ''} ${item.so_tien || ''}`;
+            if (!matchFn(str)) return false;
         }
         return true;
     });

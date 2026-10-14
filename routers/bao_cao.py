@@ -4,7 +4,8 @@ from fastapi.templating import Jinja2Templates
 from datetime import date, timedelta
 
 from routers.auth import get_current_user, require_login
-from services.db_service import db_manager
+from services.db_service import db_manager, _safe_float, _safe_int
+from services.sheets_service import parse_batches_str
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -26,30 +27,6 @@ def _month_start() -> str:
 
 def _year_start() -> str:
     return date.today().replace(month=1, day=1).isoformat()
-
-
-def _safe_float(val) -> float:
-    if val is None or val == "":
-        return 0.0
-    if isinstance(val, (int, float)):
-        return float(val)
-    s = str(val).replace("đ", "").replace("Đ", "").replace(",", "").replace(".", "").strip()
-    try:
-        return float(s)
-    except Exception:
-        return 0.0
-
-
-def _safe_int(val) -> int:
-    if val is None or val == "":
-        return 0
-    if isinstance(val, (int, float)):
-        return int(val)
-    s = str(val).replace(",", "").replace(".", "").strip()
-    try:
-        return int(float(s))
-    except Exception:
-        return 0
 
 
 @router.get("/bao-cao", response_class=HTMLResponse)
@@ -87,8 +64,29 @@ async def tong_quan(
         else:
             from_date = to_date = today
 
-        xuat_records = db_manager.get_all("XuatHang")
-        nhap_records = db_manager.get_all("NhapHang")
+        where_xuat = []
+        params_xuat = []
+        if from_date:
+            where_xuat.append("ngay_xuat >= ?")
+            params_xuat.append(from_date)
+        if to_date:
+            where_xuat.append("ngay_xuat <= ?")
+            params_xuat.append(to_date)
+        clause_xuat = " AND ".join(where_xuat) if where_xuat else ""
+
+        xuat_records = db_manager.get_all("XuatHang", where_clause=clause_xuat, params=tuple(params_xuat))
+
+        where_nhap = []
+        params_nhap = []
+        if from_date:
+            where_nhap.append("ngay_nhap >= ?")
+            params_nhap.append(from_date)
+        if to_date:
+            where_nhap.append("ngay_nhap <= ?")
+            params_nhap.append(to_date)
+        clause_nhap = " AND ".join(where_nhap) if where_nhap else ""
+
+        nhap_records = db_manager.get_all("NhapHang", where_clause=clause_nhap, params=tuple(params_nhap))
         hang_records = db_manager.get_all("HangHoa")
         gia_nhap_map = {str(r.get("ma_hang", "")): _safe_float(r.get("gia_nhap", 0)) for r in hang_records}
 
@@ -98,10 +96,6 @@ async def tong_quan(
         chi_tiet_ban_hang = []
         for rec in xuat_records:
             ngay = str(rec.get("ngay_xuat", ""))
-            if from_date and ngay < from_date:
-                continue
-            if to_date and ngay > to_date:
-                continue
             rev = _safe_float(rec.get("thanh_tien", 0))
             sl = _safe_int(rec.get("so_luong", 0))
             ma = str(rec.get("ma_hang", ""))
@@ -178,7 +172,9 @@ async def doanh_thu_chart(request: Request, month: str = "", user: str = Depends
             dates = [(today - timedelta(days=29 - i)).isoformat() for i in range(30)]
 
         date_set = set(dates)
-        xuat_records = db_manager.get_all("XuatHang")
+        min_date = min(dates) if dates else ""
+        max_date = max(dates) if dates else ""
+        xuat_records = db_manager.get_all("XuatHang", where_clause="ngay_xuat >= ? AND ngay_xuat <= ?", params=(min_date, max_date)) if (min_date and max_date) else db_manager.get_all("XuatHang")
 
         revenue_by_date: dict[str, float] = {d: 0.0 for d in dates}
         cost_by_date: dict[str, float] = {d: 0.0 for d in dates}
@@ -370,7 +366,13 @@ async def nhap_xuat_ton_report(
             if luong_dau < 0:
                 luong_dau = 0
 
+            chi_tiet_lo = str(h.get("chi_tiet_lo", "") or "")
             don_gia = gia_nhap
+            if to_date and chi_tiet_lo:
+                batches = parse_batches_str(chi_tiet_lo, current_ton, gia_nhap)
+                if batches:
+                    don_gia = batches[0]["gia_nhap"]
+
             if don_gia <= 0 and luong_nhap > 0 and tien_nhap > 0:
                 don_gia = round(tien_nhap / luong_nhap)
 
@@ -505,3 +507,119 @@ async def dashboard_stats(request: Request, month: str = "", user: str = Depends
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/bao-cao/hang-hoa-transactions")
+async def get_hang_hoa_transactions(
+    request: Request,
+    ma_hang: str,
+    from_date: str = "",
+    to_date: str = "",
+    user: str = Depends(require_login)
+):
+    """Lấy danh sách tất cả các phiếu nhập / xuất của một mặt hàng cụ thể trong khoảng thời gian lọc."""
+    try:
+        ma_clean = ma_hang.strip()
+        hang = db_manager.get_hang_hoa_by_ma(ma_clean)
+        if not hang:
+            all_h = db_manager.get_all("HangHoa")
+            for h in all_h:
+                if str(h.get("ma_hang", "")).strip().lower() == ma_clean.lower():
+                    hang = h
+                    break
+
+        # Map tên đối tác từ DoiTuong, NhaCungCap, KhachHang
+        dt_records = db_manager.get_all("DoiTuong")
+        doi_tac_map = {str(r.get("id", "")).strip(): str(r.get("ten", "")).strip() for r in dt_records}
+        for r in db_manager.get_all("NhaCungCap"):
+            k = str(r.get("id", "")).strip()
+            if k and k not in doi_tac_map:
+                doi_tac_map[k] = str(r.get("ten_ncc", "")).strip()
+        for r in db_manager.get_all("KhachHang"):
+            k = str(r.get("id", "")).strip()
+            if k and k not in doi_tac_map:
+                doi_tac_map[k] = str(r.get("ten_kh", "")).strip()
+
+        nhap_records = db_manager.get_all("NhapHang")
+        xuat_records = db_manager.get_all("XuatHang")
+
+        transactions = []
+
+        # 1. Nhập hàng
+        for r in nhap_records:
+            if str(r.get("ma_hang", "")).strip().lower() == ma_clean.lower():
+                ngay = str(r.get("ngay_nhap", "")).strip()
+                if from_date and ngay < from_date:
+                    continue
+                if to_date and ngay > to_date:
+                    continue
+                sl = _safe_int(r.get("so_luong", 0))
+                don_gia = _safe_float(r.get("gia_nhap", 0))
+                thanh_tien = _safe_float(r.get("thanh_tien", 0))
+                ncc_id = str(r.get("nha_cung_cap_id", "")).strip()
+                transactions.append({
+                    "type": "NHAP",
+                    "type_label": "Nhập kho",
+                    "so_phieu": str(r.get("so_phieu", "")).strip(),
+                    "ngay": ngay,
+                    "so_luong": sl,
+                    "don_gia": don_gia,
+                    "thanh_tien": thanh_tien,
+                    "doi_tac_id": ncc_id,
+                    "doi_tac_ten": doi_tac_map.get(ncc_id, ncc_id) or "Nhà cung cấp",
+                    "ghi_chu": str(r.get("ghi_chu", "")).strip()
+                })
+
+        # 2. Xuất hàng
+        for r in xuat_records:
+            if str(r.get("ma_hang", "")).strip().lower() == ma_clean.lower():
+                ngay = str(r.get("ngay_xuat", "")).strip()
+                if from_date and ngay < from_date:
+                    continue
+                if to_date and ngay > to_date:
+                    continue
+                sl = _safe_int(r.get("so_luong", 0))
+                don_gia = _safe_float(r.get("gia_ban", 0))
+                thanh_tien = _safe_float(r.get("thanh_tien", 0))
+                kh_id = str(r.get("khach_hang_id", "")).strip()
+                transactions.append({
+                    "type": "XUAT",
+                    "type_label": "Xuất kho",
+                    "so_phieu": str(r.get("so_phieu", "")).strip(),
+                    "ngay": ngay,
+                    "so_luong": sl,
+                    "don_gia": don_gia,
+                    "thanh_tien": thanh_tien,
+                    "doi_tac_id": kh_id,
+                    "doi_tac_ten": doi_tac_map.get(kh_id, kh_id) or "Khách hàng",
+                    "ghi_chu": str(r.get("ghi_chu", "")).strip()
+                })
+
+        # Sắp xếp mới nhất lên đầu (theo ngày, nếu trùng ngày thì Nhập sau Xuất để hiển thị trực quan)
+        transactions.sort(key=lambda x: (x["ngay"], 1 if x["type"] == "NHAP" else 0), reverse=True)
+
+        tong_sl_nhap = sum(t["so_luong"] for t in transactions if t["type"] == "NHAP")
+        tong_tien_nhap = sum(t["thanh_tien"] for t in transactions if t["type"] == "NHAP")
+        tong_sl_xuat = sum(t["so_luong"] for t in transactions if t["type"] == "XUAT")
+        tong_tien_xuat = sum(t["thanh_tien"] for t in transactions if t["type"] == "XUAT")
+
+        return {
+            "success": True,
+            "ma_hang": ma_clean,
+            "ten_hang": hang.get("ten_hang", "") if hang else "",
+            "don_vi_tinh": hang.get("don_vi_tinh", "Cái") if hang else "Cái",
+            "danh_muc": hang.get("danh_muc", "") if hang else "",
+            "from_date": from_date,
+            "to_date": to_date,
+            "transactions": transactions,
+            "summary": {
+                "tong_sl_nhap": tong_sl_nhap,
+                "tong_tien_nhap": tong_tien_nhap,
+                "tong_sl_xuat": tong_sl_xuat,
+                "tong_tien_xuat": tong_tien_xuat,
+                "so_giao_dich": len(transactions)
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

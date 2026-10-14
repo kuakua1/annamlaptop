@@ -137,7 +137,7 @@ function renderTable() {
     }
 
     if (!filtered.length) {
-        tableBody.innerHTML = '<tr><td colspan="13" class="text-center text-muted py-5">Không có mặt hàng nào phù hợp với điều kiện lọc</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="14" class="text-center text-muted py-5">Không có mặt hàng nào phù hợp với điều kiện lọc</td></tr>';
         resetFooterTotals();
         return;
     }
@@ -157,9 +157,11 @@ function renderTable() {
         return `
             <tr>
                 <td class="text-center text-muted small">${i + 1}</td>
-                <td class="text-center font-monospace small"><span class="badge bg-light text-dark border badge-sku">${escapeHtml(p.ma_hang)}</span></td>
+                <td class="text-center font-monospace small">
+                    <a href="javascript:void(0)" onclick="viewHangHoaTransactions('${escapeHtml(p.ma_hang)}')" class="badge bg-light text-primary border badge-sku text-decoration-none" title="Xem biến động nhập/xuất">${escapeHtml(p.ma_hang)}</a>
+                </td>
                 <td class="col-ten-hang">
-                    <span class="nxt-ten-hang-text">${escapeHtml(p.ten_hang)}</span>
+                    <span class="nxt-ten-hang-text cursor-pointer" role="button" onclick="viewHangHoaTransactions('${escapeHtml(p.ma_hang)}')" title="Xem biến động nhập/xuất">${escapeHtml(p.ten_hang)}</span>
                     ${p.danh_muc ? `<span class="badge bg-light text-secondary border nxt-badge-cat mt-1">${escapeHtml(p.danh_muc)}</span>` : ''}
                 </td>
                 <td class="text-center small">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
@@ -172,6 +174,11 @@ function renderTable() {
                 <td class="text-end">${p.don_gia > 0 ? formatVNDClean(p.don_gia) : '0'}</td>
                 <td class="text-end text-primary fw-bold">${p.luong_ton > 0 ? formatNumber(p.luong_ton) : '0'}</td>
                 <td class="text-end text-primary fw-bold">${p.tien_ton > 0 ? formatVNDClean(p.tien_ton) : '0'}</td>
+                <td class="text-center">
+                    <button class="btn btn-sm btn-outline-primary py-0 px-2 text-nowrap" style="font-size: 0.78rem;" onclick="viewHangHoaTransactions('${escapeHtml(p.ma_hang)}')" title="Xem chi tiết các phiếu nhập/xuất trong kỳ">
+                        <i class="bi bi-clock-history me-1"></i>Chi tiết
+                    </button>
+                </td>
             </tr>
         `;
     }).join('');
@@ -911,6 +918,198 @@ function initBangNhapXuatTon() {
         }
     } catch (err) {}
 }
+
+// ── Xem chi tiết biến động phiếu nhập/xuất của mặt hàng trong kỳ ───────────
+
+async function viewHangHoaTransactions(ma_hang) {
+    if (!ma_hang) return;
+
+    const tbody = document.getElementById('hh-trans-tbody');
+    const titleEl = document.getElementById('hh-trans-title');
+    const subTitleEl = document.getElementById('hh-trans-subtitle');
+
+    if (titleEl) titleEl.textContent = `Lịch Sử Biến Động Nhập - Xuất: ${ma_hang}`;
+    if (subTitleEl) subTitleEl.textContent = `Đang tải dữ liệu kỳ ${getPeriodDisplayText()}...`;
+
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="10" class="text-center text-muted py-5">
+                    <div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải danh sách phiếu nhập / xuất của mã [${escapeHtml(ma_hang)}]...
+                </td>
+            </tr>
+        `;
+    }
+
+    if (typeof openModal === 'function') {
+        openModal('modal-hanghoa-transactions');
+    }
+
+    try {
+        const url = `/api/bao-cao/hang-hoa-transactions?ma_hang=${encodeURIComponent(ma_hang)}&from_date=${encodeURIComponent(currentFromDate)}&to_date=${encodeURIComponent(currentToDate)}`;
+        const res = await apiRequest(url);
+
+        if (!res.success) {
+            throw new Error(res.detail || 'Không thể lấy dữ liệu biến động');
+        }
+
+        if (titleEl) {
+            titleEl.innerHTML = `<span class="badge bg-warning text-dark me-2">${escapeHtml(res.ma_hang)}</span>${escapeHtml(res.ten_hang)}`;
+        }
+        if (subTitleEl) {
+            subTitleEl.textContent = `Kỳ báo cáo: ${getPeriodDisplayText()} | ĐVT: ${res.don_vi_tinh || 'Cái'}${res.danh_muc ? ' | Danh mục: ' + res.danh_muc : ''}`;
+        }
+
+        const s = res.summary || {};
+        const countEl = document.getElementById('hh-stat-count');
+        const nhapEl = document.getElementById('hh-stat-nhap');
+        const tienNhapEl = document.getElementById('hh-stat-tien-nhap');
+        const xuatEl = document.getElementById('hh-stat-xuat');
+        const tienXuatEl = document.getElementById('hh-stat-tien-xuat');
+        const diffEl = document.getElementById('hh-stat-diff');
+
+        if (countEl) countEl.textContent = `${s.so_giao_dich || 0} phiếu`;
+        if (nhapEl) nhapEl.textContent = formatNumber(s.tong_sl_nhap || 0);
+        if (tienNhapEl) tienNhapEl.textContent = `${formatVNDClean(s.tong_tien_nhap || 0)} đ`;
+        if (xuatEl) xuatEl.textContent = formatNumber(s.tong_sl_xuat || 0);
+        if (tienXuatEl) tienXuatEl.textContent = `${formatVNDClean(s.tong_tien_xuat || 0)} đ`;
+
+        const diff = (s.tong_sl_nhap || 0) - (s.tong_sl_xuat || 0);
+        if (diffEl) {
+            const diffPrefix = diff > 0 ? '+' : '';
+            const diffClass = diff > 0 ? 'text-success' : (diff < 0 ? 'text-danger' : 'text-primary');
+            diffEl.className = `fw-bold fs-6 ${diffClass}`;
+            diffEl.textContent = `${diffPrefix}${formatNumber(diff)}`;
+        }
+
+        const transactions = res.transactions || [];
+        if (!transactions.length) {
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-3 d-block mb-2 text-secondary"></i>
+                            Không có phát sinh giao dịch nhập kho hay xuất kho nào cho mặt hàng này trong kỳ lọc được chọn (${getPeriodDisplayText()}).
+                        </td>
+                    </tr>
+                `;
+            }
+            return;
+        }
+
+        if (tbody) {
+            tbody.innerHTML = transactions.map((t, idx) => {
+                const isNhap = t.type === 'NHAP';
+                const typeBadge = isNhap
+                    ? `<span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1"><i class="bi bi-box-arrow-in-down me-1"></i>Nhập kho</span>`
+                    : `<span class="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1"><i class="bi bi-box-arrow-up-right me-1"></i>Xuất kho</span>`;
+
+                const qtyFormatted = isNhap
+                    ? `<span class="text-success fw-bold font-monospace">+${formatNumber(t.so_luong)}</span>`
+                    : `<span class="text-danger fw-bold font-monospace">-${formatNumber(t.so_luong)}</span>`;
+
+                let displayDate = t.ngay || '-';
+                if (t.ngay && t.ngay.includes('-')) {
+                    const parts = t.ngay.split('-');
+                    if (parts.length === 3) displayDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                }
+
+                return `
+                    <tr>
+                        <td class="text-center text-muted small">${idx + 1}</td>
+                        <td class="text-center font-monospace small">${escapeHtml(displayDate)}</td>
+                        <td class="text-center">${typeBadge}</td>
+                        <td class="text-center">
+                            <a href="javascript:void(0)" onclick="viewReceiptFromHistory('${t.type}', '${escapeHtml(t.so_phieu)}')" class="fw-bold font-monospace text-primary text-decoration-none" title="Xem chi tiết phiếu này">
+                                ${escapeHtml(t.so_phieu)}
+                            </a>
+                        </td>
+                        <td class="text-end">${qtyFormatted}</td>
+                        <td class="text-end font-monospace">${formatVNDClean(t.don_gia)} đ</td>
+                        <td class="text-end font-monospace fw-semibold">${formatVNDClean(t.thanh_tien)} đ</td>
+                        <td>
+                            <span class="d-inline-block text-truncate" style="max-width: 170px;" title="${escapeHtml(t.doi_tac_ten || '')}">
+                                ${escapeHtml(t.doi_tac_ten || '-')}
+                            </span>
+                        </td>
+                        <td class="small text-muted">
+                            <span class="d-inline-block text-truncate" style="max-width: 140px;" title="${escapeHtml(t.ghi_chu || '')}">
+                                ${escapeHtml(t.ghi_chu || '-')}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            <button class="btn btn-sm btn-primary py-1 px-2 text-nowrap" style="font-size: 0.78rem;" onclick="viewReceiptFromHistory('${t.type}', '${escapeHtml(t.so_phieu)}')" title="Xem chi tiết toàn bộ phiếu ${escapeHtml(t.so_phieu)}">
+                                <i class="bi bi-eye me-1"></i>Xem phiếu
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    } catch (e) {
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4">Lỗi: ${escapeHtml(e.message || 'Không thể tải lịch sử biến động')}</td></tr>`;
+        }
+    }
+}
+
+/**
+ * Mở modal xem toàn bộ thông tin chi tiết một phiếu nhập hoặc xuất
+ */
+async function viewReceiptFromHistory(type, so_phieu) {
+    if (!so_phieu) return;
+    const isNhap = (type || '').toUpperCase() === 'NHAP';
+    const apiUrl = isNhap
+        ? `/api/nhap-hang/${encodeURIComponent(so_phieu)}`
+        : `/api/xuat-hang/${encodeURIComponent(so_phieu)}`;
+
+    const modalTitle = document.getElementById('detail-modal-title');
+    if (modalTitle) {
+        modalTitle.textContent = `Chi Tiết Phiếu ${isNhap ? 'Nhập Kho' : 'Xuất Kho'}: ${so_phieu}`;
+    }
+
+    const modalBody = document.getElementById('detail-modal-body');
+    if (modalBody) {
+        modalBody.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border spinner-border-sm text-primary me-2"></div>Đang tải dữ liệu phiếu ${escapeHtml(so_phieu)}...
+            </div>
+        `;
+    }
+
+    if (typeof openModal === 'function') {
+        openModal('detail-modal');
+    }
+
+    try {
+        const res = await apiRequest(apiUrl);
+        if (typeof renderEditableReceiptDetail === 'function') {
+            await renderEditableReceiptDetail(res, isNhap ? 'nhap' : 'xuat', 'detail-modal-body', () => {
+                loadData(currentFromDate, currentToDate, true);
+            });
+        } else {
+            if (modalBody) {
+                modalBody.innerHTML = `
+                    <div class="p-3">
+                        <h6>Số phiếu: ${escapeHtml(res.so_phieu)}</h6>
+                        <p>Ngày: ${escapeHtml(res.ngay_nhap || res.ngay_xuat)}</p>
+                        <p>Tổng tiền: ${formatVNDClean(res.tong_tien)} đ</p>
+                    </div>
+                `;
+            }
+        }
+    } catch (e) {
+        if (modalBody) {
+            modalBody.innerHTML = `<div class="alert alert-danger">Lỗi khi tải chi tiết phiếu: ${escapeHtml(e.message || 'Không tìm thấy phiếu')}</div>`;
+        }
+        if (typeof showToast === 'function') {
+            showToast(e.message || 'Không tìm thấy phiếu', 'error');
+        }
+    }
+}
+
+window.viewHangHoaTransactions = viewHangHoaTransactions;
+window.viewReceiptFromHistory = viewReceiptFromHistory;
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initBangNhapXuatTon);

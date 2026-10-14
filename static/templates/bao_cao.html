@@ -77,25 +77,27 @@
                 </div>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive" style="max-height: 600px;">
-                    <table class="table table-sm table-hover align-middle mb-0 text-nowrap">
-                        <thead class="table-light sticky-top">
-                            <tr>
-                                <th class="text-center" style="width: 45px;">STT</th>
-                                <th class="text-center">Số Hiệu</th>
-                                <th class="text-center">Ngày Tháng</th>
-                                <th>Tên Hàng Hóa</th>
-                                <th class="text-center">TK ĐƯ</th>
-                                <th class="text-end">Số Lượng</th>
-                                <th class="text-end">Đơn Giá</th>
-                                <th class="text-end">Doanh Thu</th>
-                                <th class="text-end">Giá Vốn</th>
-                                <th class="text-end">Lợi Nhuận</th>
+                <div class="table-responsive" style="max-height: 650px; overflow-x: auto;">
+                    <table class="table table-sm table-hover align-middle mb-0" id="table-s16-dnn" style="font-size: 0.84rem; min-width: 980px; width: 100%;">
+                        <thead class="sticky-top shadow-sm" style="background-color: #1e293b !important; color: #ffffff !important;">
+                            <tr class="align-middle" style="background-color: #1e293b !important; font-size: 0.8rem; letter-spacing: 0.02em;">
+                                <th class="text-center text-nowrap py-2" style="width: 40px; background-color: #1e293b !important; color: #ffffff !important;">STT</th>
+                                <th class="text-center text-nowrap py-2" style="width: 90px; background-color: #1e293b !important; color: #ffffff !important;">SỐ HIỆU</th>
+                                <th class="text-center text-nowrap py-2" style="width: 90px; background-color: #1e293b !important; color: #ffffff !important;">NGÀY THÁNG</th>
+                                <th class="py-2" style="min-width: 180px; background-color: #1e293b !important; color: #ffffff !important;">TÊN HÀNG HÓA</th>
+                                <th class="text-center text-nowrap py-2" style="width: 60px; background-color: #1e293b !important; color: #ffffff !important;">TK ĐƯ</th>
+                                <th class="text-end text-nowrap py-2" style="width: 70px; background-color: #1e293b !important; color: #ffffff !important;">SỐ LƯỢNG</th>
+                                <th class="text-end text-nowrap py-2" style="width: 95px; background-color: #1e293b !important; color: #ffffff !important;">ĐƠN GIÁ</th>
+                                <th class="text-end text-nowrap py-2" style="width: 105px; background-color: #1e293b !important; color: #ffffff !important;">DOANH THU</th>
+                                <th class="text-end text-nowrap py-2" style="width: 105px; background-color: #1e293b !important; color: #ffffff !important;">GIÁ VỐN</th>
+                                <th class="text-end text-nowrap py-2" style="width: 105px; background-color: #1e293b !important; color: #ffffff !important;">LỢI NHUẬN</th>
                             </tr>
                         </thead>
                         <tbody id="ban-hang-detail-body">
                             <tr><td colspan="10" class="text-center text-muted py-4">Đang tải...</td></tr>
                         </tbody>
+                        <tfoot id="ban-hang-detail-foot" class="table-light sticky-bottom fw-bold border-top-2">
+                        </tfoot>
                     </table>
                 </div>
             </div>
@@ -159,7 +161,13 @@
                     </div>
                     <div class="card-body p-0">
                         <table class="table table-sm table-hover mb-0">
-                            <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Số Lượng</th></tr></thead>
+                            <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                                <tr style="background-color: #1e293b !important;">
+                                    <th class="ps-3" style="background-color: #1e293b !important; color: #ffffff !important;">#</th>
+                                    <th style="background-color: #1e293b !important; color: #ffffff !important;">Hàng Hóa</th>
+                                    <th class="text-end pe-3" style="background-color: #1e293b !important; color: #ffffff !important;">Số Lượng</th>
+                                </tr>
+                            </thead>
                             <tbody id="top-qty-body">
                                 <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
                             </tbody>
@@ -174,7 +182,13 @@
                     </div>
                     <div class="card-body p-0">
                         <table class="table table-sm table-hover mb-0">
-                            <thead><tr><th class="ps-3">#</th><th>Hàng Hóa</th><th class="text-end pe-3">Doanh Thu</th></tr></thead>
+                            <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                                <tr style="background-color: #1e293b !important;">
+                                    <th class="ps-3" style="background-color: #1e293b !important; color: #ffffff !important;">#</th>
+                                    <th style="background-color: #1e293b !important; color: #ffffff !important;">Hàng Hóa</th>
+                                    <th class="text-end pe-3" style="background-color: #1e293b !important; color: #ffffff !important;">Doanh Thu</th>
+                                </tr>
+                            </thead>
                             <tbody id="top-rev-body">
                                 <tr><td colspan="3" class="text-center text-muted py-3">Đang tải...</td></tr>
                             </tbody>
@@ -193,15 +207,15 @@
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0">
-                        <thead>
-                            <tr>
-                                <th class="ps-3">#</th>
-                                <th>Mã Hàng</th>
-                                <th>Tên Hàng</th>
-                                <th>Danh Mục</th>
-                                <th class="text-center">Tồn Kho</th>
-                                <th class="text-end">Giá Nhập</th>
-                                <th class="text-end pe-3">Giá Trị</th>
+                        <thead style="background-color: #1e293b !important; color: #ffffff !important;">
+                            <tr style="background-color: #1e293b !important;">
+                                <th class="ps-3" style="background-color: #1e293b !important; color: #ffffff !important;">#</th>
+                                <th style="background-color: #1e293b !important; color: #ffffff !important;">Mã Hàng</th>
+                                <th style="background-color: #1e293b !important; color: #ffffff !important;">Tên Hàng</th>
+                                <th style="background-color: #1e293b !important; color: #ffffff !important;">Danh Mục</th>
+                                <th class="text-center" style="background-color: #1e293b !important; color: #ffffff !important;">Tồn Kho</th>
+                                <th class="text-end" style="background-color: #1e293b !important; color: #ffffff !important;">Giá Nhập</th>
+                                <th class="text-end pe-3" style="background-color: #1e293b !important; color: #ffffff !important;">Giá Trị</th>
                             </tr>
                         </thead>
                         <tbody id="ton-kho-body">

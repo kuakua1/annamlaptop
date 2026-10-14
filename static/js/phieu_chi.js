@@ -664,6 +664,7 @@ async function savePhieuChi() {
         const res = await apiRequest('/api/phieu-chi', 'POST', payload);
         if (res.success) {
             const maPhieu = res.data?.ma_phieu || '';
+            window.newlyCreatedReceiptCode = maPhieu;
             const loaiChiText = loaiChi === 'CUA_HANG' ? `chi cửa hàng (${hangMuc})` : 'chi trả NCC';
             showToast(`Lưu phiếu ${loaiChiText} [${maPhieu}] thành công! Đã khấu trừ ${formatVND(soTien)} vào ${fundName}.`, 'success');
             resetFormPhieuChi();
@@ -814,13 +815,16 @@ function renderChiPage(page) {
             ? `<span class="badge bg-light text-dark border ms-1 text-truncate" style="font-size: 0.72rem; max-width: 150px;" title="${escapeHtml(r.hang_muc_chi || 'Chi Cửa Hàng')}"><i class="bi bi-shop me-1 text-secondary"></i>${escapeHtml(r.hang_muc_chi || 'Cửa hàng')}</span>`
             : `<span class="badge bg-light text-secondary border ms-1" style="font-size: 0.72rem;">Trả NCC</span>`;
 
+        const isNew = (window.newlyCreatedReceiptCode && (r.ma_phieu === window.newlyCreatedReceiptCode || r.id === window.newlyCreatedReceiptCode));
+        const animClass = isNew ? ' newly-created-receipt' : '';
+
         return `
-            <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white" onclick="viewDetailChi('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
+            <div class="receipt-list-item px-3 py-2 mb-2 border rounded shadow-sm bg-white${animClass}" onclick="viewDetailChi('${r.id}')" style="cursor: pointer; transition: all 0.2s ease;">
                 <!-- Dòng 1: Ngày + ID phiếu + Quỹ + Hạng mục (trái) và Số tiền (phải) -->
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <div class="d-flex align-items-center gap-1 flex-wrap">
-                        <span class="badge bg-light text-secondary border px-1.5 py-0.5 font-monospace" style="font-size: 0.75rem;">
-                            <i class="bi bi-calendar3 me-1"></i>${formatDate(r.ngay)}
+                        <span class="receipt-date-badge">
+                            <i class="bi bi-calendar3"></i>${formatDate(r.ngay)}
                         </span>
                         <span class="fw-bold text-danger font-monospace ms-1" style="font-size: 0.85rem;">${escapeHtml(r.ma_phieu || '')}</span>
                         ${loaiBadge}
@@ -847,6 +851,10 @@ function renderChiPage(page) {
             </div>
         `;
     }).join('');
+
+    if (window.newlyCreatedReceiptCode) {
+        setTimeout(() => { window.newlyCreatedReceiptCode = null; }, 4000);
+    }
 
     if (summaryContainer) {
         summaryContainer.textContent = `Trang ${chiCurrentPage}/${totalPages} (${allChiList.length} phiếu)`;

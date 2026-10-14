@@ -16,6 +16,7 @@ from models.schemas import (
 )
 from services.sheets_service import sheets_service
 from services.db_service import db_manager
+from services.logger_service import log_activity
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -28,9 +29,7 @@ _LOGIN_BLOCK_WINDOW = 300  # 5 phút (300 giây)
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    # Lấy IP kết nối trực tiếp để chống giả mạo header bypass rate limit
     return request.client.host if request.client else "127.0.0.1"
 
 
@@ -73,18 +72,22 @@ def get_current_user(request: Request) -> str | None:
     data = decode_session_token(token)
     if not data:
         return None
-    return data.get("username")
+    username = data.get("username")
+    if not username:
+        return None
+    # Xác thực tài khoản vẫn tồn tại trong CSDL (thu hồi phiên tức thì nếu tài khoản bị xóa)
+    user_rec = db_manager.get_user_by_username(username)
+    if not user_rec:
+        return None
+    return username
 
 
 def get_current_user_role(request: Request) -> str:
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not token:
+    username = get_current_user(request)
+    if not username:
         return "kho"
-    data = decode_session_token(token)
-    if not data:
-        return "kho"
-    uname = str(data.get("username", "")).strip().lower()
-    return data.get("role") or ("admin" if uname == "admin" else "kho")
+    user_rec = db_manager.get_user_by_username(username) or {}
+    return user_rec.get("role") or ("admin" if username.lower() == "admin" else "kho")
 
 
 def require_login(request: Request) -> str:
@@ -122,6 +125,7 @@ async def login(data: LoginRequest, request: Request, response: Response):
         user_rec = db_manager.get_user_by_username(uname)
         if not user_rec:
             _record_login_failure(client_ip)
+            log_activity("ĐĂNG_NHẬP_THẤT_BẠI", f"Tài khoản không tồn tại: '{uname}'", username=uname, ip=client_ip, level="WARNING")
             raise HTTPException(status_code=401, detail="Tên đăng nhập hoặc mật khẩu không đúng")
 
         stored_hash = str(user_rec.get("password_hash") or "").strip()
@@ -136,6 +140,7 @@ async def login(data: LoginRequest, request: Request, response: Response):
 
         if not password_match:
             _record_login_failure(client_ip)
+            log_activity("ĐĂNG_NHẬP_THẤT_BẠI", f"Mật khẩu không đúng cho tài khoản '{uname}'", username=uname, ip=client_ip, level="WARNING")
             raise HTTPException(status_code=401, detail="Tên đăng nhập hoặc mật khẩu không đúng")
 
         # Đăng nhập thành công -> Xóa bộ đếm lỗi
@@ -152,6 +157,7 @@ async def login(data: LoginRequest, request: Request, response: Response):
             samesite="lax",
             secure=is_secure,
         )
+        log_activity("ĐĂNG_NHẬP", f"Đăng nhập thành công tài khoản '{user_rec['username']}' (Vai trò: {role})", username=user_rec["username"], ip=client_ip, level="INFO")
         return {
             "success": True,
             "message": "Đăng nhập thành công",
@@ -163,11 +169,15 @@ async def login(data: LoginRequest, request: Request, response: Response):
     except HTTPException:
         raise
     except Exception as e:
+        log_activity("LỖI_ĐĂNG_NHẬP", f"Lỗi xử lý đăng nhập cho '{uname}': {str(e)}", username=uname, ip=client_ip, level="ERROR")
         raise HTTPException(status_code=500, detail=f"Lỗi đăng nhập: {str(e)}")
 
 
 @router.post("/api/auth/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    user = get_current_user(request) or "Người dùng"
+    client_ip = get_client_ip(request)
+    log_activity("ĐĂNG_XUẤT", f"Người dùng '{user}' đã đăng xuất", username=user, ip=client_ip, level="INFO")
     response.delete_cookie(SESSION_COOKIE_NAME, httponly=True, samesite="lax")
     return {"success": True, "message": "Đăng xuất thành công"}
 
@@ -189,7 +199,7 @@ async def get_current_user_profile(user: str = Depends(require_login), request: 
 
 
 @router.post("/api/auth/change-password")
-async def change_password(data: ChangePasswordRequest, user: str = Depends(require_login)):
+async def change_password(data: ChangePasswordRequest, request: Request, user: str = Depends(require_login)):
     """Đổi mật khẩu cho tài khoản hiện tại."""
     user_rec = db_manager.get_user_by_username(user)
     if not user_rec:
@@ -198,6 +208,7 @@ async def change_password(data: ChangePasswordRequest, user: str = Depends(requi
     stored_hash = str(user_rec.get("password_hash") or "").strip()
     try:
         if not bcrypt.checkpw(data.current_password.encode("utf-8"), stored_hash.encode("utf-8")):
+            log_activity("ĐỔI_MẬT_KHẨU_THẤT_BẠI", f"Tài khoản '{user}' nhập sai mật khẩu cũ", username=user, request=request, level="WARNING")
             raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác")
     except Exception:
         raise HTTPException(status_code=400, detail="Mật khẩu hiện tại không chính xác")
@@ -208,6 +219,7 @@ async def change_password(data: ChangePasswordRequest, user: str = Depends(requi
 
     new_hash = bcrypt.hashpw(new_pwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     db_manager.update_user_password(user, new_hash)
+    log_activity("ĐỔI_MẬT_KHẨU", f"Tài khoản '{user}' đã đổi mật khẩu thành công", username=user, request=request, level="INFO")
     return {"success": True, "message": "Đổi mật khẩu thành công!"}
 
 
@@ -223,7 +235,7 @@ async def list_users(user: str = Depends(require_login)):
 
 
 @router.post("/api/auth/users")
-async def create_new_user(data: CreateUserRequest, user: str = Depends(require_login)):
+async def create_new_user(data: CreateUserRequest, request: Request, user: str = Depends(require_login)):
     """Tạo tài khoản mới để kết nối kho hoặc nhân viên (chỉ dành cho Admin)."""
     user_rec = db_manager.get_user_by_username(user) or {}
     role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
@@ -244,6 +256,7 @@ async def create_new_user(data: CreateUserRequest, user: str = Depends(require_l
             full_name=data.full_name or uname,
             role=data.role or "kho"
         )
+        log_activity("TẠO_TÀI_KHOẢN", f"Admin '{user}' tạo tài khoản '{uname}' (Vai trò: {data.role or 'kho'})", username=user, request=request, level="INFO")
         return {"success": True, "message": f"Tạo tài khoản '{uname}' thành công!", "data": new_u}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
@@ -252,7 +265,7 @@ async def create_new_user(data: CreateUserRequest, user: str = Depends(require_l
 
 
 @router.post("/api/auth/users/{target_username}/reset-password")
-async def admin_reset_password(target_username: str, data: AdminResetPasswordRequest, user: str = Depends(require_login)):
+async def admin_reset_password(target_username: str, data: AdminResetPasswordRequest, request: Request, user: str = Depends(require_login)):
     """Admin đặt lại mật khẩu cho tài khoản khác mà không cần mật khẩu cũ."""
     user_rec = db_manager.get_user_by_username(user) or {}
     role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
@@ -269,11 +282,12 @@ async def admin_reset_password(target_username: str, data: AdminResetPasswordReq
 
     new_hash = bcrypt.hashpw(new_pwd.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     db_manager.update_user_password(target["username"], new_hash)
+    log_activity("RESET_MẬT_KHẨU", f"Admin '{user}' đặt lại mật khẩu cho tài khoản '{target['username']}'", username=user, request=request, level="WARNING")
     return {"success": True, "message": f"Đặt lại mật khẩu cho tài khoản '{target['username']}' thành công!"}
 
 
 @router.delete("/api/auth/users/{target_username}")
-async def delete_user(target_username: str, user: str = Depends(require_login)):
+async def delete_user(target_username: str, request: Request, user: str = Depends(require_login)):
     """Admin xóa tài khoản người dùng."""
     user_rec = db_manager.get_user_by_username(user) or {}
     role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
@@ -287,6 +301,7 @@ async def delete_user(target_username: str, user: str = Depends(require_login)):
         deleted = db_manager.delete_user(target_username)
         if not deleted:
             raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản để xóa")
+        log_activity("XÓA_TÀI_KHOẢN", f"Admin '{user}' đã xóa tài khoản '{target_username}'", username=user, request=request, level="WARNING")
         return {"success": True, "message": f"Đã xóa tài khoản '{target_username}' thành công"}
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))

@@ -59,27 +59,56 @@ async function loadStats(from_date = '', to_date = '') {
         }
         if (elB) elB.textContent = (d.bien_loi_nhuan || 0).toFixed(1) + '%';
 
-        // Cập nhật bảng Chi tiết bán hàng (Tab 2)
+        // Cập nhật bảng Chi tiết bán hàng (Tab 1 / Mẫu S16-DNN)
         const bhBody = document.getElementById('ban-hang-detail-body');
+        const bhFoot = document.getElementById('ban-hang-detail-foot');
         if (bhBody) {
             const items = d.chi_tiet_ban_hang || [];
             if (items.length) {
-                bhBody.innerHTML = items.map((it, idx) => `
+                let totSl = 0, totDt = 0, totGv = 0, totLn = 0;
+                bhBody.innerHTML = items.map((it, idx) => {
+                    const sl = Number(it.so_luong || 0);
+                    const tt = Number(it.thanh_tien || 0);
+                    const gv = Number(it.gia_von || 0);
+                    const ln = Number(it.loi_nhuan || 0);
+                    totSl += sl;
+                    totDt += tt;
+                    totGv += gv;
+                    totLn += ln;
+                    return `
                     <tr>
-                        <td class="text-center">${idx + 1}</td>
-                        <td class="text-center font-monospace fw-semibold">${escapeHtml(it.so_phieu)}</td>
-                        <td class="text-center">${escapeHtml(it.ngay_xuat)}</td>
-                        <td><strong>${escapeHtml(it.ten_hang)}</strong><br><small class="text-muted font-monospace">${escapeHtml(it.ma_hang)}</small></td>
-                        <td class="text-center">${escapeHtml(it.tk_du || '131')}</td>
-                        <td class="text-end">${formatNumber(it.so_luong)}</td>
-                        <td class="text-end">${formatVNDClean(it.don_gia)}</td>
-                        <td class="text-end fw-semibold text-primary">${formatVNDClean(it.thanh_tien)}</td>
-                        <td class="text-end text-danger">${formatVNDClean(it.gia_von)}</td>
-                        <td class="text-end fw-bold text-success">${formatVNDClean(it.loi_nhuan)}</td>
+                        <td class="text-center text-nowrap text-secondary">${idx + 1}</td>
+                        <td class="text-center font-monospace fw-semibold text-nowrap">${escapeHtml(it.so_phieu)}</td>
+                        <td class="text-center text-nowrap text-secondary">${escapeHtml(it.ngay_xuat)}</td>
+                        <td style="white-space: normal; word-break: break-word; min-width: 180px; max-width: 320px; line-height: 1.35;">
+                            <span class="fw-semibold text-dark">${escapeHtml(it.ten_hang)}</span>
+                            <br><small class="text-muted font-monospace" style="font-size: 0.75rem;">${escapeHtml(it.ma_hang)}</small>
+                        </td>
+                        <td class="text-center text-nowrap text-secondary">${escapeHtml(it.tk_du || '131')}</td>
+                        <td class="text-end text-nowrap fw-semibold">${formatNumber(sl)}</td>
+                        <td class="text-end text-nowrap">${formatVNDClean(it.don_gia)}</td>
+                        <td class="text-end fw-semibold text-primary text-nowrap">${formatVNDClean(tt)}</td>
+                        <td class="text-end text-danger text-nowrap">${formatVNDClean(gv)}</td>
+                        <td class="text-end fw-bold text-success text-nowrap">${formatVNDClean(ln)}</td>
                     </tr>
-                `).join('');
+                    `;
+                }).join('');
+
+                if (bhFoot) {
+                    bhFoot.innerHTML = `
+                    <tr class="table-light border-top border-2 align-middle">
+                        <td colspan="5" class="text-center text-uppercase fw-bold py-2 text-dark">Tổng Cộng</td>
+                        <td class="text-end fw-bold text-nowrap py-2">${formatNumber(totSl)}</td>
+                        <td class="text-end text-nowrap py-2 text-muted">-</td>
+                        <td class="text-end fw-bold text-primary text-nowrap py-2">${formatVNDClean(totDt)}</td>
+                        <td class="text-end fw-bold text-danger text-nowrap py-2">${formatVNDClean(totGv)}</td>
+                        <td class="text-end fw-bold text-success text-nowrap py-2">${formatVNDClean(totLn)}</td>
+                    </tr>
+                    `;
+                }
             } else {
                 bhBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted py-4">Không có giao dịch bán hàng trong khoảng thời gian này</td></tr>';
+                if (bhFoot) bhFoot.innerHTML = '';
             }
         }
     } catch (e) {

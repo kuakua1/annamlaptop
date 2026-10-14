@@ -5,6 +5,7 @@ import time
 from routers.auth import get_current_user, require_login
 from models.schemas import DoiTuongCreate, DoiTuongUpdate
 from services.db_service import db_manager
+from services.logger_service import log_activity
 
 router = APIRouter()
 
@@ -43,8 +44,9 @@ async def get_doi_tuong(request: Request, user: str = Depends(require_login)):
             tien = float(n.get("thanh_tien", 0) or 0)
             ngay = str(n.get("ngay_nhap", "")).strip()
 
-            target_dict = nhap_stats_by_id if ref.isdigit() else nhap_stats_by_name
-            target_key = ref if ref.isdigit() else ref.lower()
+            is_id = ref.isdigit() or ref.upper().startswith("DT")
+            target_dict = nhap_stats_by_id if is_id else nhap_stats_by_name
+            target_key = ref if is_id else ref.lower()
 
             if target_key not in target_dict:
                 target_dict[target_key] = {"so_phieu_set": set(), "tong_sl": 0, "tong_tien": 0.0, "lan_cuoi": ""}
@@ -67,8 +69,9 @@ async def get_doi_tuong(request: Request, user: str = Depends(require_login)):
             tien = float(x.get("thanh_tien", 0) or 0)
             ngay = str(x.get("ngay_xuat", "")).strip()
 
-            target_dict = xuat_stats_by_id if ref.isdigit() else xuat_stats_by_name
-            target_key = ref if ref.isdigit() else ref.lower()
+            is_id = ref.isdigit() or ref.upper().startswith("DT")
+            target_dict = xuat_stats_by_id if is_id else xuat_stats_by_name
+            target_key = ref if is_id else ref.lower()
 
             if target_key not in target_dict:
                 target_dict[target_key] = {"so_phieu_set": set(), "tong_sl": 0, "tong_tien": 0.0, "lan_cuoi": ""}
@@ -150,6 +153,13 @@ async def create_doi_tuong(
         except Exception:
             pass
 
+        log_activity(
+            action="TẠO_ĐỐI_TƯỢNG",
+            message=f"Thêm đối tượng mới: '{item['ten']}' (Mã: {new_id} | Loại: {item['phan_loai']})",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {"success": True, "message": "Thêm đối tượng thành công", "data": item}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -166,6 +176,13 @@ async def update_doi_tuong(
         updated = db_manager.update_doi_tuong(record_id, data.model_dump(exclude_unset=True))
         if not updated:
             raise HTTPException(status_code=404, detail="Không tìm thấy đối tượng")
+        log_activity(
+            action="SỬA_ĐỐI_TƯỢNG",
+            message=f"Cập nhật đối tượng ID {record_id} ({updated.get('ten', '')})",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {"success": True, "message": "Cập nhật đối tượng thành công", "data": updated}
     except HTTPException:
         raise
@@ -183,6 +200,13 @@ async def delete_doi_tuong(
         success = db_manager.delete_doi_tuong(record_id)
         if not success:
             raise HTTPException(status_code=404, detail="Không tìm thấy đối tượng")
+        log_activity(
+            action="XÓA_ĐỐI_TƯỢNG",
+            message=f"Xóa vĩnh viễn đối tượng ID {record_id}",
+            username=user,
+            request=request,
+            level="WARNING"
+        )
         return {"success": True, "message": "Xóa đối tượng thành công"}
     except HTTPException:
         raise

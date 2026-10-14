@@ -4,8 +4,9 @@ from fastapi.templating import Jinja2Templates
 
 from routers.auth import get_current_user, require_login
 from models.schemas import HangHoaCreate, HangHoaUpdate
-from services.db_service import db_manager
+from services.db_service import db_manager, _safe_float, _safe_int
 from services.sheets_service import parse_batches_str
+from services.logger_service import log_activity
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -48,15 +49,7 @@ async def nhap_xuat_ton_page_alias(request: Request):
 
 
 def _safe_num(val, as_int=False):
-    if val is None or val == "":
-        return 0 if as_int else 0.0
-    if isinstance(val, (int, float)):
-        return int(val) if as_int else float(val)
-    s = str(val).replace("đ", "").replace("Đ", "").replace(",", "").replace(".", "").strip()
-    try:
-        return int(float(s)) if as_int else float(s)
-    except Exception:
-        return 0 if as_int else 0.0
+    return _safe_int(val) if as_int else _safe_float(val)
 
 
 @router.get("/api/hang-hoa")
@@ -105,7 +98,14 @@ async def get_hang_hoa(
                 ton_kho = current_ton
 
             batches = parse_batches_str(chi_tiet_lo, ton_kho, gia_nhap)
-            if len(batches) <= 1 or to_date:
+            if to_date:
+                # Khi xem lùi về ngày quá khứ, nếu sản phẩm có nhiều lô giá (do sau đó có nhập mới với giá khác),
+                # ưu tiên lấy đơn giá của lô sớm nhất trước đó thay vì giá nhập mới nhất của hiện tại.
+                hist_gia = batches[0]["gia_nhap"] if batches else gia_nhap
+                batches = [{"so_luong": ton_kho, "gia_nhap": hist_gia}]
+                thanh_tien_ton = round(ton_kho * hist_gia)
+                gia_nhap = hist_gia
+            elif len(batches) <= 1:
                 batches = [{"so_luong": ton_kho, "gia_nhap": gia_nhap}]
                 thanh_tien_ton = round(ton_kho * gia_nhap)
             else:
@@ -174,6 +174,13 @@ async def create_hang_hoa(
             "ghi_chu": data.ghi_chu or "",
         }
         db_manager.insert_hang_hoa(item)
+        log_activity(
+            action="TẠO_HÀNG_HÓA",
+            message=f"Thêm hàng hóa mới: Mã '{ma_hang}' - {data.ten_hang} | Danh mục: {data.danh_muc or 'Chung'} | Tồn: {data.ton_kho} | Giá bán: {float(data.gia_ban or 0):,.0f} đ",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": "Thêm hàng hóa thành công",
@@ -239,6 +246,13 @@ async def update_hang_hoa(
                 update_dict["chi_tiet_lo"] = ""
 
         updated = db_manager.update_hang_hoa(record_id, update_dict)
+        log_activity(
+            action="SỬA_HÀNG_HÓA",
+            message=f"Cập nhật hàng hóa ID {record_id} (Mã: {rec.get('ma_hang', '')} - {rec.get('ten_hang', '')})",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {"success": True, "message": "Cập nhật hàng hóa thành công", "data": updated}
     except HTTPException:
         raise
@@ -257,6 +271,13 @@ async def delete_hang_hoa(
         if not rec:
             raise HTTPException(status_code=404, detail="Không tìm thấy hàng hóa")
         db_manager.delete_hang_hoa(record_id)
+        log_activity(
+            action="XÓA_HÀNG_HÓA",
+            message=f"Xóa vĩnh viễn hàng hóa ID {record_id} (Mã: {rec.get('ma_hang', '')} - {rec.get('ten_hang', '')})",
+            username=user,
+            request=request,
+            level="WARNING"
+        )
         return {"success": True, "message": "Xóa hàng hóa thành công"}
     except HTTPException:
         raise

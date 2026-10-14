@@ -6,6 +6,7 @@ from datetime import date
 from routers.auth import get_current_user, require_login
 from models.schemas import PhieuThuCreate, PhieuThuUpdate, PhieuChiCreate, PhieuChiUpdate, QuyConfigUpdate
 from services.db_service import db_manager
+from services.logger_service import log_activity
 
 router = APIRouter()
 templates = Jinja2Templates(directory="static/templates")
@@ -130,7 +131,7 @@ async def get_list_phieu_thu(user: str = Depends(require_login)):
 
 
 @router.post("/api/phieu-thu")
-async def create_phieu_thu(data: PhieuThuCreate, user: str = Depends(require_login)):
+async def create_phieu_thu(data: PhieuThuCreate, request: Request, user: str = Depends(require_login)):
     if not data.doi_tuong or not str(data.doi_tuong).strip():
         raise HTTPException(status_code=400, detail="Vui lòng nhập Tên Người / Đơn Vị Nộp Tiền")
     data.dien_thoai = (data.dien_thoai or "").strip()
@@ -140,6 +141,13 @@ async def create_phieu_thu(data: PhieuThuCreate, user: str = Depends(require_log
 
     try:
         created = db_manager.create_phieu_thu(data.model_dump())
+        log_activity(
+            action="TẠO_PHIẾU_THU",
+            message=f"Tạo phiếu thu {created.get('ma_phieu')} | Đối tượng: {data.doi_tuong} | Số tiền: {float(data.so_tien):,.0f} đ | Quỹ: {data.loai_quy}",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": f"Tạo phiếu thu {created.get('ma_phieu')} thành công",
@@ -172,7 +180,7 @@ async def get_so_quy_balances_endpoint(user: str = Depends(require_login)):
 
 
 @router.post("/api/phieu-chi")
-async def create_phieu_chi(data: PhieuChiCreate, user: str = Depends(require_login)):
+async def create_phieu_chi(data: PhieuChiCreate, request: Request, user: str = Depends(require_login)):
     # Nhận diện thông minh loai_chi
     phieu_lq = str(data.phieu_lien_quan or "").strip()
     loai_chi = str(data.loai_chi or "").strip().upper()
@@ -198,6 +206,13 @@ async def create_phieu_chi(data: PhieuChiCreate, user: str = Depends(require_log
     try:
         created = db_manager.create_phieu_chi(data.model_dump())
         balances = db_manager.get_so_quy_balances()
+        log_activity(
+            action="TẠO_PHIẾU_CHI",
+            message=f"Tạo phiếu chi {created.get('ma_phieu')} | Đối tượng: {data.doi_tuong} | Số tiền: {float(data.so_tien):,.0f} đ | Quỹ: {data.loai_quy} | Hạng mục: {data.hang_muc_chi or 'Chi trả'}",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": f"Tạo phiếu chi {created.get('ma_phieu')} thành công",
@@ -221,12 +236,19 @@ async def get_so_quy_detail(record_id: str, user: str = Depends(require_login)):
 
 
 @router.put("/api/phieu-thu/{record_id}")
-async def update_phieu_thu_endpoint(record_id: str, data: PhieuThuUpdate, user: str = Depends(require_login)):
+async def update_phieu_thu_endpoint(record_id: str, data: PhieuThuUpdate, request: Request, user: str = Depends(require_login)):
     """Cập nhật phiếu thu tiền."""
     try:
         updated = db_manager.update_phieu_thu(record_id, data.model_dump(exclude_unset=True))
         if not updated:
             raise HTTPException(status_code=404, detail="Không tìm thấy phiếu thu cần cập nhật")
+        log_activity(
+            action="SỬA_PHIẾU_THU",
+            message=f"Cập nhật phiếu thu {updated.get('ma_phieu')} (ID: {record_id})",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": f"Cập nhật phiếu thu {updated.get('ma_phieu')} thành công",
@@ -237,12 +259,19 @@ async def update_phieu_thu_endpoint(record_id: str, data: PhieuThuUpdate, user: 
 
 
 @router.put("/api/phieu-chi/{record_id}")
-async def update_phieu_chi_endpoint(record_id: str, data: PhieuChiUpdate, user: str = Depends(require_login)):
+async def update_phieu_chi_endpoint(record_id: str, data: PhieuChiUpdate, request: Request, user: str = Depends(require_login)):
     """Cập nhật phiếu chi tiền."""
     try:
         updated = db_manager.update_phieu_chi(record_id, data.model_dump(exclude_unset=True))
         if not updated:
             raise HTTPException(status_code=404, detail="Không tìm thấy phiếu chi cần cập nhật")
+        log_activity(
+            action="SỬA_PHIẾU_CHI",
+            message=f"Cập nhật phiếu chi {updated.get('ma_phieu')} (ID: {record_id})",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": f"Cập nhật phiếu chi {updated.get('ma_phieu')} thành công",
@@ -253,12 +282,19 @@ async def update_phieu_chi_endpoint(record_id: str, data: PhieuChiUpdate, user: 
 
 
 @router.put("/api/so-quy/{record_id}")
-async def update_so_quy_record(record_id: str, data: dict, user: str = Depends(require_login)):
+async def update_so_quy_record(record_id: str, data: dict, request: Request, user: str = Depends(require_login)):
     """Cập nhật một phiếu trong sổ quỹ (tự nhận diện thu/chi)."""
     try:
         updated = db_manager.update_phieu_so_quy(record_id, data)
         if not updated:
             raise HTTPException(status_code=404, detail="Không tìm thấy phiếu cần cập nhật")
+        log_activity(
+            action="SỬA_PHIẾU_QUỸ",
+            message=f"Cập nhật phiếu {updated.get('ma_phieu')} (ID: {record_id})",
+            username=user,
+            request=request,
+            level="INFO"
+        )
         return {
             "success": True,
             "message": f"Cập nhật phiếu {updated.get('ma_phieu')} thành công",
@@ -269,10 +305,17 @@ async def update_so_quy_record(record_id: str, data: dict, user: str = Depends(r
 
 
 @router.delete("/api/so-quy/{record_id}")
-async def delete_phieu_so_quy(record_id: str, user: str = Depends(require_login)):
+async def delete_phieu_so_quy(record_id: str, request: Request, user: str = Depends(require_login)):
     success = db_manager.delete_phieu_so_quy(record_id)
     if not success:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiếu thu/chi")
+    log_activity(
+        action="XÓA_PHIẾU_QUỸ",
+        message=f"Xóa vĩnh viễn phiếu sổ quỹ ID {record_id}",
+        username=user,
+        request=request,
+        level="WARNING"
+    )
     return {"success": True, "message": "Xóa phiếu thành công"}
 
 
@@ -287,19 +330,21 @@ async def get_tong_quan_dong_tien(
 ):
     """Thống kê quỹ tiền hiện tại và danh sách giao dịch gần nhất."""
     balances = db_manager.get_so_quy_balances()
-    all_rows = db_manager.get_all("SoQuy")
-    all_rows.sort(key=lambda x: (str(x.get("ngay", "")), str(x.get("id", ""))), reverse=True)
+    where_sq = []
+    params_sq = []
+    if month:
+        where_sq.append("ngay LIKE ?")
+        params_sq.append(f"{month}%")
+    if from_date:
+        where_sq.append("ngay >= ?")
+        params_sq.append(from_date)
+    if to_date:
+        where_sq.append("ngay <= ?")
+        params_sq.append(to_date)
+    clause_sq = " AND ".join(where_sq) if where_sq else ""
 
-    filtered_rows = []
-    for r in all_rows:
-        ngay = str(r.get("ngay", "")).strip()
-        if month and not ngay.startswith(month):
-            continue
-        if from_date and ngay < from_date:
-            continue
-        if to_date and ngay > to_date:
-            continue
-        filtered_rows.append(r)
+    filtered_rows = db_manager.get_all("SoQuy", where_clause=clause_sq, params=tuple(params_sq))
+    filtered_rows.sort(key=lambda x: (str(x.get("ngay", "")), str(x.get("id", ""))), reverse=True)
 
     return {
         "success": True,
@@ -378,12 +423,13 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
         amt = float(sq.get("so_tien", 0) or 0)
         dt = str(sq.get("doi_tuong", "")).strip().lower()
         p = _clean_phone(sq.get("dien_thoai"))
-        if not plq or plq == "ALL":
+        if plq == "ALL":
+            ngay_sq = str(sq.get("ngay") or "").strip()
             if lp == "THU":
-                general_thu.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": amt})
+                general_thu.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": amt, "ngay": ngay_sq})
             elif lp == "CHI":
-                general_chi.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": amt})
-        else:
+                general_chi.append({"doi_tuong": dt, "dien_thoai": p, "so_tien": amt, "ngay": ngay_sq})
+        elif plq:
             split_plqs = [x.strip() for x in plq.replace(";", ",").split(",") if x.strip()]
             for x in split_plqs:
                 if lp == "THU":
@@ -441,9 +487,12 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
 
         # Cấn trừ tiếp nếu khách có phiếu thu gộp 'ALL'
         if rem_debt > 0.01 and general_thu:
+            inv_ngay = str(first_r.get("ngay_xuat") or "").strip()
             target_names = {kh_ref.lower(), kh_ten_val.lower()}
             for g in general_thu:
                 if g["so_tien"] <= 0:
+                    continue
+                if g.get("ngay") and inv_ngay and inv_ngay > g["ngay"]:
                     continue
                 match_kh = g["doi_tuong"] and (g["doi_tuong"] in target_names or any(g["doi_tuong"] in tn for tn in target_names))
                 match_p = (sdt_val and g["dien_thoai"] and (g["dien_thoai"] == sdt_val or g["dien_thoai"].endswith(sdt_val) or sdt_val.endswith(g["dien_thoai"])))
@@ -540,9 +589,12 @@ async def get_tong_quan_cong_no(user: str = Depends(require_login)):
 
         # Cấn trừ tiếp nếu NCC có phiếu chi gộp 'ALL'
         if rem_debt > 0.01 and general_chi:
+            inv_ngay = str(first_r.get("ngay_nhap") or "").strip()
             target_names = {ncc_ref.lower(), ncc_ten_val.lower()}
             for g in general_chi:
                 if g["so_tien"] <= 0:
+                    continue
+                if g.get("ngay") and inv_ngay and inv_ngay > g["ngay"]:
                     continue
                 match_ncc = g["doi_tuong"] and (g["doi_tuong"] in target_names or any(g["doi_tuong"] in tn for tn in target_names))
                 match_p = (sdt_val and g["dien_thoai"] and (g["dien_thoai"] == sdt_val or g["dien_thoai"].endswith(sdt_val) or sdt_val.endswith(g["dien_thoai"])))
