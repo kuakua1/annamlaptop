@@ -497,7 +497,9 @@ function calcRow(idx) {
     const slInput = document.getElementById(`sl-${idx}`);
     if (prod && sl > prod.ton_kho) {
         slInput?.classList.add('is-invalid');
-        showToast(`Hàng "${prod.ten_hang}" chỉ còn ${prod.ton_kho}, không đủ xuất ${sl}`, 'error');
+        const rawTen = prod.ten_hang || ma_hang;
+        const shortTen = rawTen.length > 25 ? (rawTen.substring(0, 23) + '...') : rawTen;
+        showToast(`<strong>Kho không đủ!</strong> "${shortTen}" chỉ còn tồn <strong>${prod.ton_kho}</strong> để xuất.`, 'error');
     } else {
         slInput?.classList.remove('is-invalid');
     }
@@ -573,7 +575,9 @@ async function saveReceipt() {
             return;
         }
         if (so_luong > ton) {
-            showToast(`Hàng "${ten_hang}" không đủ tồn kho (còn ${ton})`, 'error');
+            const rawTen = ten_hang || ma_hang;
+            const shortTen = rawTen.length > 25 ? (rawTen.substring(0, 23) + '...') : rawTen;
+            showToast(`<strong>Kho không đủ!</strong> "${shortTen}" chỉ còn tồn <strong>${ton}</strong> để xuất.`, 'error');
             valid = false;
             return;
         }

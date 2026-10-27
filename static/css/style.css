@@ -22,6 +22,13 @@
 }
 
 /* ── Layout & Vietnamese Typography System ─────────────── */
+html:not(.is-embedded-tab),
+body:not(.is-embedded-tab) {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+}
+
 body {
   font-family: var(--font-sans);
   background: #f0f4f8;
@@ -106,6 +113,38 @@ button, input, select, textarea, .btn, .form-control, .form-select {
 }
 .brand-header-link:hover .brand-logo-glow {
   box-shadow: 0 0 18px rgba(56, 189, 248, 0.7);
+}
+
+.brand-marquee-container {
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
+.brand-marquee-track {
+  display: inline-block;
+  padding-left: 100%;
+  animation: brandMarqueeScroll 12s linear infinite;
+  will-change: transform;
+}
+
+.brand-header-link:hover .brand-marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes brandMarqueeScroll {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-100%, 0, 0);
+  }
 }
 
 .brand-title-gradient {
@@ -385,13 +424,22 @@ button, input, select, textarea, .btn, .form-control, .form-select {
   50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 12px #38bdf8, 0 0 20px rgba(56, 189, 248, 1); }
 }
 
-/* ── Main Content ──────────────────────────────────────── */
+/* ── Main Content Shell ─────────────────────────────────── */
 .main-wrapper {
   margin-left: var(--sidebar-width);
   min-height: 100vh;
   transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
+}
+
+html:not(.is-embedded-tab) .main-wrapper,
+body:not(.is-embedded-tab) .main-wrapper {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 /* ── Sidebar Collapsed Mode (Settigation Dock Capsule) ─── */
@@ -487,6 +535,7 @@ body.sidebar-collapsed .sidebar-link:hover::before {
 
 /* ── Chrome-like Tabs Bar ───────────────────────────────── */
 .chrome-tab-container {
+  flex-shrink: 0;
   background: #dfe1e5;
   border-bottom: 1px solid #cbd5e1;
   display: flex;
@@ -586,12 +635,13 @@ body.sidebar-collapsed .sidebar-link:hover::before {
 
 /* ── Chrome Tab Viewport (Iframes Container) ────────────── */
 #chrome-tab-viewport {
-  flex: 1;
-  width: 100%;
-  height: calc(100vh - var(--header-height) - 41px);
+  flex: 1 1 0% !important;
+  width: 100% !important;
+  height: 0 !important;
+  min-height: 0 !important;
   position: relative;
   background: #f0f4f8;
-  overflow: hidden;
+  overflow: hidden !important;
 }
 
 .tab-frame {
@@ -609,10 +659,35 @@ body.sidebar-collapsed .sidebar-link:hover::before {
 }
 
 /* ── Embedded Tab Mode (Loaded inside child iframe) ────── */
-html.is-embedded-tab,
+html.is-embedded-tab {
+  background: #f0f4f8 !important;
+  height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
 body.is-embedded-tab {
   background: #f0f4f8 !important;
-  overflow-y: auto !important;
+  min-height: 100% !important;
+  height: auto !important;
+  overflow-y: visible !important;
+  overflow-x: hidden !important;
+}
+
+html.is-embedded-tab::-webkit-scrollbar {
+  width: 8px;
+}
+html.is-embedded-tab::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+html.is-embedded-tab::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+html.is-embedded-tab::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 html.is-embedded-tab .sidebar,
@@ -634,6 +709,9 @@ html.is-embedded-tab .main-wrapper,
 body.is-embedded-tab .main-wrapper {
   margin-left: 0 !important;
   min-height: auto !important;
+  height: auto !important;
+  overflow: visible !important;
+  display: block !important;
 }
 
 html.is-embedded-tab .content-area,
@@ -775,17 +853,17 @@ body.is-embedded-tab .content-area {
   }
 }
 
+.tab-direct-content {
+  display: none !important;
+}
+
 html.is-embedded-tab .tab-direct-content,
 body.is-embedded-tab .tab-direct-content {
   display: block !important;
 }
 
-/* In parent shell window, hide the direct content block completely (rendered inside iframe tabs instead) */
-html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
-  display: none !important;
-}
-
 .topbar {
+  flex-shrink: 0;
   height: var(--header-height);
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
@@ -918,35 +996,123 @@ html:not(.is-embedded-tab) body:not(.is-embedded-tab) .tab-direct-content {
 .items-table th, .items-table td { padding: 6px 8px; font-size: 0.85rem; }
 .items-table .form-control, .items-table .form-select { padding: 4px 8px; font-size: 0.85rem; }
 
-/* ── Toast ─────────────────────────────────────────────── */
+/* ── Modern Compact Toast Notification System ──────────── */
 #toast-container {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
-  z-index: 9999;
+  top: 20px;
+  right: 20px;
+  z-index: 1000000 !important;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 390px;
+  width: calc(100vw - 32px);
 }
 
 .toast-msg {
-  min-width: 280px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.875rem;
-  margin-top: 8px;
-  animation: slideIn 0.3s ease;
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: 10px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  min-width: 240px;
+  max-width: 390px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.35), 0 4px 10px -2px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: toastSlideInTop 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  word-break: break-word;
 }
 
-.toast-success { background: #276749; }
-.toast-error   { background: #9b2c2c; }
-.toast-info    { background: #2b6cb0; }
+.toast-msg i.toast-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
 
-@keyframes slideIn {
-  from { transform: translateX(100px); opacity: 0; }
-  to   { transform: translateX(0); opacity: 1; }
+.toast-msg .toast-text {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.toast-msg .toast-close-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 1.1rem;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+.toast-msg .toast-close-btn:hover {
+  opacity: 1;
+}
+
+/* Toast Color Themes: High contrast, polished, compact */
+.toast-success {
+  background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+  border: 1px solid #10b981;
+  color: #f0fdf4;
+}
+.toast-success i.toast-icon {
+  color: #6ee7b7;
+}
+
+.toast-error {
+  background: linear-gradient(135deg, #881337 0%, #991b1b 100%);
+  border: 1px solid #f87171;
+  color: #fff1f2;
+}
+.toast-error i.toast-icon {
+  color: #fca5a5;
+}
+
+.toast-warning {
+  background: linear-gradient(135deg, #78350f 0%, #92400e 100%);
+  border: 1px solid #fbbf24;
+  color: #fffbeb;
+}
+.toast-warning i.toast-icon {
+  color: #fde68a;
+}
+
+.toast-info {
+  background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+  border: 1px solid #60a5fa;
+  color: #eff6ff;
+}
+.toast-info i.toast-icon {
+  color: #93c5fd;
+}
+
+@keyframes toastSlideInTop {
+  from {
+    transform: translateY(-16px) scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 576px) {
+  #toast-container {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+  }
 }
 
 /* ── Login Page ────────────────────────────────────────── */

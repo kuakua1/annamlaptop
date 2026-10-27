@@ -225,7 +225,28 @@ async def create_phieu_chi(data: PhieuChiCreate, request: Request, user: str = D
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/api/so-quy/{record_id}")
+@router.post("/api/so-quy/resequence")
+async def resequence_so_quy_endpoint(request: Request, user: str = Depends(require_login)):
+    """Đánh số lại toàn bộ Sổ Quỹ theo chuẩn thứ tự TM/TG/CM/CG."""
+    try:
+        res = db_manager.resequence_so_quy()
+        log_activity(
+            action="ĐÁNH_SỐ_LẠI_SỔ_QUỸ",
+            message=f"Đánh số lại sổ quỹ: {res.get('total_changed', 0)} phiếu được chuẩn hóa",
+            username=user,
+            request=request,
+            level="INFO"
+        )
+        return {
+            "success": True,
+            "message": f"Đã chuẩn hóa thứ tự {res.get('total_changed', 0)} phiếu trong Sổ Quỹ thành công",
+            "data": res
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/so-quy/{record_id:path}")
 async def get_so_quy_detail(record_id: str, user: str = Depends(require_login)):
     """Lấy chi tiết một phiếu trong sổ quỹ."""
     all_rows = db_manager.get_all("SoQuy")
@@ -235,7 +256,7 @@ async def get_so_quy_detail(record_id: str, user: str = Depends(require_login)):
     raise HTTPException(status_code=404, detail="Không tìm thấy phiếu thu/chi")
 
 
-@router.put("/api/phieu-thu/{record_id}")
+@router.put("/api/phieu-thu/{record_id:path}")
 async def update_phieu_thu_endpoint(record_id: str, data: PhieuThuUpdate, request: Request, user: str = Depends(require_login)):
     """Cập nhật phiếu thu tiền."""
     try:
@@ -258,7 +279,7 @@ async def update_phieu_thu_endpoint(record_id: str, data: PhieuThuUpdate, reques
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/api/phieu-chi/{record_id}")
+@router.put("/api/phieu-chi/{record_id:path}")
 async def update_phieu_chi_endpoint(record_id: str, data: PhieuChiUpdate, request: Request, user: str = Depends(require_login)):
     """Cập nhật phiếu chi tiền."""
     try:
@@ -281,16 +302,24 @@ async def update_phieu_chi_endpoint(record_id: str, data: PhieuChiUpdate, reques
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/api/so-quy/{record_id}")
+@router.put("/api/so-quy")
+async def update_so_quy_record_query(data: dict, request: Request, id: str = "", user: str = Depends(require_login)):
+    """Cập nhật một phiếu trong sổ quỹ qua query param hoặc body JSON (chống lỗi gạch chéo URL)."""
+    target_id = id or data.get("id") or data.get("ma_phieu") or ""
+    return await update_so_quy_record(record_id=target_id, data=data, request=request, user=user)
+
+
+@router.put("/api/so-quy/{record_id:path}")
 async def update_so_quy_record(record_id: str, data: dict, request: Request, user: str = Depends(require_login)):
     """Cập nhật một phiếu trong sổ quỹ (tự nhận diện thu/chi)."""
+    target_id = record_id or data.get("id") or data.get("ma_phieu") or ""
     try:
-        updated = db_manager.update_phieu_so_quy(record_id, data)
+        updated = db_manager.update_phieu_so_quy(target_id, data)
         if not updated:
             raise HTTPException(status_code=404, detail="Không tìm thấy phiếu cần cập nhật")
         log_activity(
             action="SỬA_PHIẾU_QUỸ",
-            message=f"Cập nhật phiếu {updated.get('ma_phieu')} (ID: {record_id})",
+            message=f"Cập nhật phiếu {updated.get('ma_phieu')} (ID: {target_id})",
             username=user,
             request=request,
             level="INFO"
@@ -300,11 +329,19 @@ async def update_so_quy_record(record_id: str, data: dict, request: Request, use
             "message": f"Cập nhật phiếu {updated.get('ma_phieu')} thành công",
             "data": updated
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/api/so-quy/{record_id}")
+@router.delete("/api/so-quy")
+async def delete_phieu_so_quy_query(request: Request, id: str = "", user: str = Depends(require_login)):
+    """Xóa một phiếu trong sổ quỹ qua query param."""
+    return await delete_phieu_so_quy(record_id=id, request=request, user=user)
+
+
+@router.delete("/api/so-quy/{record_id:path}")
 async def delete_phieu_so_quy(record_id: str, request: Request, user: str = Depends(require_login)):
     success = db_manager.delete_phieu_so_quy(record_id)
     if not success:

@@ -26,36 +26,31 @@ import threading
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize services on startup."""
-    try:
-        sheets_service.initialize()
+    # Khởi chạy kết nối Google Sheets và đồng bộ ngầm bên ngoài lifespan để Uvicorn mở web tức thì (< 0.1s)
+    def _auto_sync_worker():
         try:
+            sheets_service.initialize()
             print("[OK] Google Sheets service khoi tao thanh cong")
-        except Exception:
-            pass
-        
-        # Khởi chạy đồng bộ ngầm từ Google Sheets vào SQLite khi khởi động và định kỳ mỗi 10 phút
-        def _auto_sync_worker():
-            # Lần 1: Đồng bộ ngay khi khởi động
+        except Exception as e:
+            print(f"[WARN] Loi khoi tao Google Sheets: {e}")
+
+        # Lần 1: Đồng bộ ngay khi khởi động
+        try:
+            db_manager.sync_from_google_sheets()
+        except Exception as ex:
+            print(f"[WARN] Lỗi đồng bộ Google Sheets lần đầu: {ex}")
+
+        # Các lần tiếp theo: Tự động chạy ngầm mỗi 10 phút (600 giây)
+        while True:
+            time.sleep(600)
             try:
                 db_manager.sync_from_google_sheets()
             except Exception as ex:
-                print(f"[WARN] Lỗi đồng bộ Google Sheets lần đầu: {ex}")
+                print(f"[WARN] Lỗi tự động đồng bộ Google Sheets định kỳ: {ex}")
 
-            # Các lần tiếp theo: Tự động chạy ngầm mỗi 10 phút (600 giây)
-            while True:
-                time.sleep(600)
-                try:
-                    db_manager.sync_from_google_sheets()
-                except Exception as ex:
-                    print(f"[WARN] Lỗi tự động đồng bộ Google Sheets định kỳ: {ex}")
-
-        threading.Thread(target=_auto_sync_worker, daemon=True).start()
-    except Exception as e:
-        try:
-            print(f"[ERROR] Loi khoi tao Google Sheets: {e}")
-        except Exception:
-            pass
+    threading.Thread(target=_auto_sync_worker, daemon=True).start()
     yield
+
 
 
 app = FastAPI(
@@ -191,7 +186,9 @@ async def not_found_handler(request: Request, exc):
     from fastapi.responses import RedirectResponse
     if not request.url.path.startswith("/api"):
         return RedirectResponse(url="/login")
-    return JSONResponse(status_code=404, content={"success": False, "detail": "Không tìm thấy tài nguyên"})
+    detail = getattr(exc, "detail", "Không tìm thấy tài nguyên")
+    return JSONResponse(status_code=404, content={"success": False, "detail": detail})
+
 
 
 @app.exception_handler(500)

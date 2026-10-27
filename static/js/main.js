@@ -345,7 +345,7 @@ document.addEventListener('keydown', function(e) {
 
 // ── Toast Notifications ───────────────────────────────────────────────────────
 
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', duration = 3200) {
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
@@ -353,25 +353,46 @@ function showToast(message, type = 'success') {
         document.body.appendChild(container);
     }
 
-    // Chống trùng lặp: Nếu thông báo cùng nội dung đang hiển thị thì không tạo thêm
-    const activeSpans = container.querySelectorAll('.toast-msg span');
-    for (let s of activeSpans) {
-        if (s.textContent === message) return;
+    // Chống trùng lặp nội dung đang hiển thị
+    const activeTexts = container.querySelectorAll('.toast-text');
+    for (let s of activeTexts) {
+        if (s.innerHTML === message || s.textContent.trim() === message) return;
     }
 
-    const icons = { success: 'bi-check-circle-fill', error: 'bi-x-circle-fill', info: 'bi-info-circle-fill' };
+    // Giới hạn tối đa 3 toast cùng lúc để không choáng ngợp màn hình (nhỏ nhắn, gọn gàng)
+    const existing = container.querySelectorAll('.toast-msg');
+    if (existing.length >= 3) {
+        existing[0].remove();
+    }
+
+    const icons = {
+        success: 'bi-check-circle-fill',
+        error: 'bi-x-circle-fill',
+        warning: 'bi-exclamation-triangle-fill',
+        info: 'bi-info-circle-fill'
+    };
+
     const toast = document.createElement('div');
     toast.className = `toast-msg toast-${type}`;
-    toast.innerHTML = `<i class="bi ${icons[type] || icons.info}"></i><span>${message}</span>`;
+    toast.innerHTML = `
+        <i class="bi ${icons[type] || icons.info} toast-icon"></i>
+        <div class="toast-text">${message}</div>
+        <button type="button" class="toast-close-btn" aria-label="Đóng" onclick="this.closest('.toast-msg')?.remove()">&times;</button>
+    `;
     container.appendChild(toast);
 
-    setTimeout(() => {
+    let dismissed = false;
+    const dismiss = () => {
+        if (dismissed) return;
+        dismissed = true;
         toast.style.opacity = '0';
-        toast.style.transform = 'translateX(100px)';
-        toast.style.transition = 'all 0.3s ease';
-        setTimeout(() => toast.remove(), 300);
-    }, 3500);
+        toast.style.transform = 'translateY(-12px) scale(0.95)';
+        setTimeout(() => toast.remove(), 220);
+    };
+
+    setTimeout(dismiss, duration);
 }
+window.showToast = showToast;
 
 // ── Debounce & Throttle Helpers ──────────────────────────────────────────────
 
@@ -1318,7 +1339,31 @@ window.openAppTab = openAppTab;
 // Khởi chạy khi DOM sẵn sàng
 document.addEventListener('DOMContentLoaded', () => {
     TabManager.init();
+    initUserRoleUI();
 });
+
+async function initUserRoleUI() {
+    try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            const data = await res.json();
+            window.currentUserInfo = data;
+            const isAdmin = !!data.is_admin;
+            document.querySelectorAll('.admin-only-ui').forEach(el => {
+                if (isAdmin) {
+                    el.classList.remove('d-none');
+                    if (el.id === 'topbar-activity-log-btn') {
+                        el.classList.add('d-lg-inline-flex');
+                    }
+                } else {
+                    el.classList.add('d-none');
+                    el.classList.remove('d-flex', 'd-lg-inline-flex', 'd-inline-flex');
+                }
+            });
+        }
+    } catch (e) {}
+}
+window.initUserRoleUI = initUserRoleUI;
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 
@@ -1993,14 +2038,18 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                     ${items.map((it, idx) => {
                         const gia = isXuat ? (it.gia_ban || 0) : (it.gia_nhap || 0);
                         const thanhTien = it.thanh_tien || (it.so_luong * gia);
+                        const pLive = isXuat ? (allProducts || []).find(x => x.ma_hang === it.ma_hang) : null;
+                        const maxAvail = isXuat ? ((parseInt(pLive?.ton_kho || 0) || 0) + it.so_luong) : 0;
+                        const stockHint = isXuat ? `<div class="small text-muted mt-1 stock-hint" style="font-size: 0.72rem;" title="Số lượng tối đa có thể xuất">(Kho: <strong class="text-dark">${maxAvail}</strong>)</div>` : '';
                         return `
-                            <tr data-ma="${escapeHtml(it.ma_hang)}" data-ten="${escapeHtml(it.ten_hang)}" data-dvt="${escapeHtml(it.don_vi_tinh || 'Cái')}">
+                            <tr data-ma="${escapeHtml(it.ma_hang)}" data-ten="${escapeHtml(it.ten_hang)}" data-dvt="${escapeHtml(it.don_vi_tinh || 'Cái')}" data-max-avail="${maxAvail}">
                                 <td class="text-center text-muted small row-stt">${idx + 1}</td>
                                 <td><span class="badge bg-secondary font-monospace">${escapeHtml(it.ma_hang)}</span></td>
                                 <td class="fw-semibold">${escapeHtml(it.ten_hang)}</td>
                                 <td class="text-center text-muted small">${escapeHtml(it.don_vi_tinh || 'Cái')}</td>
                                 <td class="text-center">
                                     <input type="number" min="1" class="form-control form-control-sm text-center fw-bold receipt-row-sl ${isXuat ? 'text-danger' : 'text-primary'}" value="${it.so_luong}" oninput="onReceiptDetailRowInput(this)">
+                                    ${stockHint}
                                 </td>
                                 <td class="text-end">
                                     <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
@@ -2168,7 +2217,7 @@ async function executeDeleteReceiptApi(so_phieu, type, onDone, record_id = null)
     let apiUrl = '';
     if (isThu || isChi) {
         const idToDel = record_id || so_phieu;
-        apiUrl = `/api/so-quy/${encodeURIComponent(idToDel)}`;
+        apiUrl = `/api/so-quy?id=${encodeURIComponent(idToDel)}`;
     } else if (isXuat) {
         apiUrl = `/api/xuat-hang/${encodeURIComponent(so_phieu)}`;
     } else {
@@ -2240,6 +2289,32 @@ function onReceiptDetailRowInput(inputEl) {
 
     if (totalEl) {
         totalEl.textContent = formatVND(lineTotal);
+    }
+
+    // Kiểm tra tồn kho theo thời gian thực cho phiếu xuất
+    const isXuat = window.currentReceiptDetail?.type === 'xuat';
+    if (isXuat) {
+        const ma = tr.dataset.ma;
+        const list = window.allReceiptProductsCache || [];
+        const p = list.find(x => x.ma_hang === ma);
+        const origReceiptSl = (window.currentReceiptDetail?.items || []).find(it => it.ma_hang === ma)?.so_luong || 0;
+        const tonKhoLive = p ? (parseInt(p.ton_kho || 0) || 0) : 0;
+        const maxAvail = tonKhoLive + origReceiptSl;
+        const hintEl = tr.querySelector('.stock-hint');
+        if (sl > maxAvail) {
+            slInput.classList.add('is-invalid', 'border-danger', 'bg-danger-subtle');
+            if (hintEl) {
+                hintEl.innerHTML = `<span class="badge bg-danger text-white px-1 py-0" style="font-size: 0.68rem;"><i class="bi bi-exclamation-circle me-1"></i>Kho: ${maxAvail} (Không đủ!)</span>`;
+            }
+            const rawTen = tr.dataset.ten || ma;
+            const shortTen = rawTen.length > 25 ? (rawTen.substring(0, 23) + '...') : rawTen;
+            showToast(`<strong>Kho không đủ!</strong> "${escapeHtml(shortTen)}" chỉ còn tồn tối đa <strong>${maxAvail}</strong> để xuất.`, 'warning');
+        } else {
+            slInput.classList.remove('is-invalid', 'border-danger', 'bg-danger-subtle');
+            if (hintEl) {
+                hintEl.innerHTML = `(Kho: <strong class="text-dark">${maxAvail}</strong>)`;
+            }
+        }
     }
 
     recalcReceiptDetailTotals();
@@ -2482,6 +2557,21 @@ function submitAddProductToReceiptDetail() {
     const tbody = document.getElementById('receipt-detail-tbody');
     if (!tbody) return;
 
+    const isXuat = window.currentReceiptDetail?.type === 'xuat';
+    if (isXuat && p) {
+        const existingTr = Array.from(tbody.querySelectorAll('tr')).find(tr => tr.dataset.ma === ma);
+        const curTrSl = existingTr ? (parseInt(existingTr.querySelector('.receipt-row-sl')?.value || 0) || 0) : 0;
+        const origReceiptSl = (window.currentReceiptDetail?.items || []).find(it => it.ma_hang === ma)?.so_luong || 0;
+        const tonKhoLive = parseInt(p.ton_kho || 0) || 0;
+        const maxAvail = tonKhoLive + origReceiptSl;
+        if (curTrSl + sl > maxAvail) {
+            const rawTen = ten || ma;
+            const shortTen = rawTen.length > 25 ? (rawTen.substring(0, 23) + '...') : rawTen;
+            showToast(`<strong>Kho không đủ!</strong> "${escapeHtml(shortTen)}" chỉ còn tối đa <strong>${maxAvail}</strong> ${dvt}.`, 'warning');
+            return;
+        }
+    }
+
     // Kiểm tra xem mã hàng đã có trong bảng chưa
     const existingTr = Array.from(tbody.querySelectorAll('tr')).find(tr => tr.dataset.ma === ma);
     if (existingTr) {
@@ -2492,13 +2582,15 @@ function submitAddProductToReceiptDetail() {
             showToast(`Đã cộng thêm ${sl} ${dvt} vào mã ${ma}`, 'info');
         }
     } else {
-        const isXuat = window.currentReceiptDetail?.type === 'xuat';
         const lineTotal = sl * gia;
         const newIdx = tbody.querySelectorAll('tr').length + 1;
+        const maxAvail = isXuat ? ((parseInt(p?.ton_kho || 0) || 0) + ((window.currentReceiptDetail?.items || []).find(it => it.ma_hang === ma)?.so_luong || 0)) : 0;
+        const stockHint = isXuat ? `<div class="small text-muted mt-1 stock-hint" style="font-size: 0.72rem;" title="Số lượng tối đa có thể xuất">(Kho: <strong class="text-dark">${maxAvail}</strong>)</div>` : '';
         const newTr = document.createElement('tr');
         newTr.dataset.ma = ma;
         newTr.dataset.ten = ten;
         newTr.dataset.dvt = dvt;
+        newTr.dataset.maxAvail = maxAvail;
         newTr.innerHTML = `
             <td class="text-center text-muted small row-stt">${newIdx}</td>
             <td><span class="badge bg-secondary font-monospace">${escapeHtml(ma)}</span></td>
@@ -2506,6 +2598,7 @@ function submitAddProductToReceiptDetail() {
             <td class="text-center text-muted small">${escapeHtml(dvt)}</td>
             <td class="text-center">
                 <input type="number" min="1" class="form-control form-control-sm text-center fw-bold receipt-row-sl ${isXuat ? 'text-danger' : 'text-primary'}" value="${sl}" oninput="onReceiptDetailRowInput(this)">
+                ${stockHint}
             </td>
             <td class="text-end">
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-control form-control-sm text-end receipt-row-gia" value="${gia}" oninput="onReceiptDetailRowInput(this)">
@@ -2565,6 +2658,25 @@ async function saveCurrentReceiptDetail(shouldCloseAfterSave = false) {
             return;
         }
 
+        if (isXuat) {
+            const list = window.allReceiptProductsCache || [];
+            const p = list.find(x => x.ma_hang === ma);
+            const origReceiptSl = (window.currentReceiptDetail?.items || []).find(it => it.ma_hang === ma)?.so_luong || 0;
+            const tonKhoLive = p ? (parseInt(p.ton_kho || 0) || 0) : 0;
+            const maxAvail = tonKhoLive + origReceiptSl;
+            if (sl > maxAvail) {
+                const rawTen = ten || ma;
+                const shortTen = rawTen.length > 25 ? (rawTen.substring(0, 23) + '...') : rawTen;
+                showToast(`<strong>Không thể lưu!</strong> "${escapeHtml(shortTen)}" chỉ còn tồn <strong>${maxAvail}</strong> để xuất (bạn nhập ${sl}).`, 'error');
+                const slInput = tr.querySelector('.receipt-row-sl');
+                if (slInput) {
+                    slInput.classList.add('is-invalid', 'border-danger', 'bg-danger-subtle');
+                    slInput.focus();
+                }
+                return;
+            }
+        }
+
         const itemObj = {
             ma_hang: ma,
             ten_hang: ten,
@@ -2617,9 +2729,19 @@ async function saveCurrentReceiptDetail(shouldCloseAfterSave = false) {
         else window.currentReceiptDetail.ngay_nhap = ngay;
         window.currentReceiptDetail.ghi_chu = ghiChu;
 
-        // Báo cho các tab khác cập nhật kho
+        // Báo cho tất cả các tab khác cập nhật kho, sổ quỹ và công nợ
         try {
-            window.top.postMessage({ type: 'PRODUCTS_UPDATED' }, '*');
+            const types = ['PRODUCTS_UPDATED', 'SO_QUY_UPDATED', 'BALANCE_UPDATED', 'DEBT_UPDATED', 'DATA_CHANGED'];
+            types.forEach(t => {
+                try { window.top.postMessage({ type: t }, '*'); } catch (err) {}
+                try { window.postMessage({ type: t }, '*'); } catch (err) {}
+            });
+            if (typeof broadcastDataUpdate === 'function') {
+                types.forEach(t => broadcastDataUpdate(t));
+            } else if (typeof BroadcastChannel !== 'undefined') {
+                const bc = new BroadcastChannel('inventory_sync');
+                types.forEach(t => bc.postMessage({ type: t }));
+            }
         } catch (e) {}
 
         if (typeof window.receiptDetailOnUpdated === 'function') {
@@ -3935,7 +4057,7 @@ async function syncFromGoogleSheets() {
     }
 
     try {
-        const res = await apiRequest('/api/system/sync-sheets', 'POST');
+        const res = await apiRequest('/api/system/sync-sheets', 'POST', null, 90000);
         showToast(res.message || 'Đồng bộ từ Google Sheets thành công!', 'success');
         
         // Tải lại các iframe đang mở để cập nhật dữ liệu mới
@@ -4358,6 +4480,22 @@ let currentActivityLogsData = [];
 
 async function openActivityLogModal() {
     try {
+        // Kiểm tra quyền Admin trước khi mở nhật ký
+        let isAdmin = false;
+        try {
+            const meRes = await fetch('/api/auth/me');
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                window.currentUserInfo = meData;
+                isAdmin = !!meData.is_admin;
+            }
+        } catch (e) {}
+
+        if (!isAdmin) {
+            showToast('Chỉ tài khoản Quản trị viên (Admin) mới có quyền xem nhật ký hoạt động!', 'error');
+            return;
+        }
+
         const modalEl = document.getElementById('activity-log-modal');
         if (!modalEl) return;
 
@@ -4365,23 +4503,11 @@ async function openActivityLogModal() {
             activityLogModalInstance = new bootstrap.Modal(modalEl);
         }
 
-        // Kiểm tra quyền Admin để hiển thị nút xóa log
-        try {
-            const meRes = await fetch('/api/auth/me');
-            if (meRes.ok) {
-                const meData = await meRes.json();
-                const clearBtn = document.getElementById('btn-clear-activity-logs');
-                if (clearBtn) {
-                    if (meData.is_admin) {
-                        clearBtn.classList.remove('d-none');
-                        clearBtn.classList.add('d-flex');
-                    } else {
-                        clearBtn.classList.add('d-none');
-                        clearBtn.classList.remove('d-flex');
-                    }
-                }
-            }
-        } catch (e) {}
+        const clearBtn = document.getElementById('btn-clear-activity-logs');
+        if (clearBtn) {
+            clearBtn.classList.remove('d-none');
+            clearBtn.classList.add('d-flex');
+        }
 
         activityLogModalInstance.show();
         await fetchActivityLogs();
@@ -4419,6 +4545,11 @@ async function fetchActivityLogs() {
     try {
         const url = `/api/system/activity-logs?lines=${encodeURIComponent(lines)}&search=${encodeURIComponent(search)}&level=${encodeURIComponent(level)}`;
         const res = await fetch(url);
+        if (res.status === 403) {
+            showToast('Chỉ tài khoản Quản trị viên (Admin) mới có quyền xem nhật ký hoạt động!', 'error');
+            if (activityLogModalInstance) activityLogModalInstance.hide();
+            return;
+        }
         if (!res.ok) {
             throw new Error(`Mã lỗi HTTP: ${res.status}`);
         }

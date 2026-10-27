@@ -3,7 +3,10 @@ import os
 
 db_path = "/root/kho-hang/inventory.db" if os.path.exists("/root/kho-hang/inventory.db") else "inventory.db"
 
-conn = sqlite3.connect(db_path)
+conn = sqlite3.connect(db_path, timeout=30.0)
+conn.execute("PRAGMA journal_mode = WAL;")
+conn.execute("PRAGMA busy_timeout = 5000;")
+conn.execute("PRAGMA synchronous = NORMAL;")
 c = conn.cursor()
 
 # 1. Cập nhật phiếu xuất XH1084/10 ngày 22/10 về đúng giá vốn 14 triệu

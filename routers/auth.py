@@ -97,6 +97,18 @@ def require_login(request: Request) -> str:
     return user
 
 
+def require_admin(request: Request) -> str:
+    user = require_login(request)
+    user_rec = db_manager.get_user_by_username(user) or {}
+    role = user_rec.get("role") or ("admin" if user.lower() == "admin" else "kho")
+    if role != "admin" and user.lower() != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ tài khoản Quản trị viên (Admin) mới có quyền xem và thao tác trên phần này"
+        )
+    return user
+
+
 @router.get("/", response_class=HTMLResponse)
 async def root(request: Request):
     user = get_current_user(request)

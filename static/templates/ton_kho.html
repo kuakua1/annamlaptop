@@ -91,9 +91,9 @@
                 <div class="btn-group btn-group-sm ms-md-1 date-range-presets" role="group">
                     <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('today')">Hôm nay</button>
                     <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('week')">Tuần này</button>
-                    <button type="button" class="btn btn-outline-secondary" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
+                    <button type="button" class="btn btn-outline-secondary active" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
                     <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('year')">Năm nay</button>
-                    <button type="button" class="btn btn-outline-secondary active" id="btn-quick-all" onclick="setQuickPeriod('all')">Tất cả</button>
+                    <button type="button" class="btn btn-outline-secondary" id="btn-quick-all" onclick="setQuickPeriod('all')">Tất cả</button>
                 </div>
             </div>
         </div>
@@ -260,5 +260,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/ton_kho.js?v=20261008_v8"></script>
+<script src="/static/js/ton_kho.js?v=20261022_v1"></script>
 {% endblock %}

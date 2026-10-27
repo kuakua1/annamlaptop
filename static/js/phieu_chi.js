@@ -188,16 +188,18 @@ try {
     if (typeof BroadcastChannel !== 'undefined') {
         const bc = new BroadcastChannel('inventory_sync');
         bc.onmessage = function (e) {
-            if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
+            if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'SO_QUY_UPDATED' || e.data.type === 'PRODUCTS_UPDATED')) {
                 loadCompanyBalances();
+                if (typeof loadRecentChi === 'function') loadRecentChi();
             }
         };
     }
 } catch (err) {}
 
 window.addEventListener('message', function (e) {
-    if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED')) {
+    if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DATA_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'SO_QUY_UPDATED' || e.data.type === 'PRODUCTS_UPDATED')) {
         loadCompanyBalances();
+        if (typeof loadRecentChi === 'function') loadRecentChi();
     }
 });
 
@@ -962,7 +964,8 @@ async function confirmDeletePhieuChi(recordId, maPhieu) {
     }
 
     try {
-        const res = await apiRequest(`/api/so-quy/${encodeURIComponent(recordId)}`, 'DELETE');
+        const targetId = recordId || maPhieu || '';
+        const res = await apiRequest(`/api/so-quy?id=${encodeURIComponent(targetId)}`, 'DELETE');
         if (res.success) {
             showToast(`Đã xóa thành công phiếu chi ${maPhieu}`, 'success');
             const modalEl = document.getElementById('modal-detail-phieu-chi');

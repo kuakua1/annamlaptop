@@ -324,10 +324,19 @@ window.isThuChiDetailDirty = false;
 
 async function viewThuChiDetail(recordId, loaiPhieu) {
     try {
-        let item = allTransactions.find(x => String(x.id) === String(recordId));
+        let item = null;
+        // Luôn ưu tiên tải dữ liệu mới nhất từ server để tránh lệch dữ liệu cache trong trình duyệt
+        try {
+            const res = await apiRequest(`/api/so-quy?id=${encodeURIComponent(recordId)}`);
+            if (res && res.success && res.data) {
+                item = res.data;
+                const idx = allTransactions.findIndex(x => String(x.id) === String(recordId) || String(x.ma_phieu) === String(recordId));
+                if (idx >= 0) allTransactions[idx] = item;
+            }
+        } catch (err) {}
+
         if (!item) {
-            const res = await apiRequest(`/api/so-quy/${encodeURIComponent(recordId)}`);
-            if (res && res.success) item = res.data;
+            item = allTransactions.find(x => String(x.id) === String(recordId) || String(x.ma_phieu) === String(recordId));
         }
         if (!item) {
             showToast('Không tìm thấy thông tin phiếu!', 'error');
@@ -562,6 +571,8 @@ async function saveThuChiDetail(shouldCloseAfterSave = false) {
     try {
         showLoading();
         const payload = {
+            id: item.id,
+            ma_phieu: item.ma_phieu,
             ngay: curNgay,
             loai_quy: curLoaiQuy,
             doi_tuong: curDoiTuong,
@@ -571,14 +582,31 @@ async function saveThuChiDetail(shouldCloseAfterSave = false) {
             ghi_chu: curGhiChu
         };
 
-        const res = await apiRequest(`/api/so-quy/${encodeURIComponent(item.id)}`, 'PUT', payload);
+        const targetId = item.id || item.ma_phieu || '';
+        const res = await apiRequest(`/api/so-quy?id=${encodeURIComponent(targetId)}`, 'PUT', payload);
         if (res && res.success) {
-            showToast(res.message || `Đã lưu cập nhật phiếu ${item.ma_phieu} thành công!`, 'success');
-
             const updatedData = res.data || { ...item, ...payload };
             window.initialThuChiData = { ...updatedData };
             window.currentThuChiRecord = { ...updatedData };
             resetThuChiClean();
+
+            const isCodeChanged = updatedData.ma_phieu && item.ma_phieu && updatedData.ma_phieu !== item.ma_phieu;
+            const successMsg = isCodeChanged
+                ? `Đã lưu và tự động cập nhật mã phiếu thành ${updatedData.ma_phieu}!`
+                : (res.message || `Đã lưu cập nhật phiếu ${item.ma_phieu} thành công!`);
+            showToast(successMsg, 'success');
+
+            // Cập nhật tiêu đề và mã phiếu trong popup chi tiết nếu modal đang mở
+            const titleEl = document.getElementById('detail-thuchi-title');
+            if (titleEl) {
+                const isThu = (updatedData.loai_phieu || item.loai_phieu) === 'THU';
+                titleEl.innerText = `${isThu ? 'Chi Tiết Phiếu Thu' : 'Chi Tiết Phiếu Chi'}: ${updatedData.ma_phieu}`;
+            }
+            const modalBodyEl = document.getElementById('detail-thuchi-body');
+            if (modalBodyEl) {
+                const codeBadge = modalBodyEl.querySelector('.badge.fs-6');
+                if (codeBadge) codeBadge.innerText = updatedData.ma_phieu;
+            }
 
             // Cập nhật mảng local & render lại bảng tức thì
             const idx = allTransactions.findIndex(x => String(x.id) === String(item.id));
@@ -785,7 +813,8 @@ function deleteReceipt(id, maPhieu, loaiPhieu = null, onSuccess = null) {
     if (!confirm(`Bạn có chắc chắn muốn xóa phiếu ${maPhieu}?\nNếu phiếu có liên quan đến công nợ, số tiền nợ và quỹ tiền sẽ được hoàn trả tự động.`)) {
         return;
     }
-    apiRequest(`/api/so-quy/${encodeURIComponent(id)}`, 'DELETE').then(async res => {
+    const targetId = id || maPhieu || '';
+    apiRequest(`/api/so-quy?id=${encodeURIComponent(targetId)}`, 'DELETE').then(async res => {
         if (res && res.success) {
             showToast(`Đã xóa thành công phiếu ${maPhieu}`, 'success');
             await loadSoQuy();
@@ -1076,7 +1105,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Tự động làm mới khi chuyển tab hoặc có thay đổi số dư / phiếu
     window.addEventListener('message', (e) => {
-        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'DATA_CHANGED')) {
+        if (e.data && (e.data.type === 'TAB_ACTIVATED' || e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'SO_QUY_UPDATED' || e.data.type === 'DATA_CHANGED' || e.data.type === 'PRODUCTS_UPDATED')) {
             loadSoQuy(true);
         }
     });
@@ -1085,7 +1114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof BroadcastChannel !== 'undefined') {
             const bc = new BroadcastChannel('inventory_sync');
             bc.onmessage = (e) => {
-                if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'DATA_CHANGED')) {
+                if (e.data && (e.data.type === 'BALANCE_UPDATED' || e.data.type === 'DEBT_UPDATED' || e.data.type === 'SO_QUY_UPDATED' || e.data.type === 'DATA_CHANGED' || e.data.type === 'PRODUCTS_UPDATED')) {
                     loadSoQuy(true);
                 }
             };

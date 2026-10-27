@@ -572,7 +572,8 @@ async function confirmDeletePhieuThu(recordId, maPhieu) {
     }
 
     try {
-        const res = await apiRequest(`/api/so-quy/${encodeURIComponent(recordId)}`, 'DELETE');
+        const targetId = recordId || maPhieu || '';
+        const res = await apiRequest(`/api/so-quy?id=${encodeURIComponent(targetId)}`, 'DELETE');
         if (res.success) {
             showToast(`Đã xóa thành công phiếu thu ${maPhieu}`, 'success');
             const modalEl = document.getElementById('modal-detail-phieu-thu');
@@ -792,6 +793,8 @@ async function savePhieuThuDetail(shouldCloseAfterSave = false) {
     try {
         showLoading();
         const payload = {
+            id: item.id,
+            ma_phieu: item.ma_phieu,
             ngay: curNgay,
             loai_quy: curLoaiQuy,
             doi_tuong: curDoiTuong,
@@ -801,7 +804,8 @@ async function savePhieuThuDetail(shouldCloseAfterSave = false) {
             ghi_chu: curGhiChu
         };
 
-        const res = await apiRequest(`/api/so-quy/${encodeURIComponent(item.id)}`, 'PUT', payload);
+        const targetId = item.id || item.ma_phieu || '';
+        const res = await apiRequest(`/api/so-quy?id=${encodeURIComponent(targetId)}`, 'PUT', payload);
         if (res && res.success) {
             showToast(res.message || `Đã lưu cập nhật phiếu thu ${item.ma_phieu} thành công!`, 'success');
 

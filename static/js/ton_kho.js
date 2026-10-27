@@ -17,7 +17,7 @@ function formatVNDClean(v) {
     return Math.round(Number(v)).toLocaleString('vi-VN');
 }
 
-let currentPeriodLabel = 'Tất cả';
+let currentPeriodLabel = 'Tháng này';
 
 function clearSearch() {
     const el = document.getElementById('search-input');
@@ -971,6 +971,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (paramStatus && statusSelect) {
         statusSelect.value = paramStatus;
     }
+
+    // Mặc định chọn Tháng này
+    const range = (typeof getPresetDateRange === 'function') ? getPresetDateRange('month') : {
+        from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+        to: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
+    };
+    const fromEl = document.getElementById('filter-from-date');
+    const toEl = document.getElementById('filter-to-date');
+    if (fromEl) fromEl.value = range.from || '';
+    if (toEl) toEl.value = range.to || '';
+    currentPeriodLabel = 'Tháng này';
+    document.querySelectorAll('.date-range-presets .btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('btn-quick-month')?.classList.add('active');
 
     loadStockData();
 

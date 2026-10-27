@@ -50,9 +50,9 @@
                 <div class="btn-group btn-group-sm ms-md-1 date-range-presets" role="group">
                     <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('today')">Hôm nay</button>
                     <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('week')">Tuần này</button>
-                    <button type="button" class="btn btn-outline-secondary" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
+                    <button type="button" class="btn btn-outline-secondary active" id="btn-quick-month" onclick="setQuickPeriod('month')">Tháng này</button>
                     <button type="button" class="btn btn-outline-secondary" onclick="setQuickPeriod('year')">Năm nay</button>
-                    <button type="button" class="btn btn-outline-secondary active" id="btn-quick-all" onclick="setQuickPeriod('all')">Tất cả</button>
+                    <button type="button" class="btn btn-outline-secondary" id="btn-quick-all" onclick="setQuickPeriod('all')">Tất cả</button>
                 </div>
             </div>
         </div>
@@ -164,6 +164,9 @@
                     <div class="mb-3">
                         <label class="form-label">Tồn Kho Ban Đầu</label>
                         <input type="number" class="form-control" id="f-ton-kho" min="0" value="0">
+                        <div class="form-text text-muted" style="font-size: 0.82rem;">
+                            <i class="bi bi-info-circle text-primary me-1"></i>Lưu ý: Nếu hàng hóa này chuẩn bị lập <strong>Phiếu Nhập Kho</strong> từ nhà cung cấp, hãy để bằng <strong>0</strong> để tránh bị cộng đúp số lượng.
+                        </div>
                     </div>
                     <div class="mb-0">
                         <label class="form-label">Ghi Chú</label>
@@ -280,5 +283,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/hang_hoa.js?v=20261008_v8"></script>
+<script src="/static/js/hang_hoa.js?v=20261022_v1"></script>
 {% endblock %}
