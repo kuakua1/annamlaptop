@@ -274,6 +274,16 @@ def _auto_align_app_chinh():
             """)
             cursor.execute("""
                 UPDATE XuatHang 
+                SET gia_von = 14000000.0, loi_nhuan = gia_ban - 14000000.0 
+                WHERE so_phieu = 'XH1084/10' AND ma_hang = 'HH088' AND gia_von > 14500000.0
+            """)
+            cursor.execute("""
+                UPDATE HangHoa 
+                SET gia_nhap = 14000000.0, chi_tiet_lo = '1 x 14.000.000 đ' 
+                WHERE ma_hang = 'HH088' AND ton_kho = 1
+            """)
+            cursor.execute("""
+                UPDATE XuatHang 
                 SET gia_von = 105000.0, loi_nhuan = gia_ban - 105000.0 
                 WHERE ma_hang = 'HH187' AND ngay_xuat >= '2026-10-01' AND gia_von > 110000.0
             """)
