@@ -1609,7 +1609,7 @@ class DatabaseManager:
         return True
 
     def update_xuat_hang_receipt(self, so_phieu: str, ngay_xuat: str, kh_save_ref: str, ghi_chu: str, items: list[dict]) -> list[dict]:
-        """Cập nhật phiếu xuất kho: hoàn trả hàng cũ, kiểm tra tồn kho, xuất FIFO mới."""
+        """Cập nhật phiếu xuất kho: bảo toàn giá vốn các mặt hàng không đổi số lượng, chỉ xuất/nhập bù trừ chênh lệch."""
         # 1. Lấy các dòng cũ
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -1617,42 +1617,100 @@ class DatabaseManager:
             old_rows = cursor.fetchall()
             old_items = [dict(r) for r in old_rows]
 
-        # 2. Tạm hoàn trả hàng cũ vào kho
+        # Phân tích tổng số lượng và giá vốn cũ theo từng mã hàng
+        old_map = {}
         for it in old_items:
-            sl = int(it.get("so_luong", 0) or 0)
-            ma = str(it.get("ma_hang", ""))
-            gia_von = float(it.get("gia_von", 0) or 0)
-            cost = (gia_von / sl) if sl > 0 else 0
-            if sl > 0 and ma:
-                if cost <= 0:
-                    h = self.get_hang_hoa_by_ma(ma)
-                    cost = float(h.get("gia_nhap", 0) or 0) if h else 0
-                self.nhap_hang_batch_local(ma, sl, cost)
+            ma = str(it.get("ma_hang", "")).strip()
+            if not ma:
+                continue
+            if ma not in old_map:
+                old_map[ma] = {"so_luong": 0, "gia_von": 0.0, "lines": []}
+            old_map[ma]["so_luong"] += int(it.get("so_luong", 0) or 0)
+            old_map[ma]["gia_von"] += float(it.get("gia_von", 0) or 0)
+            old_map[ma]["lines"].append(it)
 
-        # 3. Kiểm tra xem kho có đủ cho danh sách mới không
+        # Phân tích tổng số lượng mới theo từng mã hàng
+        new_map = {}
         for it in items:
-            rec = self.get_hang_hoa_by_ma(it["ma_hang"])
-            if not rec:
-                for o_it in old_items:
-                    self.xuat_hang_batch_local(o_it["ma_hang"], int(o_it["so_luong"]))
-                raise ValueError(f"Không tìm thấy hàng hóa {it['ma_hang']}")
-            ton_kho = int(rec.get("ton_kho", 0) or 0)
-            if ton_kho < it["so_luong"]:
-                for o_it in old_items:
-                    self.xuat_hang_batch_local(o_it["ma_hang"], int(o_it["so_luong"]))
-                raise ValueError(f"Hàng {it.get('ten_hang', it['ma_hang'])} chỉ còn tồn {ton_kho}, không đủ xuất {it['so_luong']}")
+            ma = str(it.get("ma_hang", "")).strip()
+            if not ma:
+                continue
+            if ma not in new_map:
+                new_map[ma] = {"so_luong": 0, "items": []}
+            new_map[ma]["so_luong"] += int(it.get("so_luong", 0) or 0)
+            new_map[ma]["items"].append(it)
 
-        # 4. Đã đủ tồn kho: Xóa các bản ghi cũ trong SQLite
+        # 2. Kiểm tra tồn kho cho các mã hàng có số lượng tăng thêm
+        for ma, n_info in new_map.items():
+            old_sl = old_map.get(ma, {}).get("so_luong", 0)
+            delta_sl = n_info["so_luong"] - old_sl
+            if delta_sl > 0:
+                rec = self.get_hang_hoa_by_ma(ma)
+                if not rec:
+                    raise ValueError(f"Không tìm thấy hàng hóa {ma}")
+                ton_kho = int(rec.get("ton_kho", 0) or 0)
+                if ton_kho < delta_sl:
+                    raise ValueError(f"Hàng {rec.get('ten_hang', ma)} chỉ còn tồn {ton_kho}, không đủ xuất thêm {delta_sl}")
+
+        # 3. Hoàn trả kho cho các mặt hàng bị xóa hẳn hoặc giảm số lượng
+        for ma, o_info in old_map.items():
+            new_sl = new_map.get(ma, {}).get("so_luong", 0)
+            if new_sl < o_info["so_luong"]:
+                refund_sl = o_info["so_luong"] - new_sl
+                unit_cost = (o_info["gia_von"] / o_info["so_luong"]) if o_info["so_luong"] > 0 else 0
+                if unit_cost <= 0:
+                    h = self.get_hang_hoa_by_ma(ma)
+                    unit_cost = float(h.get("gia_nhap", 0) or 0) if h else 0
+                self.nhap_hang_batch_local(ma, refund_sl, unit_cost, update_gia_nhap=False)
+
+        # 4. Xuất thêm kho (nếu có tăng số lượng hoặc thêm mã mới)
+        exported_added_cost = {}
+        for ma, n_info in new_map.items():
+            old_sl = old_map.get(ma, {}).get("so_luong", 0)
+            delta_sl = n_info["so_luong"] - old_sl
+            if delta_sl > 0:
+                _, _, add_cost = self.xuat_hang_batch_local(ma, delta_sl)
+                exported_added_cost[ma] = add_cost
+
+        # 5. Xác định tổng giá vốn chuẩn cho từng mã hàng mới
+        total_gv_by_ma = {}
+        for ma, n_info in new_map.items():
+            if ma in old_map:
+                o_info = old_map[ma]
+                if n_info["so_luong"] <= o_info["so_luong"]:
+                    unit_cost = (o_info["gia_von"] / o_info["so_luong"]) if o_info["so_luong"] > 0 else 0
+                    total_gv_by_ma[ma] = round(n_info["so_luong"] * unit_cost, 2)
+                else:
+                    total_gv_by_ma[ma] = round(o_info["gia_von"] + exported_added_cost.get(ma, 0.0), 2)
+            else:
+                total_gv_by_ma[ma] = round(exported_added_cost.get(ma, 0.0), 2)
+
+        # Phân bổ giá vốn theo từng dòng item
+        allocated_gv = {}
+        item_gv_list = []
+        for it in items:
+            ma = str(it.get("ma_hang", "")).strip()
+            tot_gv = total_gv_by_ma.get(ma, 0.0)
+            tot_n_sl = new_map[ma]["so_luong"]
+            sl = int(it.get("so_luong", 0) or 0)
+            alr = allocated_gv.get(ma, 0.0)
+            if alr + sl >= tot_n_sl:
+                line_gv = max(0.0, round(tot_gv - alr, 2))
+            else:
+                line_gv = round(tot_gv * (sl / tot_n_sl), 2) if tot_n_sl > 0 else 0.0
+            allocated_gv[ma] = alr + line_gv
+            item_gv_list.append(line_gv)
+
+        # 6. Xóa các bản ghi cũ trong SQLite & Sheet
         with self._lock:
             with self._get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM XuatHang WHERE so_phieu = ?", (so_phieu,))
                 conn.commit()
 
-        # Xóa các dòng cũ trên Sheet
         self._enqueue_task("DELETE_RECEIPT_ROWS", SHEET_XUAT_HANG, {"so_phieu": so_phieu})
 
-        # 5. Xuất FIFO cho danh sách mới và chèn vào SQLite
+        # 7. Chèn các dòng mới vào SQLite
         created_rows = []
         updated_sq_thu_list = []
         so_phieu_clean = so_phieu.strip().upper()
@@ -1727,10 +1785,10 @@ class DatabaseManager:
                 else:
                     rem_no_xuat = tong_tien_moi
 
-                for it in items:
+                for idx, it in enumerate(items):
                     new_id = str(int(time.time() * 1000)) + str(len(created_rows))
                     thanh_tien = it["so_luong"] * it["gia_ban"]
-                    _, _, gia_von = self.xuat_hang_batch_local(it["ma_hang"], it["so_luong"], conn=conn)
+                    gia_von = item_gv_list[idx]
                     loi_nhuan = float(thanh_tien) - float(gia_von)
                     line_no = min(thanh_tien, max(0.0, rem_no_xuat))
                     rem_no_xuat -= line_no

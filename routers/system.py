@@ -268,11 +268,21 @@ async def align_app_chinh_costs(
     try:
         with db_manager._get_connection() as conn:
             cursor = conn.cursor()
-            # 1. Dell Precision 5560 (HH088): Phiếu XH1048/10 ngày 11/10 xuất trước khi nhập lô 14tr (nhập 20/10), giá vốn chuẩn 15.1tr
+            # 1. Dell Precision 5560 (HH088): Chuẩn hóa giá vốn theo lô nhập (3 con 15.1tr xuất trước ngày 20/10, 2 con 14tr xuất sau ngày 20/10, còn 1 con 14tr tồn kho)
             cursor.execute("""
                 UPDATE XuatHang 
                 SET gia_von = 15100000.0, loi_nhuan = gia_ban - 15100000.0 
-                WHERE so_phieu = 'XH1048/10' AND ma_hang = 'HH088'
+                WHERE so_phieu IN ('XH1001/10', 'XH1012/10', 'XH1048/10') AND ma_hang = 'HH088'
+            """)
+            cursor.execute("""
+                UPDATE XuatHang 
+                SET gia_von = 14000000.0, loi_nhuan = gia_ban - 14000000.0 
+                WHERE so_phieu IN ('XH1082/10', 'XH1084/10') AND ma_hang = 'HH088'
+            """)
+            cursor.execute("""
+                UPDATE HangHoa 
+                SET gia_nhap = 14000000.0, chi_tiet_lo = '1 x 14.000.000 đ' 
+                WHERE ma_hang = 'HH088' AND ton_kho = 1
             """)
             # 2. Sạc Dell 65w (HH187): 4 phiếu xuất tháng 10 giá vốn chuẩn theo App chính 105.000 đ/chiếc (tổng 420.000 đ)
             cursor.execute("""

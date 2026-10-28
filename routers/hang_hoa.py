@@ -60,7 +60,22 @@ def _auto_align_app_chinh():
             cursor.execute("""
                 UPDATE XuatHang 
                 SET gia_von = 15100000.0, loi_nhuan = gia_ban - 15100000.0 
+                WHERE so_phieu = 'XH1001/10' AND ma_hang = 'HH088' AND gia_von < 15000000.0
+            """)
+            cursor.execute("""
+                UPDATE XuatHang 
+                SET gia_von = 15100000.0, loi_nhuan = gia_ban - 15100000.0 
+                WHERE so_phieu = 'XH1012/10' AND ma_hang = 'HH088' AND gia_von < 15000000.0
+            """)
+            cursor.execute("""
+                UPDATE XuatHang 
+                SET gia_von = 15100000.0, loi_nhuan = gia_ban - 15100000.0 
                 WHERE so_phieu = 'XH1048/10' AND ma_hang = 'HH088' AND gia_von < 15000000.0
+            """)
+            cursor.execute("""
+                UPDATE XuatHang 
+                SET gia_von = 14000000.0, loi_nhuan = gia_ban - 14000000.0 
+                WHERE so_phieu = 'XH1082/10' AND ma_hang = 'HH088' AND gia_von > 14500000.0
             """)
             cursor.execute("""
                 UPDATE XuatHang 
