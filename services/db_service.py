@@ -1173,10 +1173,11 @@ class DatabaseManager:
             batches = [b for b in batches if b["so_luong"] > 0]
             new_total_sl = max(0, sum(b["so_luong"] for b in batches))
             new_lo_str = format_batches_str(batches)
+            new_gia_nhap = batches[-1]["gia_nhap"] if batches else cur_gia
 
             cursor.execute("""
-                UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ? WHERE ma_hang = ?
-            """, (new_total_sl, new_lo_str, ma_hang))
+                UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ?, gia_nhap = ? WHERE ma_hang = ?
+            """, (new_total_sl, new_lo_str, new_gia_nhap, ma_hang))
             if should_close:
                 conn.commit()
                 conn.close()
@@ -1184,12 +1185,13 @@ class DatabaseManager:
         self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
             "ma_hang": ma_hang,
             "ton_kho": new_total_sl,
-            "chi_tiet_lo": new_lo_str
+            "chi_tiet_lo": new_lo_str,
+            "gia_nhap": new_gia_nhap
         })
         return new_total_sl, new_lo_str
 
     def delete_nhap_hang_receipt(self, so_phieu: str) -> bool:
-        """Xóa toàn bộ phiếu nhập kho, hoàn trả tồn kho, xóa các phiếu chi liên quan trong Sổ Quỹ và đồng bộ Sheet."""
+        """Xóa toàn bộ phiếu nhập kho, kiểm tra an toàn tồn kho, xóa các phiếu chi liên quan trong Sổ Quỹ và đồng bộ Sheet."""
         so_quy_ids_to_delete = []
         with self._lock:
             with self._get_connection() as conn:
@@ -1200,11 +1202,26 @@ class DatabaseManager:
                     return False
                 items = [dict(r) for r in rows]
 
-                # Hoàn trả tồn kho từng món trong cùng connection
+                # Kiểm tra an toàn trước khi xóa: tồn kho hiện tại có đủ để thu hồi không?
+                for it in items:
+                    sl = int(it.get("so_luong", 0) or 0)
+                    ma = str(it.get("ma_hang", "")).strip()
+                    if sl > 0 and ma:
+                        rec = self.get_hang_hoa_by_ma(ma)
+                        cur_ton = int(rec.get("ton_kho", 0) or 0) if rec else 0
+                        if cur_ton < sl:
+                            ten = it.get("ten_hang") or (rec.get("ten_hang") if rec else ma)
+                            raise ValueError(
+                                f"Không thể xóa phiếu nhập {so_phieu} vì mặt hàng '{ten}' đã được xuất bán "
+                                f"(Tồn kho hiện tại: {cur_ton}, cần thu hồi: {sl}). "
+                                f"Vui lòng chỉnh sửa hoặc xóa các phiếu xuất liên quan trước!"
+                            )
+
+                # Đã an toàn: hoàn trả tồn kho từng món trong cùng connection
                 for it in items:
                     sl = int(it.get("so_luong", 0) or 0)
                     gia = float(it.get("gia_nhap", 0) or 0)
-                    ma = str(it.get("ma_hang", ""))
+                    ma = str(it.get("ma_hang", "")).strip()
                     if sl > 0 and ma:
                         self.revert_nhap_hang_batch_local(ma, sl, gia, conn=conn)
 
@@ -1242,7 +1259,7 @@ class DatabaseManager:
         return True
 
     def update_nhap_hang_receipt(self, so_phieu: str, ngay_nhap: str, ncc_save_ref: str, ghi_chu: str, items: list[dict], cong_no: float = None) -> list[dict]:
-        """Cập nhật phiếu nhập kho: hoàn trả kho cũ, nạp kho mới, cập nhật NhapHang."""
+        """Cập nhật phiếu nhập kho: kiểm tra an toàn tồn kho, cập nhật lô & giá nhập, đồng bộ NhapHang & SoQuy."""
         created_rows = []
         with self._lock:
             with self._get_connection() as conn:
@@ -1251,7 +1268,7 @@ class DatabaseManager:
                 old_rows = cursor.fetchall()
                 old_items = [dict(r) for r in old_rows]
 
-                # 1. Tính toán độ chênh lệch số lượng (Delta) giữa danh sách cũ và mới
+                # 1. Phân tích số lượng và đơn giá cũ/mới theo từng mã hàng
                 old_qty_map = {}
                 old_price_map = {}
                 for it in old_items:
@@ -1267,18 +1284,77 @@ class DatabaseManager:
                     new_price_map[m] = float(it.get("gia_nhap", 0) or 0)
 
                 all_mas = set(old_qty_map.keys()) | set(new_qty_map.keys())
+
+                # 2. Kiểm tra an toàn: nếu giảm số lượng mặt hàng nào, kho hiện tại có đủ để thu hồi không?
                 for m in all_mas:
                     o_sl = old_qty_map.get(m, 0)
                     n_sl = new_qty_map.get(m, 0)
-                    delta = n_sl - o_sl
-                    if delta > 0:
-                        gia = new_price_map.get(m, 0.0)
-                        self.nhap_hang_batch_local(m, delta, gia, conn=conn)
-                    elif delta < 0:
-                        gia = old_price_map.get(m, 0.0)
-                        self.revert_nhap_hang_batch_local(m, abs(delta), gia, conn=conn)
+                    if n_sl < o_sl:
+                        reduce_sl = o_sl - n_sl
+                        rec = self.get_hang_hoa_by_ma(m)
+                        cur_ton = int(rec.get("ton_kho", 0) or 0) if rec else 0
+                        if cur_ton < reduce_sl:
+                            ten = rec.get("ten_hang", m) if rec else m
+                            raise ValueError(
+                                f"Không thể giảm số lượng mặt hàng '{ten}' từ {o_sl} xuống {n_sl} "
+                                f"vì hàng đã được xuất bán (Tồn kho hiện tại: {cur_ton}, cần thu hồi: {reduce_sl}). "
+                                f"Vui lòng kiểm tra lại các phiếu xuất liên quan!"
+                            )
 
-                # 2. Tính tổng tiền mới và kiểm tra phiếu chi liên quan trong Sổ Quỹ (SoQuy)
+                # 3. Cập nhật tồn kho và chi tiết lô theo từng mặt hàng
+                for m in all_mas:
+                    o_sl = old_qty_map.get(m, 0)
+                    n_sl = new_qty_map.get(m, 0)
+                    o_gia = old_price_map.get(m, 0.0)
+                    n_gia = new_price_map.get(m, 0.0)
+
+                    if o_sl == 0:
+                        # Mặt hàng mới thêm vào phiếu nhập -> nhập mới vào kho
+                        self.nhap_hang_batch_local(m, n_sl, n_gia, conn=conn)
+                    elif n_sl == 0:
+                        # Mặt hàng bị xóa hẳn khỏi phiếu nhập -> thu hồi toàn bộ
+                        self.revert_nhap_hang_batch_local(m, o_sl, o_gia, conn=conn)
+                    else:
+                        # Mặt hàng có ở cả cũ và mới: kiểm tra thay đổi giá và số lượng
+                        if abs(n_gia - o_gia) >= 1.0:
+                            # Đổi giá nhập: Cập nhật lại giá lô trong chi_tiet_lo
+                            cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (m,))
+                            hh_row = cursor.fetchone()
+                            if hh_row:
+                                cur_ton = int(hh_row["ton_kho"] or 0)
+                                cur_lo = str(hh_row["chi_tiet_lo"] or "")
+                                batches = parse_batches_str(cur_lo, cur_ton, float(hh_row["gia_nhap"] or 0))
+                                
+                                updated_batch = False
+                                for b in batches:
+                                    if abs(b["gia_nhap"] - o_gia) < 1.0:
+                                        b["gia_nhap"] = n_gia
+                                        if n_sl != o_sl:
+                                            delta = n_sl - o_sl
+                                            b["so_luong"] = max(0, b["so_luong"] + delta)
+                                        updated_batch = True
+                                        break
+                                if not updated_batch:
+                                    delta = n_sl - o_sl
+                                    if delta > 0:
+                                        batches.append({"so_luong": delta, "gia_nhap": n_gia})
+                                
+                                batches = [b for b in batches if b["so_luong"] > 0]
+                                new_tot_ton = sum(b["so_luong"] for b in batches)
+                                new_lo_str = format_batches_str(batches)
+                                cursor.execute("""
+                                    UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ?, gia_nhap = ? WHERE ma_hang = ?
+                                """, (new_tot_ton, new_lo_str, n_gia, m))
+                                self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
+                                    "ma_hang": m, "ton_kho": new_tot_ton, "chi_tiet_lo": new_lo_str, "gia_nhap": n_gia
+                                })
+                        else:
+                            # Giá giữ nguyên, chỉ thay đổi số lượng nếu có
+                            delta = n_sl - o_sl
+                            if delta > 0:
+                                self.nhap_hang_batch_local(m, delta, n_gia, conn=conn)
+                            elif delta < 0:
+                                self.revert_nhap_hang_batch_local(m, abs(delta), o_gia, conn=conn)
                 tong_tien_moi = sum(float(it["so_luong"] * it["gia_nhap"]) for it in items)
                 so_phieu_clean = so_phieu.strip().upper()
 

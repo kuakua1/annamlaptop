@@ -417,6 +417,8 @@ async def delete_nhap_hang(
             level="WARNING"
         )
         return {"success": True, "message": f"Đã xóa thành công phiếu nhập {so_phieu} và hoàn trả tồn kho"}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException:
         raise
     except Exception as e:
@@ -526,6 +528,8 @@ async def update_nhap_hang(
             "so_phieu": so_phieu,
             "data": updated_rows
         }
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException:
         raise
     except Exception as e:

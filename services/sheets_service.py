@@ -59,7 +59,7 @@ def parse_batches_str(s: str, sl: int = 0, gia_nhap: float = 0.0) -> list[dict]:
                     pass
     if not batches and sl > 0:
         batches.append({"so_luong": int(sl), "gia_nhap": float(gia_nhap)})
-    elif len(batches) == 1 and sl > 0 and gia_nhap > 0:
+    elif len(batches) == 1 and sl > 0 and batches[0]["gia_nhap"] == 0 and gia_nhap > 0:
         batches[0]["gia_nhap"] = float(gia_nhap)
     return batches
 

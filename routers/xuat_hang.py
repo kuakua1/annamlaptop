@@ -451,6 +451,8 @@ async def delete_xuat_hang(
             level="WARNING"
         )
         return {"success": True, "message": f"Đã xóa thành công phiếu xuất {so_phieu} và hoàn trả hàng về kho"}
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except HTTPException:
         raise
     except Exception as e:
