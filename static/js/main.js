@@ -4774,31 +4774,32 @@ function openQuickCreateProductInReceipt() {
                             </div>
                             <div class="row g-2 mb-3">
                                 <div class="col-6">
-                                    <label class="form-label small fw-semibold text-secondary mb-1">Mã Hàng</label>
-                                    <input type="text" class="form-control form-control-sm font-monospace" id="quick-prod-ma" placeholder="Tự sinh (HH...)" autocomplete="off">
-                                    <div class="form-text text-muted" style="font-size: 0.72rem;">Để trống để hệ thống tự cấp mã</div>
+                                    <label class="form-label small fw-semibold text-secondary mb-1">Danh Mục</label>
+                                    <select class="form-select form-select-sm" id="quick-prod-danh-muc">
+                                        <option value="Laptop" selected>Laptop</option>
+                                        <option value="Phụ Kiện">Phụ Kiện</option>
+                                        <option value="Linh Kiện">Linh Kiện</option>
+                                        <option value="Khác">Khác</option>
+                                    </select>
                                 </div>
                                 <div class="col-6">
-                                    <label class="form-label small fw-semibold text-secondary mb-1">Danh Mục</label>
-                                    <input type="text" list="quick-prod-danh-muc-list" class="form-control form-control-sm" id="quick-prod-danh-muc" placeholder="Laptop, Phụ Kiện..." autocomplete="off">
-                                    <datalist id="quick-prod-danh-muc-list">
-                                        <option value="Laptop">
-                                        <option value="Phụ Kiện">
-                                        <option value="Linh Kiện">
-                                        <option value="Khác">
-                                    </datalist>
+                                    <label class="form-label small fw-semibold text-secondary mb-1">Đơn Vị Tính</label>
+                                    <select class="form-select form-select-sm" id="quick-prod-dvt">
+                                        <option value="Cái" selected>Cái</option>
+                                        <option value="Bộ">Bộ</option>
+                                        <option value="Chiếc">Chiếc</option>
+                                        <option value="Hộp">Hộp</option>
+                                        <option value="Gói">Gói</option>
+                                        <option value="Cặp">Cặp</option>
+                                    </select>
                                 </div>
                             </div>
                             <div class="row g-2 mb-3">
-                                <div class="col-4">
-                                    <label class="form-label small fw-semibold text-secondary mb-1">Đơn Vị Tính</label>
-                                    <input type="text" class="form-control form-control-sm text-center" id="quick-prod-dvt" value="Cái" placeholder="Cái, Bộ...">
-                                </div>
-                                <div class="col-4">
+                                <div class="col-6">
                                     <label class="form-label small fw-semibold text-secondary mb-1">Giá Nhập (đ)</label>
                                     <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold" id="quick-prod-gia-nhap" value="0" placeholder="0">
                                 </div>
-                                <div class="col-4">
+                                <div class="col-6">
                                     <label class="form-label small fw-semibold text-secondary mb-1">Giá Bán (đ)</label>
                                     <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold" id="quick-prod-gia-ban" value="0" placeholder="0">
                                 </div>
@@ -4824,24 +4825,30 @@ function openQuickCreateProductInReceipt() {
     // Đóng gợi ý dropdown chi tiết phiếu
     document.getElementById('detail-add-prod-sug')?.classList.add('d-none');
 
+    // Cập nhật các danh mục đang có trong hệ thống vào dropdown Danh Mục
+    const dmSelect = document.getElementById('quick-prod-danh-muc');
+    if (dmSelect) {
+        const defaultCats = ['Laptop', 'Phụ Kiện', 'Linh Kiện', 'Khác'];
+        const existingCats = Array.from(new Set((window.allReceiptProductsCache || []).map(p => p.danh_muc).filter(Boolean)));
+        const allCats = Array.from(new Set([...defaultCats, ...existingCats]));
+        const curVal = dmSelect.value || 'Laptop';
+        dmSelect.innerHTML = allCats.map(c => `<option value="${escapeHtml(c)}" ${c === curVal ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+    }
+
+    const dvtSelect = document.getElementById('quick-prod-dvt');
+    if (dvtSelect && (!dvtSelect.options || !dvtSelect.options.length)) {
+        const units = ['Cái', 'Bộ', 'Chiếc', 'Hộp', 'Gói', 'Cặp'];
+        dvtSelect.innerHTML = units.map(u => `<option value="${u}">${u}</option>`).join('');
+    }
+    if (dvtSelect && !dvtSelect.value) {
+        dvtSelect.value = 'Cái';
+    }
+
     // Lấy query text hiện tại (nếu người dùng vừa gõ vào ô tìm kiếm hàng)
     const curQuery = (document.getElementById('detail-add-prod-input')?.value || '').trim();
     const tenInput = document.getElementById('quick-prod-ten');
     if (tenInput) {
         tenInput.value = curQuery;
-    }
-
-    const maInput = document.getElementById('quick-prod-ma');
-    if (maInput) maInput.value = '';
-
-    const dmInput = document.getElementById('quick-prod-danh-muc');
-    if (dmInput && !dmInput.value) {
-        dmInput.value = 'Laptop';
-    }
-
-    const dvtInput = document.getElementById('quick-prod-dvt');
-    if (dvtInput && !dvtInput.value) {
-        dvtInput.value = 'Cái';
     }
 
     const curGiaVal = parseCurrencyValue(document.getElementById('detail-add-gia')?.value || 0);
@@ -4890,8 +4897,7 @@ async function submitQuickCreateProductInReceipt(e) {
         return;
     }
 
-    const ma = (document.getElementById('quick-prod-ma')?.value || '').trim();
-    const danhMuc = (document.getElementById('quick-prod-danh-muc')?.value || '').trim();
+    const danhMuc = (document.getElementById('quick-prod-danh-muc')?.value || '').trim() || 'Laptop';
     const dvt = (document.getElementById('quick-prod-dvt')?.value || '').trim() || 'Cái';
     const giaNhap = parseCurrencyValue(document.getElementById('quick-prod-gia-nhap')?.value || 0);
     const giaBan = parseCurrencyValue(document.getElementById('quick-prod-gia-ban')?.value || 0);
@@ -4915,7 +4921,6 @@ async function submitQuickCreateProductInReceipt(e) {
             ton_kho: 0,
             ghi_chu: ghiChu
         };
-        if (ma) payload.ma_hang = ma;
 
         const res = await apiRequest('/api/hang-hoa', 'POST', payload);
         const newProd = res.data;

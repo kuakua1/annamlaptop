@@ -316,14 +316,7 @@ async def create_hang_hoa(
     try:
         import time
         new_id = str(int(time.time() * 1000))
-        if data.ma_hang and data.ma_hang.strip():
-            custom_ma = data.ma_hang.strip().upper()
-            existing = db_manager.get_hang_hoa_by_ma(custom_ma)
-            if existing:
-                raise HTTPException(status_code=400, detail=f"Mã hàng {custom_ma} đã tồn tại trong hệ thống!")
-            ma_hang = custom_ma
-        else:
-            ma_hang = db_manager.generate_ma_hang()
+        ma_hang = db_manager.generate_ma_hang()
         chi_tiet_lo = f"{data.ton_kho} x {int(data.gia_nhap):,} đ".replace(",", ".") if data.ton_kho > 0 else ""
         item = {
             "id": new_id,
