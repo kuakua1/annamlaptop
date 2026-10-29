@@ -1360,6 +1360,27 @@ body.is-embedded-tab .tab-direct-content {
   overflow-y: auto;
 }
 
+/* Dropdown gợi ý tìm kiếm hàng trong modal chi tiết phiếu:
+   Mở rộng thoải mái chiều ngang (lòi ra ngoài ô input), không bị gò bó hay thụt hẹp */
+#detail-add-prod-sug {
+  min-width: 540px !important;
+  width: max(100%, 540px) !important;
+  max-width: min(720px, 92vw) !important;
+  right: auto !important;
+  left: 0 !important;
+  top: calc(100% + 4px) !important;
+  z-index: 1080 !important;
+  border-radius: 8px !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18), 0 6px 10px rgba(15, 23, 42, 0.1) !important;
+  background: #ffffff !important;
+}
+
+.card:has(#detail-add-prod-sug),
+.card-body:has(#detail-add-prod-sug) {
+  overflow: visible !important;
+}
+
 .autocomplete-dropdown::-webkit-scrollbar {
   width: 6px;
 }

@@ -2068,8 +2068,8 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
         </div>
 
         <!-- Thanh thêm mặt hàng mới vào phiếu -->
-        <div class="card border border-dashed bg-white mb-2">
-            <div class="card-body p-2">
+        <div class="card border border-dashed bg-white mb-2" style="overflow: visible;">
+            <div class="card-body p-2" style="overflow: visible;">
                 <div class="d-flex align-items-center gap-2 flex-wrap">
                     <span class="small fw-bold text-secondary text-nowrap"><i class="bi bi-plus-circle me-1"></i>Thêm hàng:</span>
                     <div class="position-relative" style="flex: 2; min-width: 250px;">
@@ -2088,7 +2088,7 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                             </button>
                         </div>
                         <input type="hidden" id="detail-add-prod-ma" value="">
-                        <div id="detail-add-prod-sug" class="autocomplete-dropdown d-none shadow" style="max-height: 380px; width: 100%; z-index: 1070; position: absolute; left: 0; top: 100%;"></div>
+                        <div id="detail-add-prod-sug" class="autocomplete-dropdown d-none shadow-lg border rounded-3" style="max-height: 420px; min-width: 540px; width: max(100%, 540px); max-width: min(720px, 92vw); z-index: 1080; position: absolute; left: 0; top: calc(100% + 4px); background: #ffffff;"></div>
                     </div>
                     <button type="button" class="btn btn-outline-success btn-sm text-nowrap fw-semibold" onclick="openQuickCreateProductInReceipt()" title="Tạo hàng hóa mới trực tiếp vào hệ thống">
                         <i class="bi bi-box-seam me-1"></i>+ Tạo SP mới
