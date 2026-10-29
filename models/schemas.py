@@ -29,6 +29,7 @@ class AdminResetPasswordRequest(BaseModel):
 # ─── HangHoa (Products) ───────────────────────────────────────────────────────
 
 class HangHoaCreate(BaseModel):
+    ma_hang: Optional[str] = None
     ten_hang: str
     danh_muc: Optional[str] = ""
     don_vi_tinh: Optional[str] = "Cái"

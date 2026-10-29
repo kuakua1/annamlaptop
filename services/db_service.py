@@ -1202,20 +1202,24 @@ class DatabaseManager:
                     return False
                 items = [dict(r) for r in rows]
 
-                # Kiểm tra an toàn trước khi xóa: tồn kho hiện tại có đủ để thu hồi không?
+                # Kiểm tra an toàn trước khi xóa: tồn kho hiện tại có đủ để thu hồi không (gom theo mã)?
+                tot_sl_by_ma = {}
                 for it in items:
                     sl = int(it.get("so_luong", 0) or 0)
                     ma = str(it.get("ma_hang", "")).strip()
                     if sl > 0 and ma:
-                        rec = self.get_hang_hoa_by_ma(ma)
-                        cur_ton = int(rec.get("ton_kho", 0) or 0) if rec else 0
-                        if cur_ton < sl:
-                            ten = it.get("ten_hang") or (rec.get("ten_hang") if rec else ma)
-                            raise ValueError(
-                                f"Không thể xóa phiếu nhập {so_phieu} vì mặt hàng '{ten}' đã được xuất bán "
-                                f"(Tồn kho hiện tại: {cur_ton}, cần thu hồi: {sl}). "
-                                f"Vui lòng chỉnh sửa hoặc xóa các phiếu xuất liên quan trước!"
-                            )
+                        tot_sl_by_ma[ma] = tot_sl_by_ma.get(ma, 0) + sl
+
+                for ma, needed_sl in tot_sl_by_ma.items():
+                    rec = self.get_hang_hoa_by_ma(ma)
+                    cur_ton = int(rec.get("ton_kho", 0) or 0) if rec else 0
+                    if cur_ton < needed_sl:
+                        ten = rec.get("ten_hang", ma) if rec else ma
+                        raise ValueError(
+                            f"Không thể xóa phiếu nhập {so_phieu} vì mặt hàng '{ten}' đã được xuất bán "
+                            f"(Tồn kho hiện tại: {cur_ton}, cần thu hồi: {needed_sl}). "
+                            f"Vui lòng chỉnh sửa hoặc xóa các phiếu xuất liên quan trước!"
+                        )
 
                 # Đã an toàn: hoàn trả tồn kho từng món trong cùng connection
                 for it in items:
@@ -1268,27 +1272,37 @@ class DatabaseManager:
                 old_rows = cursor.fetchall()
                 old_items = [dict(r) for r in old_rows]
 
-                # 1. Phân tích số lượng và đơn giá cũ/mới theo từng mã hàng
-                old_qty_map = {}
-                old_price_map = {}
+                # 1. Phân tích số lượng và đơn giá cũ/mới theo từng mã hàng (hỗ trợ nhiều lô giá trong cùng 1 phiếu)
+                old_items_by_ma = {}
                 for it in old_items:
                     m = str(it.get("ma_hang", "")).strip()
-                    old_qty_map[m] = old_qty_map.get(m, 0) + int(it.get("so_luong", 0) or 0)
-                    old_price_map[m] = float(it.get("gia_nhap", 0) or 0)
+                    if not m:
+                        continue
+                    if m not in old_items_by_ma:
+                        old_items_by_ma[m] = []
+                    old_items_by_ma[m].append({
+                        "so_luong": int(it.get("so_luong", 0) or 0),
+                        "gia_nhap": float(it.get("gia_nhap", 0) or 0)
+                    })
 
-                new_qty_map = {}
-                new_price_map = {}
+                new_items_by_ma = {}
                 for it in items:
                     m = str(it.get("ma_hang", "")).strip()
-                    new_qty_map[m] = new_qty_map.get(m, 0) + int(it.get("so_luong", 0) or 0)
-                    new_price_map[m] = float(it.get("gia_nhap", 0) or 0)
+                    if not m:
+                        continue
+                    if m not in new_items_by_ma:
+                        new_items_by_ma[m] = []
+                    new_items_by_ma[m].append({
+                        "so_luong": int(it.get("so_luong", 0) or 0),
+                        "gia_nhap": float(it.get("gia_nhap", 0) or 0)
+                    })
 
-                all_mas = set(old_qty_map.keys()) | set(new_qty_map.keys())
+                all_mas = set(old_items_by_ma.keys()) | set(new_items_by_ma.keys())
 
                 # 2. Kiểm tra an toàn: nếu giảm số lượng mặt hàng nào, kho hiện tại có đủ để thu hồi không?
                 for m in all_mas:
-                    o_sl = old_qty_map.get(m, 0)
-                    n_sl = new_qty_map.get(m, 0)
+                    o_sl = sum(it["so_luong"] for it in old_items_by_ma.get(m, []))
+                    n_sl = sum(it["so_luong"] for it in new_items_by_ma.get(m, []))
                     if n_sl < o_sl:
                         reduce_sl = o_sl - n_sl
                         rec = self.get_hang_hoa_by_ma(m)
@@ -1301,60 +1315,150 @@ class DatabaseManager:
                                 f"Vui lòng kiểm tra lại các phiếu xuất liên quan!"
                             )
 
-                # 3. Cập nhật tồn kho và chi tiết lô theo từng mặt hàng
+                # 3. Cập nhật tồn kho và chi tiết lô theo từng mặt hàng (đối soát nhiều mức giá)
                 for m in all_mas:
-                    o_sl = old_qty_map.get(m, 0)
-                    n_sl = new_qty_map.get(m, 0)
-                    o_gia = old_price_map.get(m, 0.0)
-                    n_gia = new_price_map.get(m, 0.0)
+                    old_list = old_items_by_ma.get(m, [])
+                    new_list = new_items_by_ma.get(m, [])
+                    o_sl = sum(it["so_luong"] for it in old_list)
+                    n_sl = sum(it["so_luong"] for it in new_list)
 
                     if o_sl == 0:
-                        # Mặt hàng mới thêm vào phiếu nhập -> nhập mới vào kho
-                        self.nhap_hang_batch_local(m, n_sl, n_gia, conn=conn)
+                        # Mặt hàng mới thêm vào phiếu nhập -> nhập từng lô mới vào kho
+                        for b in new_list:
+                            self.nhap_hang_batch_local(m, b["so_luong"], b["gia_nhap"], conn=conn)
                     elif n_sl == 0:
-                        # Mặt hàng bị xóa hẳn khỏi phiếu nhập -> thu hồi toàn bộ
-                        self.revert_nhap_hang_batch_local(m, o_sl, o_gia, conn=conn)
+                        # Mặt hàng bị xóa hẳn khỏi phiếu nhập -> thu hồi toàn bộ từng lô
+                        for b in old_list:
+                            self.revert_nhap_hang_batch_local(m, b["so_luong"], b["gia_nhap"], conn=conn)
                     else:
-                        # Mặt hàng có ở cả cũ và mới: kiểm tra thay đổi giá và số lượng
-                        if abs(n_gia - o_gia) >= 1.0:
-                            # Đổi giá nhập: Cập nhật lại giá lô trong chi_tiet_lo
+                        # Mặt hàng có ở cả cũ và mới: phân nhóm theo mức giá để đối soát chi tiết
+                        def _group_p(batches):
+                            res = {}
+                            for b in batches:
+                                p = round(float(b["gia_nhap"]), 2)
+                                res[p] = res.get(p, 0) + int(b["so_luong"])
+                            return res
+
+                        old_p_map = _group_p(old_list)
+                        new_p_map = _group_p(new_list)
+
+                        if old_p_map != new_p_map:
                             cursor.execute("SELECT ton_kho, chi_tiet_lo, gia_nhap FROM HangHoa WHERE ma_hang = ?", (m,))
                             hh_row = cursor.fetchone()
                             if hh_row:
                                 cur_ton = int(hh_row["ton_kho"] or 0)
                                 cur_lo = str(hh_row["chi_tiet_lo"] or "")
-                                batches = parse_batches_str(cur_lo, cur_ton, float(hh_row["gia_nhap"] or 0))
-                                
-                                updated_batch = False
-                                for b in batches:
-                                    if abs(b["gia_nhap"] - o_gia) < 1.0:
-                                        b["gia_nhap"] = n_gia
-                                        if n_sl != o_sl:
-                                            delta = n_sl - o_sl
-                                            b["so_luong"] = max(0, b["so_luong"] + delta)
-                                        updated_batch = True
-                                        break
-                                if not updated_batch:
-                                    delta = n_sl - o_sl
-                                    if delta > 0:
-                                        batches.append({"so_luong": delta, "gia_nhap": n_gia})
-                                
+                                cur_gia = float(hh_row["gia_nhap"] or 0)
+                                batches = parse_batches_str(cur_lo, cur_ton, cur_gia)
+
+                                all_p = set(old_p_map.keys()) | set(new_p_map.keys())
+                                rem_old = {}
+                                rem_new = {}
+
+                                for p in all_p:
+                                    oq = old_p_map.get(p, 0)
+                                    nq = new_p_map.get(p, 0)
+                                    if oq > 0 and nq > 0:
+                                        if nq > oq:
+                                            diff = nq - oq
+                                            found = False
+                                            for b in batches:
+                                                if abs(b["gia_nhap"] - p) < 1.0:
+                                                    b["so_luong"] += diff
+                                                    found = True
+                                                    break
+                                            if not found:
+                                                batches.append({"so_luong": diff, "gia_nhap": p})
+                                        elif nq < oq:
+                                            diff = oq - nq
+                                            to_sub = diff
+                                            for b in batches:
+                                                if abs(b["gia_nhap"] - p) < 1.0:
+                                                    deduct = min(b["so_luong"], to_sub)
+                                                    b["so_luong"] -= deduct
+                                                    to_sub -= deduct
+                                                    if to_sub <= 0:
+                                                        break
+                                            if to_sub > 0:
+                                                for b in batches:
+                                                    deduct = min(b["so_luong"], to_sub)
+                                                    b["so_luong"] -= deduct
+                                                    to_sub -= deduct
+                                                    if to_sub <= 0:
+                                                        break
+                                    elif oq > 0 and nq == 0:
+                                        rem_old[p] = oq
+                                    elif nq > 0 and oq == 0:
+                                        rem_new[p] = nq
+
+                                # Ghép cặp các lô đổi giá tương ứng (rem_old -> rem_new)
+                                old_p_keys = sorted(rem_old.keys())
+                                new_p_keys = sorted(rem_new.keys())
+                                pair_len = min(len(old_p_keys), len(new_p_keys))
+                                for i in range(pair_len):
+                                    op = old_p_keys[i]
+                                    np = new_p_keys[i]
+                                    oq = rem_old[op]
+                                    nq = rem_new[np]
+
+                                    matched_b = None
+                                    for b in batches:
+                                        if abs(b["gia_nhap"] - op) < 1.0:
+                                            matched_b = b
+                                            break
+
+                                    if matched_b:
+                                        matched_b["gia_nhap"] = np
+                                        delta_q = nq - oq
+                                        matched_b["so_luong"] = max(0, matched_b["so_luong"] + delta_q)
+                                    else:
+                                        delta_q = nq - oq
+                                        if delta_q > 0:
+                                            batches.append({"so_luong": delta_q, "gia_nhap": np})
+
+                                    del rem_old[op]
+                                    del rem_new[np]
+
+                                # Các lô rem_old còn dư (bị xóa bỏ hẳn khỏi phiếu)
+                                for op, oq in rem_old.items():
+                                    to_sub = oq
+                                    for b in batches:
+                                        if abs(b["gia_nhap"] - op) < 1.0:
+                                            deduct = min(b["so_luong"], to_sub)
+                                            b["so_luong"] -= deduct
+                                            to_sub -= deduct
+                                            if to_sub <= 0:
+                                                break
+                                    if to_sub > 0:
+                                        for b in batches:
+                                            deduct = min(b["so_luong"], to_sub)
+                                            b["so_luong"] -= deduct
+                                            to_sub -= deduct
+                                            if to_sub <= 0:
+                                                break
+
+                                # Các lô rem_new còn dư (mới thêm vào phiếu)
+                                for np, nq in rem_new.items():
+                                    found = False
+                                    for b in batches:
+                                        if abs(b["gia_nhap"] - np) < 1.0:
+                                            b["so_luong"] += nq
+                                            found = True
+                                            break
+                                    if not found:
+                                        batches.append({"so_luong": nq, "gia_nhap": np})
+
                                 batches = [b for b in batches if b["so_luong"] > 0]
                                 new_tot_ton = sum(b["so_luong"] for b in batches)
                                 new_lo_str = format_batches_str(batches)
+                                latest_price = new_list[-1]["gia_nhap"] if new_list else cur_gia
+
                                 cursor.execute("""
                                     UPDATE HangHoa SET ton_kho = ?, chi_tiet_lo = ?, gia_nhap = ? WHERE ma_hang = ?
-                                """, (new_tot_ton, new_lo_str, n_gia, m))
+                                """, (new_tot_ton, new_lo_str, latest_price, m))
                                 self._enqueue_task("UPDATE_HANG_HOA_STOCK", SHEET_HANG_HOA, {
-                                    "ma_hang": m, "ton_kho": new_tot_ton, "chi_tiet_lo": new_lo_str, "gia_nhap": n_gia
+                                    "ma_hang": m, "ton_kho": new_tot_ton, "chi_tiet_lo": new_lo_str, "gia_nhap": latest_price
                                 })
-                        else:
-                            # Giá giữ nguyên, chỉ thay đổi số lượng nếu có
-                            delta = n_sl - o_sl
-                            if delta > 0:
-                                self.nhap_hang_batch_local(m, delta, n_gia, conn=conn)
-                            elif delta < 0:
-                                self.revert_nhap_hang_batch_local(m, abs(delta), o_gia, conn=conn)
                 tong_tien_moi = sum(float(it["so_luong"] * it["gia_nhap"]) for it in items)
                 so_phieu_clean = so_phieu.strip().upper()
 

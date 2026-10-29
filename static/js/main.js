@@ -2090,6 +2090,9 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                         <input type="hidden" id="detail-add-prod-ma" value="">
                         <div id="detail-add-prod-sug" class="autocomplete-dropdown d-none shadow" style="max-height: 380px; width: 100%; z-index: 1070; position: absolute; left: 0; top: 100%;"></div>
                     </div>
+                    <button type="button" class="btn btn-outline-success btn-sm text-nowrap fw-semibold" onclick="openQuickCreateProductInReceipt()" title="Tạo hàng hóa mới trực tiếp vào hệ thống">
+                        <i class="bi bi-box-seam me-1"></i>+ Tạo SP mới
+                    </button>
                     <div style="width: 85px;">
                         <input type="number" id="detail-add-sl" min="1" value="1" class="form-control form-control-sm text-center" placeholder="SL">
                     </div>
@@ -2393,12 +2396,19 @@ function renderDetailProductSuggestions(matches) {
     const box = document.getElementById('detail-add-prod-sug');
     if (!box) return;
     if (!matches || !matches.length) {
-        box.innerHTML = `<div class="p-3 text-muted small text-center"><i class="bi bi-inbox me-1"></i>Không tìm thấy hàng khớp</div>`;
+        box.innerHTML = `
+            <div class="p-3 text-muted small text-center"><i class="bi bi-inbox me-1"></i>Không tìm thấy hàng khớp</div>
+            <div class="p-2 border-top bg-light text-center">
+                <button type="button" class="btn btn-link btn-sm text-decoration-none py-1 text-success fw-bold" onclick="openQuickCreateProductInReceipt()">
+                    <i class="bi bi-plus-circle me-1"></i>+ Tạo hàng hóa mới vào hệ thống
+                </button>
+            </div>
+        `;
         box.classList.remove('d-none');
         return;
     }
     const isXuat = window.currentReceiptDetail?.type === 'xuat';
-    box.innerHTML = matches.map(p => {
+    const itemsHtml = matches.map(p => {
         const gia = isXuat ? (p.gia_ban || 0) : (p.gia_nhap || 0);
         return `
             <div class="autocomplete-item py-2 px-3 border-bottom" onclick="selectDetailProduct('${escapeHtml(p.ma_hang)}')">
@@ -2416,6 +2426,14 @@ function renderDetailProductSuggestions(matches) {
             </div>
         `;
     }).join('');
+
+    box.innerHTML = itemsHtml + `
+        <div class="p-2 border-top bg-light text-center">
+            <button type="button" class="btn btn-link btn-sm text-decoration-none py-1 text-success fw-bold" onclick="openQuickCreateProductInReceipt()">
+                <i class="bi bi-plus-circle me-1"></i>+ Tạo hàng hóa mới vào hệ thống
+            </button>
+        </div>
+    `;
     box.classList.remove('d-none');
 }
 
@@ -2559,9 +2577,9 @@ function submitAddProductToReceiptDetail() {
 
     const isXuat = window.currentReceiptDetail?.type === 'xuat';
     if (isXuat && p) {
-        const existingTr = Array.from(tbody.querySelectorAll('tr')).find(tr => tr.dataset.ma === ma);
-        const curTrSl = existingTr ? (parseInt(existingTr.querySelector('.receipt-row-sl')?.value || 0) || 0) : 0;
-        const origReceiptSl = (window.currentReceiptDetail?.items || []).find(it => it.ma_hang === ma)?.so_luong || 0;
+        const allTrsForMa = Array.from(tbody.querySelectorAll('tr')).filter(tr => tr.dataset.ma === ma);
+        const curTrSl = allTrsForMa.reduce((sum, tr) => sum + (parseInt(tr.querySelector('.receipt-row-sl')?.value || 0) || 0), 0);
+        const origReceiptSl = (window.currentReceiptDetail?.items || []).filter(it => it.ma_hang === ma).reduce((sum, it) => sum + (parseInt(it.so_luong || 0) || 0), 0);
         const tonKhoLive = parseInt(p.ton_kho || 0) || 0;
         const maxAvail = tonKhoLive + origReceiptSl;
         if (curTrSl + sl > maxAvail) {
@@ -2572,19 +2590,24 @@ function submitAddProductToReceiptDetail() {
         }
     }
 
-    // Kiểm tra xem mã hàng đã có trong bảng chưa
-    const existingTr = Array.from(tbody.querySelectorAll('tr')).find(tr => tr.dataset.ma === ma);
+    // Kiểm tra xem đã có dòng nào trùng cả mã hàng và đơn giá chưa (hỗ trợ nhiều lô giá khác nhau)
+    const existingTr = Array.from(tbody.querySelectorAll('tr')).find(tr => {
+        if (tr.dataset.ma !== ma) return false;
+        const rowGia = parseCurrencyValue(tr.querySelector('.receipt-row-gia')?.value || 0);
+        return Math.abs(rowGia - gia) < 0.01;
+    });
+
     if (existingTr) {
         const curSlInput = existingTr.querySelector('.receipt-row-sl');
         if (curSlInput) {
             curSlInput.value = (parseInt(curSlInput.value) || 0) + sl;
             onReceiptDetailRowInput(curSlInput);
-            showToast(`Đã cộng thêm ${sl} ${dvt} vào mã ${ma}`, 'info');
+            showToast(`Đã cộng thêm ${sl} ${dvt} vào dòng giá ${formatVND(gia)} của mã ${ma}`, 'info');
         }
     } else {
         const lineTotal = sl * gia;
         const newIdx = tbody.querySelectorAll('tr').length + 1;
-        const maxAvail = isXuat ? ((parseInt(p?.ton_kho || 0) || 0) + ((window.currentReceiptDetail?.items || []).find(it => it.ma_hang === ma)?.so_luong || 0)) : 0;
+        const maxAvail = isXuat ? ((parseInt(p?.ton_kho || 0) || 0) + ((window.currentReceiptDetail?.items || []).filter(it => it.ma_hang === ma).reduce((sum, it) => sum + (parseInt(it.so_luong || 0) || 0), 0))) : 0;
         const stockHint = isXuat ? `<div class="small text-muted mt-1 stock-hint" style="font-size: 0.72rem;" title="Số lượng tối đa có thể xuất">(Kho: <strong class="text-dark">${maxAvail}</strong>)</div>` : '';
         const newTr = document.createElement('tr');
         newTr.dataset.ma = ma;
@@ -2658,25 +2681,6 @@ async function saveCurrentReceiptDetail(shouldCloseAfterSave = false) {
             return;
         }
 
-        if (isXuat) {
-            const list = window.allReceiptProductsCache || [];
-            const p = list.find(x => x.ma_hang === ma);
-            const origReceiptSl = (window.currentReceiptDetail?.items || []).find(it => it.ma_hang === ma)?.so_luong || 0;
-            const tonKhoLive = p ? (parseInt(p.ton_kho || 0) || 0) : 0;
-            const maxAvail = tonKhoLive + origReceiptSl;
-            if (sl > maxAvail) {
-                const rawTen = ten || ma;
-                const shortTen = rawTen.length > 25 ? (rawTen.substring(0, 23) + '...') : rawTen;
-                showToast(`<strong>Không thể lưu!</strong> "${escapeHtml(shortTen)}" chỉ còn tồn <strong>${maxAvail}</strong> để xuất (bạn nhập ${sl}).`, 'error');
-                const slInput = tr.querySelector('.receipt-row-sl');
-                if (slInput) {
-                    slInput.classList.add('is-invalid', 'border-danger', 'bg-danger-subtle');
-                    slInput.focus();
-                }
-                return;
-            }
-        }
-
         const itemObj = {
             ma_hang: ma,
             ten_hang: ten,
@@ -2688,6 +2692,26 @@ async function saveCurrentReceiptDetail(shouldCloseAfterSave = false) {
             itemObj.gia_nhap = gia;
         }
         items.push(itemObj);
+    }
+
+    if (isXuat) {
+        const qtyByMa = {};
+        for (const it of items) {
+            qtyByMa[it.ma_hang] = (qtyByMa[it.ma_hang] || 0) + it.so_luong;
+        }
+        const list = window.allReceiptProductsCache || [];
+        for (const [m, totSl] of Object.entries(qtyByMa)) {
+            const p = list.find(x => x.ma_hang === m);
+            const origReceiptSl = (window.currentReceiptDetail?.items || []).filter(it => it.ma_hang === m).reduce((sum, it) => sum + (parseInt(it.so_luong || 0) || 0), 0);
+            const tonKhoLive = p ? (parseInt(p.ton_kho || 0) || 0) : 0;
+            const maxAvail = tonKhoLive + origReceiptSl;
+            if (totSl > maxAvail) {
+                const ten = p?.ten_hang || m;
+                const shortTen = ten.length > 25 ? (ten.substring(0, 23) + '...') : ten;
+                showToast(`<strong>Không thể lưu!</strong> "${escapeHtml(shortTen)}" chỉ còn tồn tối đa <strong>${maxAvail}</strong> để xuất (bạn chọn tổng ${totSl}).`, 'error');
+                return;
+            }
+        }
     }
 
     const ngay = document.getElementById('receipt-edit-ngay')?.value || (isXuat ? r.ngay_xuat : r.ngay_nhap);
@@ -4718,4 +4742,205 @@ async function confirmClearActivityLogs() {
     }
 }
 window.confirmClearActivityLogs = confirmClearActivityLogs;
+
+/**
+ * ── Mở modal tạo nhanh hàng hóa trực tiếp trong chi tiết phiếu ─────────
+ */
+function openQuickCreateProductInReceipt() {
+    // Đảm bảo modal tồn tại trong DOM
+    if (!document.getElementById('modal-quick-create-prod')) {
+        const modalDiv = document.createElement('div');
+        modalDiv.className = 'modal fade';
+        modalDiv.id = 'modal-quick-create-prod';
+        modalDiv.tabIndex = -1;
+        modalDiv.setAttribute('aria-hidden', 'true');
+        modalDiv.style.zIndex = '1070';
+        modalDiv.innerHTML = `
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content shadow-lg border-0 rounded-3">
+                    <div class="modal-header bg-primary text-white py-2 px-3">
+                        <h6 class="modal-title fw-bold fs-6 d-flex align-items-center gap-2 mb-0 text-white">
+                            <i class="bi bi-box-seam-fill"></i> Tạo Hàng Hóa Mới
+                        </h6>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form id="form-quick-create-prod" onsubmit="submitQuickCreateProductInReceipt(event)">
+                        <div class="modal-body p-3">
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold text-secondary mb-1">
+                                    Tên Hàng Hóa <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" class="form-control form-control-sm fw-semibold" id="quick-prod-ten" placeholder="Nhập tên hàng hóa, cấu hình..." required autocomplete="off">
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <label class="form-label small fw-semibold text-secondary mb-1">Mã Hàng</label>
+                                    <input type="text" class="form-control form-control-sm font-monospace" id="quick-prod-ma" placeholder="Tự sinh (HH...)" autocomplete="off">
+                                    <div class="form-text text-muted" style="font-size: 0.72rem;">Để trống để hệ thống tự cấp mã</div>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label small fw-semibold text-secondary mb-1">Danh Mục</label>
+                                    <input type="text" list="quick-prod-danh-muc-list" class="form-control form-control-sm" id="quick-prod-danh-muc" placeholder="Laptop, Phụ Kiện..." autocomplete="off">
+                                    <datalist id="quick-prod-danh-muc-list">
+                                        <option value="Laptop">
+                                        <option value="Phụ Kiện">
+                                        <option value="Linh Kiện">
+                                        <option value="Khác">
+                                    </datalist>
+                                </div>
+                            </div>
+                            <div class="row g-2 mb-3">
+                                <div class="col-4">
+                                    <label class="form-label small fw-semibold text-secondary mb-1">Đơn Vị Tính</label>
+                                    <input type="text" class="form-control form-control-sm text-center" id="quick-prod-dvt" value="Cái" placeholder="Cái, Bộ...">
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label small fw-semibold text-secondary mb-1">Giá Nhập (đ)</label>
+                                    <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold" id="quick-prod-gia-nhap" value="0" placeholder="0">
+                                </div>
+                                <div class="col-4">
+                                    <label class="form-label small fw-semibold text-secondary mb-1">Giá Bán (đ)</label>
+                                    <input type="text" inputmode="numeric" class="form-control form-control-sm text-end fw-semibold" id="quick-prod-gia-ban" value="0" placeholder="0">
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Ghi Chú</label>
+                                <input type="text" class="form-control form-control-sm" id="quick-prod-ghi-chu" placeholder="Ghi chú thêm về hàng hóa...">
+                            </div>
+                        </div>
+                        <div class="modal-footer py-2 px-3 bg-light d-flex justify-content-between">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Hủy</button>
+                            <button type="submit" class="btn btn-primary btn-sm fw-bold px-3" id="btn-submit-quick-create-prod">
+                                <i class="bi bi-check-circle me-1"></i>Tạo &amp; Chọn Ngay
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modalDiv);
+    }
+
+    // Đóng gợi ý dropdown chi tiết phiếu
+    document.getElementById('detail-add-prod-sug')?.classList.add('d-none');
+
+    // Lấy query text hiện tại (nếu người dùng vừa gõ vào ô tìm kiếm hàng)
+    const curQuery = (document.getElementById('detail-add-prod-input')?.value || '').trim();
+    const tenInput = document.getElementById('quick-prod-ten');
+    if (tenInput) {
+        tenInput.value = curQuery;
+    }
+
+    const maInput = document.getElementById('quick-prod-ma');
+    if (maInput) maInput.value = '';
+
+    const dmInput = document.getElementById('quick-prod-danh-muc');
+    if (dmInput && !dmInput.value) {
+        dmInput.value = 'Laptop';
+    }
+
+    const dvtInput = document.getElementById('quick-prod-dvt');
+    if (dvtInput && !dvtInput.value) {
+        dvtInput.value = 'Cái';
+    }
+
+    const curGiaVal = parseCurrencyValue(document.getElementById('detail-add-gia')?.value || 0);
+    const isXuat = window.currentReceiptDetail?.type === 'xuat';
+
+    const giaNhapInput = document.getElementById('quick-prod-gia-nhap');
+    if (giaNhapInput) {
+        giaNhapInput.value = (!isXuat && curGiaVal > 0) ? formatNumber(curGiaVal) : '0';
+    }
+
+    const giaBanInput = document.getElementById('quick-prod-gia-ban');
+    if (giaBanInput) {
+        giaBanInput.value = (isXuat && curGiaVal > 0) ? formatNumber(curGiaVal) : '0';
+    }
+
+    // Tự động định dạng tiền tệ khi người dùng gõ
+    [giaNhapInput, giaBanInput].forEach(inp => {
+        if (inp && !inp.dataset.boundCurrency) {
+            inp.dataset.boundCurrency = 'true';
+            inp.addEventListener('input', function() {
+                const raw = parseCurrencyValue(this.value);
+                this.value = raw > 0 ? formatNumber(raw) : (raw === 0 ? '0' : '');
+            });
+        }
+    });
+
+    openModal('modal-quick-create-prod');
+    setTimeout(() => {
+        if (tenInput) {
+            tenInput.focus();
+            if (curQuery) tenInput.select();
+        }
+    }, 200);
+}
+window.openQuickCreateProductInReceipt = openQuickCreateProductInReceipt;
+
+/**
+ * Submit form tạo nhanh hàng hóa
+ */
+async function submitQuickCreateProductInReceipt(e) {
+    if (e) e.preventDefault();
+    const ten = (document.getElementById('quick-prod-ten')?.value || '').trim();
+    if (!ten) {
+        showToast('Vui lòng nhập tên hàng hóa!', 'warning');
+        document.getElementById('quick-prod-ten')?.focus();
+        return;
+    }
+
+    const ma = (document.getElementById('quick-prod-ma')?.value || '').trim();
+    const danhMuc = (document.getElementById('quick-prod-danh-muc')?.value || '').trim();
+    const dvt = (document.getElementById('quick-prod-dvt')?.value || '').trim() || 'Cái';
+    const giaNhap = parseCurrencyValue(document.getElementById('quick-prod-gia-nhap')?.value || 0);
+    const giaBan = parseCurrencyValue(document.getElementById('quick-prod-gia-ban')?.value || 0);
+    const ghiChu = (document.getElementById('quick-prod-ghi-chu')?.value || '').trim();
+
+    const btn = document.getElementById('btn-submit-quick-create-prod');
+    const origHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang tạo...';
+    }
+
+    try {
+        showLoading();
+        const payload = {
+            ten_hang: ten,
+            danh_muc: danhMuc,
+            don_vi_tinh: dvt,
+            gia_nhap: giaNhap,
+            gia_ban: giaBan,
+            ton_kho: 0,
+            ghi_chu: ghiChu
+        };
+        if (ma) payload.ma_hang = ma;
+
+        const res = await apiRequest('/api/hang-hoa', 'POST', payload);
+        const newProd = res.data;
+
+        showToast(`Đã tạo hàng hóa [${newProd.ma_hang}] ${newProd.ten_hang} thành công!`, 'success');
+        closeModal('modal-quick-create-prod');
+
+        // Cập nhật bộ nhớ cache danh sách sản phẩm
+        if (!window.allReceiptProductsCache) window.allReceiptProductsCache = [];
+        window.allReceiptProductsCache.unshift(newProd);
+
+        // Tự động điền sản phẩm vừa tạo vào form thêm hàng của phiếu
+        selectDetailProduct(newProd.ma_hang);
+
+        // Báo cho toàn hệ thống cập nhật sản phẩm
+        broadcastDataUpdate('PRODUCTS_UPDATED');
+    } catch (err) {
+        showToast('Lỗi khi tạo hàng hóa: ' + (err.message || 'Không thể tạo'), 'error');
+    } finally {
+        hideLoading();
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = origHtml;
+        }
+    }
+}
+window.submitQuickCreateProductInReceipt = submitQuickCreateProductInReceipt;
 

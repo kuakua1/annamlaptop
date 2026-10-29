@@ -1400,7 +1400,8 @@ body.is-embedded-tab .tab-direct-content {
 }
 
 /* ── Confirm Delete Receipt Modal (Pixel-perfect match to screenshot) ── */
-#confirm-delete-receipt-modal {
+#confirm-delete-receipt-modal,
+#modal-quick-create-prod {
   z-index: 1070 !important;
 }
 
