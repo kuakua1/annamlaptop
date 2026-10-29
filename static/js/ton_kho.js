@@ -178,22 +178,46 @@ function renderStockTable() {
 
         const badgeClass = sl > 5 ? 'bg-success' : (sl > 0 ? 'bg-warning text-dark' : 'bg-danger');
 
+        // Cột Giá Vốn Nhập: hiển thị chi tiết từng lô giá nếu có từ 2 lô trở lên
+        let giaNhapHtml = '';
+        if (hasMulti) {
+            giaNhapHtml = `
+                <div class="d-flex flex-column align-items-end gap-1">
+                    ${batches.map((b, bIdx) => `
+                        <div class="small text-nowrap d-flex align-items-center justify-content-end gap-1" title="Lô ${bIdx + 1}: ${b.so_luong} ${escapeHtml(p.don_vi_tinh || 'Cái')} x ${formatVND(b.gia_nhap)}">
+                            <span class="badge bg-light text-dark border font-monospace py-0 px-1" style="font-size: 0.75rem;">${b.so_luong} ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
+                            <span class="fw-bold text-primary font-monospace">${formatVND(b.gia_nhap)}</span>
+                        </div>
+                    `).join('')}
+                    <div class="text-muted border-top border-secondary-subtle pt-1 mt-1 font-monospace" style="font-size: 0.72rem;" title="Đơn giá vốn bình quân gia quyền">
+                        (BQ: ${formatVND(giaNhap)})
+                    </div>
+                </div>
+            `;
+        } else {
+            giaNhapHtml = `<span class="text-muted font-monospace">${formatVND(giaNhap)}</span>`;
+        }
+
         // Dropdown chi tiết lô giá
         let batchBadgeHtml = '';
         if (hasMulti) {
             batchBadgeHtml = `
                 <div class="dropdown d-inline-block mt-1">
-                    <button class="btn btn-xs btn-outline-info dropdown-toggle py-0 px-1" type="button" data-bs-toggle="dropdown" style="font-size:0.75rem;">
+                    <button class="btn btn-xs btn-outline-info dropdown-toggle py-0 px-1" type="button" data-bs-toggle="dropdown" style="font-size:0.72rem;">
                         <i class="bi bi-layers-half me-1"></i>${batches.length} lô giá
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm small p-2" style="min-width: 200px;">
-                        <li class="dropdown-header py-1 text-uppercase text-muted" style="font-size: 0.7rem;">Chi tiết lô nhập FIFO:</li>
-                        ${batches.map(b => `
-                            <li class="d-flex justify-content-between py-1 border-bottom border-light">
-                                <span><span class="badge bg-light text-dark border me-1">${b.so_luong} ${escapeHtml(p.don_vi_tinh || 'Cái')}</span></span>
-                                <span class="fw-semibold text-primary font-monospace">${formatVND(b.gia_nhap)}</span>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm small p-2" style="min-width: 210px; z-index: 1050;">
+                        <li class="dropdown-header py-1 text-uppercase text-muted fw-bold" style="font-size: 0.7rem;">Chi tiết lô nhập FIFO:</li>
+                        ${batches.map((b, bIdx) => `
+                            <li class="d-flex justify-content-between align-items-center py-1 border-bottom border-light">
+                                <span><span class="badge bg-primary bg-opacity-10 text-primary border me-1">Lô ${bIdx + 1}</span><span class="small">${b.so_luong} ${escapeHtml(p.don_vi_tinh || 'Cái')}</span></span>
+                                <span class="fw-semibold text-primary font-monospace small">${formatVND(b.gia_nhap)}</span>
                             </li>
                         `).join('')}
+                        <li class="d-flex justify-content-between align-items-center pt-2 mt-1 border-top fw-bold small">
+                            <span class="text-secondary">Giá vốn BQ:</span>
+                            <span class="text-dark font-monospace">${formatVND(giaNhap)}</span>
+                        </li>
                     </ul>
                 </div>
             `;
@@ -209,7 +233,7 @@ function renderStockTable() {
                 </td>
                 <td><span class="badge bg-light text-secondary border">${escapeHtml(p.danh_muc || 'Khác')}</span></td>
                 <td class="text-center text-muted small">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
-                <td class="text-end text-muted font-monospace">${formatVND(giaNhap)}</td>
+                <td class="text-end align-middle">${giaNhapHtml}</td>
                 <td class="text-center">
                     <div><span class="badge ${badgeClass} fs-6 px-2 py-1 font-monospace">${formatNumber(sl)}</span></div>
                     ${batchBadgeHtml}

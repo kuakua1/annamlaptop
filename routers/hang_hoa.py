@@ -5,7 +5,7 @@ from fastapi.templating import Jinja2Templates
 from routers.auth import get_current_user, require_login
 from models.schemas import HangHoaCreate, HangHoaUpdate
 from services.db_service import db_manager, _safe_float, _safe_int
-from services.sheets_service import parse_batches_str
+from services.sheets_service import parse_batches_str, format_batches_str
 from services.logger_service import log_activity
 
 router = APIRouter()
@@ -264,8 +264,33 @@ async def get_hang_hoa(
                 # Tiền tồn theo chuẩn kế toán bình quân gia quyền kỳ báo cáo (khớp 100% với Bảng NXT)
                 thanh_tien_ton = max(0, round(tien_dau + tien_nhap - tien_xuat))
                 gia_nhap = round(thanh_tien_ton / ton_kho, 2)
-                batches = [{"so_luong": ton_kho, "gia_nhap": gia_nhap}]
-                chi_tiet_lo = f"{ton_kho} x {int(gia_nhap):,} đ".replace(",", ".")
+
+                # Khôi phục các lô hàng thực tế (batches) từ HangHoa / chi_tiet_lo
+                raw_lo_str = str(rec.get("chi_tiet_lo", "") or "").strip()
+                real_batches = parse_batches_str(raw_lo_str, ton_kho, gia_nhap) if raw_lo_str else []
+                real_qty = sum(b.get("so_luong", 0) for b in real_batches)
+
+                if real_batches and real_qty == ton_kho:
+                    batches = real_batches
+                    chi_tiet_lo = raw_lo_str
+                elif real_batches and real_qty > 0:
+                    # Nếu số lượng tồn khác do lọc theo mốc thời gian, phân bổ theo các lô thực tế
+                    adjusted_batches = []
+                    rem = ton_kho
+                    for b in real_batches:
+                        if rem <= 0:
+                            break
+                        take = min(b.get("so_luong", 0), rem)
+                        if take > 0:
+                            adjusted_batches.append({"so_luong": take, "gia_nhap": b.get("gia_nhap", gia_nhap)})
+                            rem -= take
+                    if rem > 0 and adjusted_batches:
+                        adjusted_batches[-1]["so_luong"] += rem
+                    batches = adjusted_batches if adjusted_batches else [{"so_luong": ton_kho, "gia_nhap": gia_nhap}]
+                    chi_tiet_lo = format_batches_str(batches)
+                else:
+                    batches = [{"so_luong": ton_kho, "gia_nhap": gia_nhap}]
+                    chi_tiet_lo = f"{ton_kho} x {int(gia_nhap):,} đ".replace(",", ".")
 
             gia_ban = _safe_num(rec.get("gia_ban", 0))
             item = {

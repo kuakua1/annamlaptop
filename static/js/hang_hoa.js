@@ -214,6 +214,7 @@ function renderTable(products) {
         const giaNhap = parseFloat(p.gia_nhap) || 0;
         const giaBan = parseFloat(p.gia_ban) || 0;
         const batches = p.batches || [];
+        const hasMulti = batches.length > 1;
 
         let giaTriTon = 0;
         if (p.thanh_tien_ton !== undefined) {
@@ -222,6 +223,26 @@ function renderTable(products) {
             giaTriTon = batches.reduce((bSum, b) => bSum + (b.so_luong * b.gia_nhap), 0);
         } else {
             giaTriTon = Math.round(sl * giaNhap);
+        }
+
+        // Cột Giá Nhập: hiển thị chi tiết các lô giá nếu có từ 2 lô trở lên
+        let giaNhapHtml = '';
+        if (hasMulti) {
+            giaNhapHtml = `
+                <div class="d-flex flex-column align-items-end gap-1">
+                    ${batches.map((b, bIdx) => `
+                        <div class="small text-nowrap d-flex align-items-center justify-content-end gap-1" title="Lô ${bIdx + 1}: ${b.so_luong} ${escapeHtml(p.don_vi_tinh || 'Cái')} x ${formatVND(b.gia_nhap)}">
+                            <span class="badge bg-light text-dark border font-monospace py-0 px-1" style="font-size: 0.75rem;">${b.so_luong} ${escapeHtml(p.don_vi_tinh || 'Cái')}</span>
+                            <span class="fw-bold text-primary font-monospace">${formatVND(b.gia_nhap)}</span>
+                        </div>
+                    `).join('')}
+                    <div class="text-muted border-top border-secondary-subtle pt-1 mt-1 font-monospace" style="font-size: 0.72rem;" title="Đơn giá vốn bình quân gia quyền">
+                        (BQ: ${formatVND(giaNhap)})
+                    </div>
+                </div>
+            `;
+        } else {
+            giaNhapHtml = `<span class="text-muted font-monospace">${formatVND(giaNhap)}</span>`;
         }
 
         return `
@@ -234,7 +255,7 @@ function renderTable(products) {
                 </td>
                 <td><span class="badge bg-light text-secondary border">${escapeHtml(p.danh_muc || 'Khác')}</span></td>
                 <td class="text-center text-muted small">${escapeHtml(p.don_vi_tinh || 'Cái')}</td>
-                <td class="text-end text-muted font-monospace">${formatVND(giaNhap)}</td>
+                <td class="text-end align-middle">${giaNhapHtml}</td>
                 <td class="text-end font-monospace text-primary fw-semibold">${formatVND(giaBan)}</td>
                 <td class="text-center">
                     ${renderTonKhoCell(p)}
