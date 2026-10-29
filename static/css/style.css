@@ -1361,19 +1361,18 @@ body.is-embedded-tab .tab-direct-content {
 }
 
 /* Dropdown gợi ý tìm kiếm hàng trong modal chi tiết phiếu:
-   Mở rộng thoải mái chiều ngang (lòi ra ngoài ô input), không bị gò bó hay thụt hẹp */
+   Portal trực tiếp ra document.body với position: fixed và z-index: 99999 để tràn tự do
+   qua footer modal (chèn lên các nút "Xóa Phiếu", "Đã có phiếu chi") và tràn ra ngoài cửa sổ */
 #detail-add-prod-sug {
+  position: fixed !important;
+  z-index: 99999 !important;
   min-width: 540px !important;
-  width: max(100%, 540px) !important;
-  max-width: min(720px, 92vw) !important;
-  right: auto !important;
-  left: 0 !important;
-  top: calc(100% + 4px) !important;
-  z-index: 1080 !important;
+  max-width: min(780px, calc(100vw - 24px)) !important;
+  background: #ffffff !important;
   border-radius: 8px !important;
   border: 1px solid #cbd5e1 !important;
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.18), 0 6px 10px rgba(15, 23, 42, 0.1) !important;
-  background: #ffffff !important;
+  box-shadow: 0 20px 40px -5px rgba(15, 23, 42, 0.3), 0 10px 15px -3px rgba(15, 23, 42, 0.2) !important;
+  overflow-y: auto !important;
 }
 
 .card:has(#detail-add-prod-sug),

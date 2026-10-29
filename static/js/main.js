@@ -2080,7 +2080,7 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                                 onfocus="onDetailProductInputFocus(this)"
                                 onkeydown="onDetailProductInputKeydown(event)"
                                 oninput="onDetailProductSearchInput(this)">
-                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearDetailAddProduct()" title="Xóa chọn">
+                            <button class="btn btn-outline-secondary btn-sm btn-clear-detail-prod" type="button" onclick="clearDetailAddProduct()" title="Xóa chọn">
                                 <i class="bi bi-x"></i>
                             </button>
                             <button class="btn btn-outline-primary btn-sm btn-toggle-detail-prod-dd" type="button" onclick="toggleDetailProductDropdown(event)" title="Chọn hàng hóa từ danh sách">
@@ -2088,7 +2088,6 @@ async function renderEditableReceiptDetail(res, type, targetModalBodyId = 'detai
                             </button>
                         </div>
                         <input type="hidden" id="detail-add-prod-ma" value="">
-                        <div id="detail-add-prod-sug" class="autocomplete-dropdown d-none shadow-lg border rounded-3" style="max-height: 420px; min-width: 540px; width: max(100%, 540px); max-width: min(720px, 92vw); z-index: 1080; position: absolute; left: 0; top: calc(100% + 4px); background: #ffffff;"></div>
                     </div>
                     <button type="button" class="btn btn-outline-success btn-sm text-nowrap fw-semibold" onclick="openQuickCreateProductInReceipt()" title="Tạo hàng hóa mới trực tiếp vào hệ thống">
                         <i class="bi bi-box-seam me-1"></i>+ Tạo SP mới
@@ -2392,8 +2391,77 @@ function filterDetailProducts(query) {
     }).slice(0, 50);
 }
 
-function renderDetailProductSuggestions(matches) {
+function getDetailProductDropdown() {
+    let box = document.getElementById('detail-add-prod-sug');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'detail-add-prod-sug';
+        box.className = 'autocomplete-dropdown d-none shadow-lg border rounded-3';
+        document.body.appendChild(box);
+    } else if (box.parentElement !== document.body) {
+        document.body.appendChild(box);
+    }
+    return box;
+}
+
+function positionDetailProductDropdown() {
     const box = document.getElementById('detail-add-prod-sug');
+    const input = document.getElementById('detail-add-prod-input');
+    if (!box || !input || box.classList.contains('d-none')) return;
+
+    const rect = input.getBoundingClientRect();
+    // Modal đóng hoặc ô input không hiển thị
+    if (rect.width === 0 && rect.height === 0) {
+        box.classList.add('d-none');
+        return;
+    }
+
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+    // Nếu ô input cuộn hoàn toàn ra khỏi màn hình
+    if (rect.bottom < 0 || rect.top > viewportHeight) {
+        box.classList.add('d-none');
+        return;
+    }
+
+    // Chiều rộng dropdown: tối thiểu 560px, tối đa 780px hoặc sát mép màn hình
+    const minW = Math.min(560, viewportWidth - 24);
+    const maxW = Math.min(780, viewportWidth - 24);
+    let targetW = Math.max(rect.width, minW);
+    if (targetW > maxW) targetW = maxW;
+
+    // Canh toạ độ left sao cho không bị tràn ra mép phải màn hình
+    let left = rect.left;
+    if (left + targetW > viewportWidth - 12) {
+        left = Math.max(12, viewportWidth - 12 - targetW);
+    }
+    if (left < 12) left = 12;
+
+    const spaceBelow = viewportHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+
+    box.style.position = 'fixed';
+    box.style.zIndex = '99999';
+    box.style.left = `${Math.round(left)}px`;
+    box.style.width = `${Math.round(targetW)}px`;
+    box.style.overflowY = 'auto';
+
+    // Mở xuống dưới tràn qua footer của modal (chèn lên các nút "Xóa Phiếu", "Đã có phiếu chi" theo yêu cầu)
+    // Chỉ lật lên trên nếu phía dưới cực hẹp (< 160px) và phía trên rộng hơn hẳn
+    if (spaceBelow < 160 && spaceAbove > spaceBelow) {
+        box.style.top = 'auto';
+        box.style.bottom = `${Math.round(viewportHeight - rect.top + 4)}px`;
+        box.style.maxHeight = `${Math.round(Math.min(420, spaceAbove))}px`;
+    } else {
+        box.style.top = `${Math.round(rect.bottom + 4)}px`;
+        box.style.bottom = 'auto';
+        box.style.maxHeight = `${Math.round(Math.min(420, spaceBelow))}px`;
+    }
+}
+
+function renderDetailProductSuggestions(matches) {
+    const box = getDetailProductDropdown();
     if (!box) return;
     if (!matches || !matches.length) {
         box.innerHTML = `
@@ -2405,6 +2473,7 @@ function renderDetailProductSuggestions(matches) {
             </div>
         `;
         box.classList.remove('d-none');
+        positionDetailProductDropdown();
         return;
     }
     const isXuat = window.currentReceiptDetail?.type === 'xuat';
@@ -2435,6 +2504,7 @@ function renderDetailProductSuggestions(matches) {
         </div>
     `;
     box.classList.remove('d-none');
+    positionDetailProductDropdown();
 }
 
 let _detailProdDebounceTimer = null;
@@ -2476,7 +2546,7 @@ function toggleDetailProductDropdown(e) {
         e.preventDefault();
         e.stopPropagation();
     }
-    const box = document.getElementById('detail-add-prod-sug');
+    const box = getDetailProductDropdown();
     if (!box) return;
     if (!box.classList.contains('d-none')) {
         box.classList.add('d-none');
@@ -2528,9 +2598,36 @@ function clearDetailAddProduct() {
 
 // Đóng dropdown autocomplete chi tiết khi click ra ngoài
 document.addEventListener('click', (e) => {
-    if (!e.target.closest('#detail-add-prod-sug') && !e.target.closest('#detail-add-prod-input') && !e.target.closest('.btn-toggle-detail-prod-dd')) {
-        document.getElementById('detail-add-prod-sug')?.classList.add('d-none');
+    const box = document.getElementById('detail-add-prod-sug');
+    if (!box || box.classList.contains('d-none')) return;
+    if (!e.target.closest('#detail-add-prod-sug') &&
+        !e.target.closest('#detail-add-prod-input') &&
+        !e.target.closest('.btn-toggle-detail-prod-dd') &&
+        !e.target.closest('.btn-clear-detail-prod')) {
+        box.classList.add('d-none');
     }
+});
+
+// Cập nhật vị trí dropdown khi cuộn (bắt sự kiện scroll của cả modal lẫn window)
+window.addEventListener('scroll', () => {
+    const box = document.getElementById('detail-add-prod-sug');
+    if (box && !box.classList.contains('d-none')) {
+        positionDetailProductDropdown();
+    }
+}, true);
+
+// Cập nhật vị trí khi thay đổi kích thước cửa sổ
+window.addEventListener('resize', () => {
+    const box = document.getElementById('detail-add-prod-sug');
+    if (box && !box.classList.contains('d-none')) {
+        positionDetailProductDropdown();
+    }
+});
+
+// Tự động đóng dropdown khi modal đóng
+document.addEventListener('hidden.bs.modal', () => {
+    const box = document.getElementById('detail-add-prod-sug');
+    if (box) box.classList.add('d-none');
 });
 
 /**
